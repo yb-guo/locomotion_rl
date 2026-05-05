@@ -1,0 +1,37 @@
+# Agent Index
+
+H200 Locomotion Lab 的 agent 入口。
+
+## Docs
+
+- `doc/project.md`
+- `doc/h200_strategy.md`
+- `doc/sonic.md`
+- `doc/locoformer.md`
+- `../../README.md`
+
+## Active Tasks
+
+- `task/task001-agent-setup/task.md`
+- `task/task002-sonic-mujoco-smoke/task.md`
+- `task/task003-h200-simulator-smoke/task.md`
+- `task/task004-genesis-g1-baseline/task.md`
+- `task/task005-locoformer-min-reproduction/task.md`
+
+## Consensus
+
+本项目复用 HeadPose 项目的工作方式：
+
+- `.agent/doc` 放长期共识和项目判断。
+- `.agent/task` 放可执行任务，任务必须拆成小的 closed unit。
+- 每个 subtask 固定 `Route / Log / Review`。
+- 不把 H200 上完整 Isaac Sim/RTX 路线当主线。
+- 所有训练和仿真路径都必须有 smoke test、失败条件和退出规则。
+
+## Lessons
+
+- H200 是训练卡，不是 RTX 仿真工作站。
+- 先复现官方最短链路，再改算法。
+- SONIC 先跑 MuJoCo sim2sim，再试 Isaac Lab headless。
+- LocoFormer 先做最小可验证版本，不从 full scale 开始。
+

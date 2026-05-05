@@ -1,0 +1,21 @@
+# Adapter config for reading and testing official GEAR-SONIC artifacts.
+agent:
+  name: sonic_adapter
+  upstream_repo: NVlabs/GR00T-WholeBodyControl
+  default_validation_path: mujoco_sim2sim
+  checkpoints:
+    source: huggingface
+    repo: nvidia/GEAR-SONIC
+  deployment:
+    runtime: tensorrt
+    x86_64_tensorrt_version: "10.13"
+  submodules:
+    observation_bridge:
+      role: map_sim_state_to_sonic_observation
+    reference_motion_bridge:
+      role: map_motion_library_to_policy_input
+    policy_runtime:
+      role: run_checkpoint_or_engine
+    action_bridge:
+      role: map_policy_action_to_robot_command
+

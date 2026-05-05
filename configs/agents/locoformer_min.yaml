@@ -1,0 +1,27 @@
+# Minimal LocoFormer-style agent config.
+agent:
+  name: locoformer_min
+  embodiment: unitree_g1
+  context_window_steps: 128
+  action_rate_hz: 50
+  submodules:
+    morphology_encoder:
+      enabled: true
+      input: robot_description
+    proprio_tokenizer:
+      enabled: true
+      input: joint_state_history
+    motion_context_encoder:
+      enabled: true
+      input: reference_motion_history
+    transformer_policy:
+      layers: 4
+      hidden_size: 256
+      attention_heads: 4
+    actor_critic_heads:
+      action_distribution: gaussian
+      value_head: true
+    adaptation_buffer:
+      enabled: true
+      horizon_steps: 128
+

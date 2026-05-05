@@ -1,0 +1,2 @@
+"""Simulator adapter namespace."""
+

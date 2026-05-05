@@ -1,0 +1,10 @@
+env:
+  name: sonic_mujoco_sim2sim
+  simulator: mujoco
+  robot: unitree_g1
+  headless: false
+  purpose: validate_official_sonic_deployment_loop
+  upstream_command:
+    simulator: "python gear_sonic/scripts/run_sim_loop.py"
+    deployment: "bash deploy.sh sim"
+

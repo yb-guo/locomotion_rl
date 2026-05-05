@@ -1,0 +1,15 @@
+env:
+  name: genesis_g1_locomotion
+  simulator: genesis
+  robot: unitree_g1
+  headless: true
+  device: cuda
+  num_envs: 4096
+  control:
+    policy_rate_hz: 50
+    decimation: 4
+  domain_randomization:
+    mass_scale: [0.8, 1.2]
+    friction: [0.5, 1.5]
+    actuator_strength: [0.8, 1.2]
+

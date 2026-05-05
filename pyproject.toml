@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "h200-locomotion-lab"
+version = "0.1.0"
+description = "H200-first humanoid locomotion RL scaffold for GEAR-SONIC and LocoFormer-style experiments."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.8",
+]
+training = [
+  "numpy>=1.26",
+  "torch>=2.4",
+  "pyyaml>=6.0",
+  "tqdm>=4.66",
+]
+genesis = [
+  "genesis-world>=0.3",
+]
+mujoco = [
+  "mujoco>=3.2",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+

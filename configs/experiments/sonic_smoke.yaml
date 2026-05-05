@@ -1,0 +1,11 @@
+experiment:
+  name: sonic_smoke
+  goal: verify_checkpoint_runtime_and_control_loop
+  path:
+    first: official_mujoco_sim2sim
+    second: optional_isaac_lab_headless_smoke
+  stop_conditions:
+    - tensor_rt_version_mismatch
+    - isaac_sim_rtx_or_vulkan_startup_failure
+    - observation_action_shape_mismatch
+
