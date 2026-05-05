@@ -13,6 +13,7 @@ Scope:
 Verify:
 
 - List upstream repo URL, checkpoint repo, expected TensorRT version, and official commands.
+- `Get-Content .agent/task/task002-sonic-mujoco-smoke/agent_execute.md`
 
 Environment:
 
@@ -30,14 +31,22 @@ Hardware:
 
 # Log
 
+- Upstream repo: `https://github.com/NVlabs/GR00T-WholeBodyControl`
+- Official docs: `https://nvlabs.github.io/GR00T-WholeBodyControl/`
+- SONIC page: `https://nvlabs.github.io/GEAR-SONIC/`
+- Checkpoint/model repo: `nvidia/GEAR-SONIC`
+- Deployment download: `python download_from_hf.py`
+- Training/sample download: `hf download nvidia/GEAR-SONIC --include "sample_data/*" --include "sonic_release/*" --local-dir .`
+- Required x86_64 TensorRT: `10.13`
+- First target: MuJoCo sim2sim, not Isaac Lab.
+
 # Review
 
-Result: pending
-Syntax:
-Hack:
-Scope:
-Efficiency:
-Hardware:
-Verify:
-Findings:
-
+Result: passed
+Syntax: markdown only
+Hack: no guessed checkpoint path
+Scope: task docs and SONIC docs only
+Efficiency: no heavy downloads during local planning
+Hardware: H200/RTX/TensorRT constraints recorded
+Verify: inventory written in `agent_execute.md`
+Findings: none

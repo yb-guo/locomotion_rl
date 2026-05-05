@@ -17,6 +17,8 @@ Verify:
 - Checkpoint or engine loads.
 - Robot moves in MuJoCo.
 - Failure mode is captured if it does not run.
+- Terminal 1: `source .venv_sim/bin/activate && python gear_sonic/scripts/run_sim_loop.py`
+- Terminal 2: `cd gear_sonic_deploy && bash deploy.sh sim`
 
 Environment:
 
@@ -35,6 +37,9 @@ Hardware:
 
 # Log
 
+- Pending H200/Linux execution.
+- Use `agent_execute.md` section L1.
+
 # Review
 
 Result: pending
@@ -45,4 +50,3 @@ Efficiency:
 Hardware:
 Verify:
 Findings:
-

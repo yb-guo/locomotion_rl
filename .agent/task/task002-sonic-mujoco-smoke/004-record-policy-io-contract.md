@@ -13,6 +13,8 @@ Scope:
 Verify:
 
 - Observation fields, shapes, units, action semantics, and runtime backend are listed.
+- Read `gear_sonic_deploy/policy/release/observation_config.yaml`.
+- Inspect upstream deployment config and C++ flow after sim2sim works.
 
 Environment:
 
@@ -30,6 +32,8 @@ Hardware:
 
 # Log
 
+- Pending. Do after official sim2sim succeeds.
+
 # Review
 
 Result: pending
@@ -40,4 +44,3 @@ Efficiency:
 Hardware:
 Verify:
 Findings:
-

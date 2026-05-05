@@ -14,6 +14,8 @@ Verify:
 
 - Python imports MuJoCo and upstream SONIC modules.
 - No Isaac Sim dependency is required for this subtask.
+- `bash install_scripts/install_mujoco_sim.sh`
+- `source .venv_sim/bin/activate && python -c "import mujoco; print(mujoco.__version__)"`
 
 Environment:
 
@@ -32,6 +34,9 @@ Hardware:
 
 # Log
 
+- Pending H200/Linux execution.
+- Use `agent_execute.md` section L1.
+
 # Review
 
 Result: pending
@@ -42,4 +47,3 @@ Efficiency:
 Hardware:
 Verify:
 Findings:
-
