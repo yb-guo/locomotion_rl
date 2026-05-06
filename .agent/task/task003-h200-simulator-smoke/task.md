@@ -18,9 +18,11 @@ Decide which simulator paths are viable on the H200 machine.
 
 # Result
 
-pending
+partial
+
+- Genesis minimal H200 CUDA smoke: pass.
+- MuJoCo and Isaac Lab statuses are not finalized in this task record.
 
 # Lessons
 
 - Simulator choice is an empirical compatibility decision, not just a preference.
-
