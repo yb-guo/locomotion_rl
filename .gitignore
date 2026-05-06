@@ -18,6 +18,7 @@ logs/
 runs/
 wandb/
 outputs/
+.agent/task/*/artifacts/
 
 # Simulator and upstream clones
 IsaacLab/

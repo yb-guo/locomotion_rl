@@ -191,6 +191,23 @@ SONIC_REFERENCE_REPLAY_GENESIS_SMOKE_OK
 SONIC_REFERENCE_REPLAY_DECIMATE_20F_EXIT_STATUS=0
 ```
 
+- 2026-05-06: Added
+  `python -m h200_locomotion_lab.tools.sonic_reference_replay_gif` and rendered
+  a visual GIF for inspection using the same decimated 20-frame SONIC reference
+  joint-position replay:
+
+```text
+Log: /root/h200-locomotion-lab-runs/task004-genesis-g1-baseline/logs/genesis_g1_sonic_reference_replay_gif_20f.log
+Remote GIF: /root/h200-locomotion-lab-runs/task004-genesis-g1-baseline/videos/genesis_g1_sonic_reference_replay_20f.gif
+Local copy: .agent/task/task004-genesis-g1-baseline/artifacts/genesis_g1_sonic_reference_replay_20f.gif
+RES (240, 180)
+RENDERED_FRAMES 20
+GIF_BYTES 48546
+BASE_HEIGHT_FINAL 0.791166
+SONIC_REFERENCE_REPLAY_GIF_OK
+SONIC_REFERENCE_REPLAY_GIF_20F_EXIT_STATUS=0
+```
+
 - Local verification command:
 
 ```bash
