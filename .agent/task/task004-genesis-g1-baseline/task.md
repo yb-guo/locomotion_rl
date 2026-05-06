@@ -24,9 +24,10 @@ in progress
 - `001-g1-asset-and-control-contract`: local contract pass.
 - `002-genesis-env-reset-step`: local reset/step boundary pass with contract-only
   backend; H200 `genesis-world==0.4.6` install and raw CUDA Genesis smoke pass.
-  SONIC `model_data/g1/g1_29dof_with_hand.xml` builds and steps in Genesis on
-  H200, but Genesis reports it as `49` DoF, so a true 29DoF runtime asset is
-  still needed before PPO training.
+  SONIC `gear_sonic/data/robots/g1/g1_29dof.xml` now builds and steps in Genesis
+  on H200 after filling its 36 referenced mesh files from
+  `gear_sonic_deploy/g1/meshes`. The XML has 29 motor actuators; Genesis reports
+  `35` rigid DOFs because it includes the 6-DoF floating base.
 
 # Lessons
 

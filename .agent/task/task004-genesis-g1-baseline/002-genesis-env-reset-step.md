@@ -93,6 +93,46 @@ SONIC_G1_MODEL_DATA_MJCF_CUDA_SMOKE_OK steps=20 elapsed_s=3.861
 SONIC_G1_MODEL_DATA_MJCF_CUDA_EXIT_STATUS=0
 ```
 
+- 2026-05-06: Found the true 29-motor SONIC G1 MJCF in the deploy asset
+  directory. It has real STL meshes already materialized:
+
+```text
+Asset: /root/h200-locomotion-lab-runs/task002-sonic-mujoco-smoke/GR00T-WholeBodyControl/gear_sonic_deploy/g1/g1_29dof.xml
+XML motor tags: 29
+Referenced meshes: 36 real, 0 pointer, 0 missing
+```
+
+- Filled the original contract inventory path by copying the 36 mesh files
+  referenced by `gear_sonic/data/robots/g1/g1_29dof.xml` from
+  `gear_sonic_deploy/g1/meshes`. The full `gear_sonic/data/robots/g1` directory
+  still contains many unrelated LFS pointer meshes, but this XML's referenced
+  mesh set now has `0` LFS pointers.
+
+```text
+Manifest: /root/h200-locomotion-lab-runs/task004-genesis-g1-baseline/logs/g1_29dof_mesh_fill_manifest.txt
+mesh_refs 36 copied 36 already_real 0 missing_src 0 still_pointer 0
+ORIGINAL_XML_REFERENCED_POINTER_MESHES 0
+```
+
+- H200 Genesis CUDA smoke for the original filled 29-motor G1 path passed:
+
+```text
+Log: /root/h200-locomotion-lab-runs/task004-genesis-g1-baseline/logs/genesis_sonic_g1_29dof_original_filled_mjcf_cuda_smoke.log
+Asset: /root/h200-locomotion-lab-runs/task002-sonic-mujoco-smoke/GR00T-WholeBodyControl/gear_sonic/data/robots/g1/g1_29dof.xml
+GENESIS_VERSION 0.4.6
+Running on [NVIDIA H200] with backend gs.cuda
+XML_JOINT_TAGS 30
+XML_MOTOR_TAGS 29
+ROBOT_N_DOFS 35
+ROBOT_N_LINKS 31
+SONIC_G1_29DOF_ORIGINAL_FILLED_MJCF_CUDA_SMOKE_OK steps=20 elapsed_s=3.823
+SONIC_G1_29DOF_ORIGINAL_FILLED_MJCF_CUDA_EXIT_STATUS=0
+```
+
+`ROBOT_N_DOFS 35` is expected here: Genesis includes the 6-DoF floating base in
+`n_dofs`, while the policy/action contract is the 29 motor actuators recorded by
+`XML_MOTOR_TAGS 29`.
+
 - Local verification command:
 
 ```bash
@@ -112,6 +152,6 @@ Hardware: pass for raw Genesis CUDA import/build/step smoke on H200.
 Verify: local reset/step boundary passed; raw Genesis H200 plane and SONIC G1
 MJCF build/step smoke passed.
 Findings: the repo environment wrapper still has only a contract-only backend.
-The passing SONIC asset smoke used `g1_29dof_with_hand.xml`, which Genesis
-reports as `49` DoF, so the next implementation step is selecting or exporting a
-true 29DoF Genesis-compatible G1 asset before PPO training.
+The 29-motor Genesis-compatible G1 asset is now identified and smoke-tested, but
+the next implementation step is still building the real Genesis backend behind
+`GenesisG1Env` before PPO training.
