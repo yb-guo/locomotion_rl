@@ -5,11 +5,65 @@ env:
   headless: true
   device: cuda
   num_envs: 4096
+  asset:
+    format: mjcf
+    source: external_sonic_g1_inventory
+    expected_path: genesis_assets/unitree_g1/g1_29dof.xml
+    source_inventory_path: gear_sonic/data/robots/g1/g1_29dof.xml
+    note: "Asset is not committed to this repo; copy or mount it explicitly on the H200 target."
   control:
+    sim_dt_s: 0.005
+    sim_rate_hz: 200
     policy_rate_hz: 50
     decimation: 4
+    action_type: joint_position_delta
+    action_units: rad
+    action_scale_rad: 0.25
+    joint_order:
+      - left_hip_pitch_joint
+      - left_hip_roll_joint
+      - left_hip_yaw_joint
+      - left_knee_joint
+      - left_ankle_pitch_joint
+      - left_ankle_roll_joint
+      - right_hip_pitch_joint
+      - right_hip_roll_joint
+      - right_hip_yaw_joint
+      - right_knee_joint
+      - right_ankle_pitch_joint
+      - right_ankle_roll_joint
+      - waist_yaw_joint
+      - waist_roll_joint
+      - waist_pitch_joint
+      - left_shoulder_pitch_joint
+      - left_shoulder_roll_joint
+      - left_shoulder_yaw_joint
+      - left_elbow_joint
+      - left_wrist_roll_joint
+      - left_wrist_pitch_joint
+      - left_wrist_yaw_joint
+      - right_shoulder_pitch_joint
+      - right_shoulder_roll_joint
+      - right_shoulder_yaw_joint
+      - right_elbow_joint
+      - right_wrist_roll_joint
+      - right_wrist_pitch_joint
+      - right_wrist_yaw_joint
+  observations:
+    order:
+      - {name: base_angular_velocity, size: 3, units: rad_per_s}
+      - {name: projected_gravity, size: 3, units: unit_vector}
+      - {name: command_velocity, size: 3, units: m_per_s_and_rad_per_s}
+      - {name: joint_position_error, size: 29, units: rad}
+      - {name: joint_velocity, size: 29, units: rad_per_s}
+      - {name: previous_action, size: 29, units: normalized}
+    total_dim: 96
+  actions:
+    order: same_as_control_joint_order
+    size: 29
+    input_range: [-1.0, 1.0]
+    applied_as: default_joint_position_plus_scaled_delta
   domain_randomization:
     mass_scale: [0.8, 1.2]
     friction: [0.5, 1.5]
     actuator_strength: [0.8, 1.2]
-

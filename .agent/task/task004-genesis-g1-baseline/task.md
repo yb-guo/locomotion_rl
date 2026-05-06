@@ -19,9 +19,12 @@ Build the first Genesis-based G1 locomotion RL baseline on H200.
 
 # Result
 
-pending
+in progress
+
+- `001-g1-asset-and-control-contract`: local contract pass.
+- `002-genesis-env-reset-step`: local reset/step boundary pass with contract-only
+  backend; real H200 Genesis package is not installed yet.
 
 # Lessons
 
 - A simple baseline is required before long-context transformer experiments.
-

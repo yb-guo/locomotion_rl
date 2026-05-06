@@ -31,14 +31,42 @@ Hardware:
 
 # Log
 
+- 2026-05-06: Replaced the placeholder `GenesisG1Env` with a simulator-independent
+  reset/step boundary in `src/h200_locomotion_lab/envs/genesis_adapter.py`.
+- The module does not import `genesis` at module import time.
+- Added:
+  - `GenesisG1Contract`
+  - `StepResult`
+  - `GenesisBackend` protocol
+  - `ContractOnlyBackend` for local boundary tests
+  - `GenesisG1Env.contract_only()` for local reset/step verification
+- Added local tests in `tests/test_genesis_adapter.py`.
+- H200 check:
+
+```bash
+python3 - <<'PY'
+import importlib.util
+print(importlib.util.find_spec('genesis'))
+PY
+```
+
+Result: `None`; real Genesis package is not installed on the H200 target.
+
+- Local verification command:
+
+```bash
+PYTHONPATH=src python -m pytest -p no:cacheprovider
+```
+
+Result: `6 passed`.
+
 # Review
 
-Result: pending
-Syntax:
-Hack:
-Scope:
-Efficiency:
-Hardware:
-Verify:
-Findings:
-
+Result: partial.
+Syntax: pass.
+Hack: pass; local backend is explicitly contract-only and does not claim physics fidelity.
+Scope: pass; adapter boundary and tests only.
+Efficiency: pass; no global scene singleton and no per-step logging.
+Hardware: pending; real Genesis H200 reset/step cannot run until the package is installed.
+Verify: local reset/step boundary passed; real Genesis reset/step pending.
+Findings: next blocker is installing or transferring `genesis-world` and any required dependencies onto H200 without relying on target outbound network.
