@@ -41,6 +41,15 @@ Hardware:
   - `ContractOnlyBackend` for local boundary tests
   - `GenesisG1Env.contract_only()` for local reset/step verification
 - Added local tests in `tests/test_genesis_adapter.py`.
+- 2026-05-06: Added `GenesisSceneConfig` and `GenesisG1SceneBackend`, a
+  single-environment real Genesis backend for the validated 29-motor G1 asset.
+  The backend:
+  - loads Genesis lazily;
+  - builds `gs.Scene(show_viewer=False)` with the G1 MJCF asset;
+  - resolves the 29 policy motors through `robot.get_joint(name).dofs_idx_local`;
+  - applies clipped normalized actions through `robot.control_dofs_position`;
+  - steps Genesis for `decimation=4`;
+  - returns the configured 96D observation boundary.
 - H200 check:
 
 ```bash
@@ -133,25 +142,40 @@ SONIC_G1_29DOF_ORIGINAL_FILLED_MJCF_CUDA_EXIT_STATUS=0
 `n_dofs`, while the policy/action contract is the 29 motor actuators recorded by
 `XML_MOTOR_TAGS 29`.
 
+- H200 smoke for the repo `GenesisG1Env` real backend passed:
+
+```text
+Log: /root/h200-locomotion-lab-runs/task004-genesis-g1-baseline/logs/genesis_g1_env_backend_reset_step.log
+ASSET /root/h200-locomotion-lab-runs/task002-sonic-mujoco-smoke/GR00T-WholeBodyControl/gear_sonic/data/robots/g1/g1_29dof.xml
+ENV_DESC Genesis G1 boundary: 96D obs, 29D action, 50Hz policy.
+RESET_OBS_LEN 96
+MOTOR_DOF_INDICES (6, 9, 12, 15, 19, 23, 7, 10, 13, 16, 20, 24, 8, 11, 14, 17, 21, 25, 27, 29, 31, 33, 18, 22, 26, 28, 30, 32, 34)
+DEFAULT_MOTOR_POS_LEN 29
+STEP_OBS_LEN 96
+STEP_INFO {'backend': 'genesis', 'step_count': 1, 'asset_path': '...', 'robot_n_dofs': 35, 'motor_dof_count': 29}
+GENESIS_G1_ENV_BACKEND_RESET_STEP_OK
+GENESIS_G1_ENV_BACKEND_RESET_STEP_EXIT_STATUS=0
+```
+
 - Local verification command:
 
 ```bash
 PYTHONPATH=src python -m pytest -p no:cacheprovider
 ```
 
-Result: `6 passed`.
+Result: `8 passed`.
 
 # Review
 
-Result: partial.
+Result: pass for reset/step smoke.
 Syntax: pass.
-Hack: pass; local backend is explicitly contract-only and does not claim physics fidelity.
-Scope: pass; adapter boundary and tests only.
+Hack: pass; local contract-only backend remains explicit, and the real backend is
+clearly labeled as a single-env Genesis smoke backend rather than a training env.
+Scope: pass; adapter boundary, tests, and task notes only.
 Efficiency: pass; no global scene singleton and no per-step logging.
 Hardware: pass for raw Genesis CUDA import/build/step smoke on H200.
-Verify: local reset/step boundary passed; raw Genesis H200 plane and SONIC G1
-MJCF build/step smoke passed.
-Findings: the repo environment wrapper still has only a contract-only backend.
-The 29-motor Genesis-compatible G1 asset is now identified and smoke-tested, but
-the next implementation step is still building the real Genesis backend behind
-`GenesisG1Env` before PPO training.
+Verify: local reset/step tests passed; raw Genesis H200 plane, SONIC G1 MJCF
+build/step, and repo `GenesisG1Env` real backend reset/step smoke passed.
+Findings: PPO training is still pending. The observation is contract-shaped and
+minimal; reward, termination, vectorized envs, and locomotion reset curriculum
+belong in the PPO baseline subtask.

@@ -8,6 +8,7 @@ the real H200 path can provide a Genesis-backed implementation later.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
 
 
@@ -115,6 +116,21 @@ class GenesisBackend(Protocol):
         """Apply one policy action and return the next transition."""
 
 
+@dataclass(frozen=True)
+class GenesisSceneConfig:
+    """Runtime options for the single-env Genesis G1 smoke backend."""
+
+    asset_path: str
+    backend: str = "cuda"
+    show_viewer: bool = False
+    n_envs: int = 1
+    add_plane: bool = True
+    base_pos: tuple[float, float, float] = (0.0, 0.0, 0.8)
+    convexify: bool = False
+    decimate: bool = False
+    logging_level: str = "warning"
+
+
 class ContractOnlyBackend:
     """Deterministic backend for local boundary tests.
 
@@ -143,6 +159,135 @@ class ContractOnlyBackend:
         )
 
 
+class GenesisG1SceneBackend:
+    """Single-environment Genesis backend for the validated 29-motor G1 asset."""
+
+    def __init__(
+        self,
+        config: GenesisSceneConfig,
+        contract: GenesisG1Contract | None = None,
+        genesis_module: Any | None = None,
+    ) -> None:
+        self.config = config
+        self.contract = contract or GenesisG1Contract()
+        self.contract.validate()
+        if self.config.n_envs != 1:
+            raise NotImplementedError("GenesisG1SceneBackend currently supports n_envs=1 only")
+        if not Path(self.config.asset_path).is_file():
+            raise FileNotFoundError(f"Genesis G1 asset not found: {self.config.asset_path}")
+
+        self.gs = genesis_module or import_genesis_module()
+        self._init_genesis()
+        self.scene = self._build_scene()
+        self.motor_dof_indices = self._resolve_motor_dof_indices()
+        self.default_motor_positions = self._read_motor_positions()
+        self.previous_action = (0.0,) * self.contract.action_dim
+        self.step_count = 0
+
+    def reset(self, seed: int | None = None) -> tuple[float, ...]:
+        self.robot.set_dofs_position(
+            self.default_motor_positions,
+            dofs_idx_local=self.motor_dof_indices,
+            zero_velocity=True,
+        )
+        self.robot.set_dofs_velocity(None)
+        self.previous_action = (0.0,) * self.contract.action_dim
+        self.step_count = 0
+        return self._observation()
+
+    def step(self, action: Sequence[float]) -> StepResult:
+        if len(action) != self.contract.action_dim:
+            raise ValueError(f"Expected action_dim={self.contract.action_dim}, got {len(action)}")
+        clipped_action = tuple(max(-1.0, min(1.0, float(value))) for value in action)
+        target = tuple(
+            default + self.contract.action_scale_rad * delta
+            for default, delta in zip(self.default_motor_positions, clipped_action)
+        )
+        self.robot.control_dofs_position(target, dofs_idx_local=self.motor_dof_indices)
+        for _ in range(self.contract.decimation):
+            self.scene.step()
+        self.previous_action = clipped_action
+        self.step_count += 1
+        return StepResult(
+            observation=self._observation(),
+            reward=0.0,
+            terminated=False,
+            truncated=False,
+            info={
+                "backend": "genesis",
+                "step_count": self.step_count,
+                "asset_path": self.config.asset_path,
+                "robot_n_dofs": int(getattr(self.robot, "n_dofs", -1)),
+                "motor_dof_count": len(self.motor_dof_indices),
+            },
+        )
+
+    def _init_genesis(self) -> None:
+        backend = getattr(self.gs, self.config.backend, self.config.backend)
+        self.gs.init(backend=backend, logging_level=self.config.logging_level)
+
+    def _build_scene(self) -> Any:
+        scene = self.gs.Scene(
+            show_viewer=self.config.show_viewer,
+            sim_options=self.gs.options.SimOptions(dt=self.contract.sim_dt_s),
+        )
+        if self.config.add_plane:
+            scene.add_entity(self.gs.morphs.Plane())
+        self.robot = scene.add_entity(
+            self.gs.morphs.MJCF(
+                file=self.config.asset_path,
+                pos=self.config.base_pos,
+                convexify=self.config.convexify,
+                decimate=self.config.decimate,
+            )
+        )
+        scene.build(n_envs=self.config.n_envs)
+        return scene
+
+    def _resolve_motor_dof_indices(self) -> tuple[int, ...]:
+        indices: list[int] = []
+        for joint_name in self.contract.joint_order:
+            joint = self.robot.get_joint(joint_name)
+            joint_indices = getattr(joint, "dofs_idx_local")
+            if len(joint_indices) != 1:
+                raise ValueError(f"Expected single-DoF joint {joint_name}, got {joint_indices}")
+            indices.append(int(joint_indices[0]))
+        if len(indices) != self.contract.action_dim:
+            raise ValueError(
+                f"Expected {self.contract.action_dim} motor DOFs, got {len(indices)}"
+            )
+        if len(set(indices)) != len(indices):
+            raise ValueError(f"Duplicate Genesis motor DOF indices: {indices}")
+        return tuple(indices)
+
+    def _read_motor_positions(self) -> tuple[float, ...]:
+        return _flatten_numeric(self.robot.get_dofs_position(dofs_idx_local=self.motor_dof_indices))
+
+    def _read_motor_velocities(self) -> tuple[float, ...]:
+        return _flatten_numeric(self.robot.get_dofs_velocity(dofs_idx_local=self.motor_dof_indices))
+
+    def _observation(self) -> tuple[float, ...]:
+        motor_positions = self._read_motor_positions()
+        motor_velocities = self._read_motor_velocities()
+        position_error = tuple(
+            position - default
+            for position, default in zip(motor_positions, self.default_motor_positions)
+        )
+        observation = (
+            (0.0, 0.0, 0.0)
+            + (0.0, 0.0, -1.0)
+            + (0.0, 0.0, 0.0)
+            + position_error
+            + motor_velocities
+            + self.previous_action
+        )
+        if len(observation) != self.contract.observation_dim:
+            raise ValueError(
+                f"Expected observation_dim={self.contract.observation_dim}, got {len(observation)}"
+            )
+        return observation
+
+
 class GenesisG1Env:
     """Thin environment shell around a Genesis-compatible backend."""
 
@@ -163,6 +308,24 @@ class GenesisG1Env:
     def contract_only(cls) -> "GenesisG1Env":
         contract = GenesisG1Contract()
         return cls(contract=contract, backend=ContractOnlyBackend(contract))
+
+    @classmethod
+    def from_genesis_asset(
+        cls,
+        asset_path: str,
+        *,
+        backend: str = "cuda",
+        show_viewer: bool = False,
+        logging_level: str = "warning",
+    ) -> "GenesisG1Env":
+        contract = GenesisG1Contract()
+        scene_config = GenesisSceneConfig(
+            asset_path=asset_path,
+            backend=backend,
+            show_viewer=show_viewer,
+            logging_level=logging_level,
+        )
+        return cls(contract=contract, backend=GenesisG1SceneBackend(scene_config, contract))
 
     def describe(self) -> str:
         return (
@@ -222,3 +385,19 @@ def import_genesis_module() -> Any:
             "genesis dependency, then provide a real backend for GenesisG1Env."
         ) from exc
     return gs
+
+
+def _flatten_numeric(values: Any) -> tuple[float, ...]:
+    """Convert tensor-like Genesis results to a flat tuple of Python floats."""
+
+    if hasattr(values, "detach"):
+        values = values.detach()
+    if hasattr(values, "cpu"):
+        values = values.cpu()
+    if hasattr(values, "reshape"):
+        values = values.reshape(-1)
+    if hasattr(values, "tolist"):
+        values = values.tolist()
+    if isinstance(values, (int, float)):
+        return (float(values),)
+    return tuple(float(value) for value in values)
