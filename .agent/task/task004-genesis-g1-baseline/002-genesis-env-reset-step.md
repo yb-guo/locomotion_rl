@@ -193,19 +193,25 @@ SONIC_REFERENCE_REPLAY_DECIMATE_20F_EXIT_STATUS=0
 
 - 2026-05-06: Added
   `python -m h200_locomotion_lab.tools.sonic_reference_replay_gif` and rendered
-  a visual GIF for inspection using the same decimated 20-frame SONIC reference
-  joint-position replay:
+  visual GIFs for inspection. The first dynamic-PD GIF showed the robot sinking
+  into/behind the ground plane and is not treated as visual pass evidence. For
+  visual asset/motion inspection, the GIF tool now defaults to `--mode
+  kinematic`, which directly sets SONIC reference root position, root
+  quaternion, and 29D joint positions per frame.
 
 ```text
-Log: /root/h200-locomotion-lab-runs/task004-genesis-g1-baseline/logs/genesis_g1_sonic_reference_replay_gif_20f.log
-Remote GIF: /root/h200-locomotion-lab-runs/task004-genesis-g1-baseline/videos/genesis_g1_sonic_reference_replay_20f.gif
-Local copy: .agent/task/task004-genesis-g1-baseline/artifacts/genesis_g1_sonic_reference_replay_20f.gif
-RES (240, 180)
-RENDERED_FRAMES 20
-GIF_BYTES 48546
-BASE_HEIGHT_FINAL 0.791166
+Log: /root/h200-locomotion-lab-runs/task004-genesis-g1-baseline/logs/genesis_g1_sonic_reference_replay_kinematic_highcam_gif_40f.log
+Remote GIF: /root/h200-locomotion-lab-runs/task004-genesis-g1-baseline/videos/genesis_g1_sonic_reference_replay_kinematic_highcam_40f.gif
+Local copy: .agent/task/task004-genesis-g1-baseline/artifacts/genesis_g1_sonic_reference_replay_kinematic_highcam_40f.gif
+MODE kinematic
+RES (360, 260)
+RENDERED_FRAMES 40
+GIF_BYTES 124927
+BASE_HEIGHT_MIN 0.790827
+BASE_HEIGHT_MAX 0.791459
+BASE_HEIGHT_FINAL 0.790902
 SONIC_REFERENCE_REPLAY_GIF_OK
-SONIC_REFERENCE_REPLAY_GIF_20F_EXIT_STATUS=0
+SONIC_REFERENCE_REPLAY_KINEMATIC_HIGHCAM_GIF_40F_EXIT_STATUS=0
 ```
 
 - Local verification command:

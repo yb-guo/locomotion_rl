@@ -32,6 +32,13 @@ def main() -> None:
     parser.add_argument("--logging-level", default="warning")
     parser.add_argument("--decimate", action="store_true")
     parser.add_argument("--convexify", action="store_true")
+    parser.add_argument(
+        "--mode",
+        choices=("dynamic", "kinematic"),
+        default="kinematic",
+        help="dynamic uses PD position targets; kinematic sets reference root/joints per frame.",
+    )
+    parser.add_argument("--no-plane", action="store_true")
     parser.add_argument("--camera-pos", nargs=3, type=float, default=(2.4, -3.2, 1.45))
     parser.add_argument("--camera-lookat", nargs=3, type=float, default=(0.0, 0.0, 0.68))
     parser.add_argument("--fov", type=float, default=35.0)
@@ -45,6 +52,7 @@ def main() -> None:
     contract = GenesisG1Contract()
     joint_rows = _read_csv_rows(reference_dir / "joint_pos.csv", contract.action_dim)
     body_rows = _read_csv_rows(reference_dir / "body_pos.csv", 42)
+    body_quat_rows = _read_csv_rows(reference_dir / "body_quat.csv", 56)
     frames_to_render = min(args.frames, len(joint_rows))
     if frames_to_render <= 0:
         raise ValueError("frames must be positive")
@@ -59,6 +67,8 @@ def main() -> None:
     print("RES", (args.width, args.height))
     print("DECIMATE", args.decimate)
     print("CONVEXIFY", args.convexify)
+    print("MODE", args.mode)
+    print("ADD_PLANE", not args.no_plane)
     print("CAMERA_POS", tuple(args.camera_pos))
     print("CAMERA_LOOKAT", tuple(args.camera_lookat))
 
@@ -67,7 +77,8 @@ def main() -> None:
         show_viewer=False,
         sim_options=gs.options.SimOptions(dt=contract.sim_dt_s),
     )
-    scene.add_entity(gs.morphs.Plane())
+    if not args.no_plane:
+        scene.add_entity(gs.morphs.Plane())
     robot = scene.add_entity(
         gs.morphs.MJCF(
             file=str(asset),
@@ -91,6 +102,7 @@ def main() -> None:
     robot.set_dofs_kp(SONIC_G1_KPS, dofs_idx_local=motor_dof_indices)
     robot.set_dofs_kv(SONIC_G1_KDS, dofs_idx_local=motor_dof_indices)
     robot.set_pos(tuple(body_rows[0][:3]))
+    robot.set_quat(tuple(body_quat_rows[0][:4]))
     robot.set_dofs_position(
         tuple(joint_rows[0]),
         dofs_idx_local=motor_dof_indices,
@@ -102,9 +114,19 @@ def main() -> None:
     base_heights: list[float] = []
     start = time.time()
     for frame_index, target in enumerate(joint_rows[:frames_to_render]):
-        robot.control_dofs_position(tuple(target), dofs_idx_local=motor_dof_indices)
-        for _ in range(contract.decimation):
+        if args.mode == "kinematic":
+            robot.set_pos(tuple(body_rows[frame_index][:3]))
+            robot.set_quat(tuple(body_quat_rows[frame_index][:4]))
+            robot.set_dofs_position(
+                tuple(target),
+                dofs_idx_local=motor_dof_indices,
+                zero_velocity=True,
+            )
             scene.step()
+        else:
+            robot.control_dofs_position(tuple(target), dofs_idx_local=motor_dof_indices)
+            for _ in range(contract.decimation):
+                scene.step()
         rgb, _, _, _ = camera.render(
             rgb=True,
             depth=False,
