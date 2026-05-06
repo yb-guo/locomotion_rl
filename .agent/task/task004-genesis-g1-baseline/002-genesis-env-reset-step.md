@@ -157,6 +157,40 @@ GENESIS_G1_ENV_BACKEND_RESET_STEP_OK
 GENESIS_G1_ENV_BACKEND_RESET_STEP_EXIT_STATUS=0
 ```
 
+- 2026-05-06: Added
+  `python -m h200_locomotion_lab.tools.sonic_reference_replay_smoke` for a
+  SONIC reference replay smoke. This is not an ONNX policy-action test: it uses
+  SONIC `reference/example/*/joint_pos.csv` rows as 29D position targets in
+  MuJoCo/URDF order, sets the SONIC deploy Kp/Kd gains from
+  `policy_parameters.hpp`, and drives the Genesis backend through
+  `control_dofs_position`.
+- A first non-decimated 120-frame run against
+  `walking_quip_360_R_002__A428` did not reach frame output before the SSH
+  session closed after high-face mesh SDF preprocessing under a heavily loaded
+  H200. No replay/genesis process was left running afterward.
+- A decimated 20-frame smoke passed on H200:
+
+```text
+Log: /root/h200-locomotion-lab-runs/task004-genesis-g1-baseline/logs/genesis_g1_sonic_reference_replay_decimate_20f.log
+SONIC_REFERENCE_REPLAY_MODE joint_pos_as_position_targets
+REF_DIR .../gear_sonic_deploy/reference/example/walking_quip_360_R_002__A428
+JOINT_POS_ROWS 455
+REPLAY_FRAMES 20
+MOTOR_DOF_COUNT 29
+FRAME 0 base_z 0.791166 mean_abs_err 0.003801 max_abs_err 0.061452 max_abs_qvel 6.86949
+FRAME 19 base_z 0.791166 mean_abs_err 0.008670 max_abs_err 0.126555 max_abs_qvel 4.30685
+FINITE_OK True
+BASE_HEIGHT_MIN 0.791166
+BASE_HEIGHT_FINAL 0.791166
+MEAN_ABS_TRACKING_ERROR_AVG 0.0103434
+MAX_ABS_TRACKING_ERROR 0.148632
+MAX_ABS_QVEL 7.94898
+SIM_STEPS 80
+HEIGHT_OK_RANGE 0.2 1.5 True
+SONIC_REFERENCE_REPLAY_GENESIS_SMOKE_OK
+SONIC_REFERENCE_REPLAY_DECIMATE_20F_EXIT_STATUS=0
+```
+
 - Local verification command:
 
 ```bash
@@ -175,7 +209,9 @@ Scope: pass; adapter boundary, tests, and task notes only.
 Efficiency: pass; no global scene singleton and no per-step logging.
 Hardware: pass for raw Genesis CUDA import/build/step smoke on H200.
 Verify: local reset/step tests passed; raw Genesis H200 plane, SONIC G1 MJCF
-build/step, and repo `GenesisG1Env` real backend reset/step smoke passed.
+build/step, repo `GenesisG1Env` real backend reset/step smoke, and decimated
+SONIC reference joint-position replay smoke passed.
 Findings: PPO training is still pending. The observation is contract-shaped and
 minimal; reward, termination, vectorized envs, and locomotion reset curriculum
-belong in the PPO baseline subtask.
+belong in the PPO baseline subtask. A true SONIC ONNX policy-action replay is
+still separate from this reference joint-position replay.

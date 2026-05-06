@@ -316,6 +316,8 @@ class GenesisG1Env:
         *,
         backend: str = "cuda",
         show_viewer: bool = False,
+        convexify: bool = False,
+        decimate: bool = False,
         logging_level: str = "warning",
     ) -> "GenesisG1Env":
         contract = GenesisG1Contract()
@@ -323,6 +325,8 @@ class GenesisG1Env:
             asset_path=asset_path,
             backend=backend,
             show_viewer=show_viewer,
+            convexify=convexify,
+            decimate=decimate,
             logging_level=logging_level,
         )
         return cls(contract=contract, backend=GenesisG1SceneBackend(scene_config, contract))
