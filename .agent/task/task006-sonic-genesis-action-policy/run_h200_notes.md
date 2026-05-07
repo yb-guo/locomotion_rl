@@ -176,3 +176,107 @@ Review: the 100-frame decoder-only Genesis rollout remains upright under the
 same token replay and official captured history initialization used for the
 20-frame smoke. This is still replay-token validation, not a full online SONIC
 planner/encoder rollout.
+
+## Locomotion Probe 2026-05-07
+
+Added a dedicated probe:
+
+```text
+python -m h200_locomotion_lab.tools.genesis_sonic_policy_locomotion_probe
+```
+
+The probe keeps the same decoder-only rollout path, but reports locomotion
+metrics instead of only height:
+
+- root x/y/z/yaw
+- horizontal displacement and xy path length
+- average xy speed at the 50 Hz policy rate
+- left/right ankle-roll link height and net contact force
+- single-support, double-support, no-support frames
+- contact switches
+
+Local verification:
+
+```text
+tests/test_genesis_sonic_policy_locomotion_probe.py: 5 passed
+related local pytest group: 28 passed
+```
+
+H200 targeted pytest:
+
+```text
+tests/test_genesis_sonic_policy_locomotion_probe.py: 5 passed
+```
+
+H200 100-frame locomotion probe, same token replay and initial root qpos:
+
+```text
+ROOT_X_START 0.002389000030234456
+ROOT_Y_START 0.011727999895811081
+ROOT_Z_START 0.7911660075187683
+ROOT_X_FINAL 0.0030075262766331434
+ROOT_Y_FINAL -0.013038256205618382
+ROOT_Z_FINAL 0.7874254584312439
+ROOT_Z_MIN 0.7512305378913879
+ROOT_Z_MAX 0.7911660075187683
+HORIZONTAL_DISPLACEMENT 0.024773978606575816
+PATH_LENGTH_XY 0.08982350716347963
+AVERAGE_SPEED_XY 0.012386989303287908
+YAW_DELTA -0.08904474184344568
+LEFT_CONTACT_FRAMES 96
+RIGHT_CONTACT_FRAMES 96
+LEFT_CONTACT_SWITCHES 1
+RIGHT_CONTACT_SWITCHES 1
+TOTAL_CONTACT_SWITCHES 2
+SINGLE_SUPPORT_FRAMES 0
+DOUBLE_SUPPORT_FRAMES 96
+NO_SUPPORT_FRAMES 4
+TRANSLATION_OBSERVED False
+FOOT_ALTERNATION_OBSERVED True
+LOCOMOTION_OBSERVED False
+GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK
+```
+
+H200 300-frame attempt:
+
+```text
+The SSH connection was closed by the remote host after about 10 minutes before
+the buffered output returned. This was treated as infrastructure timeout, not a
+probe pass/fail result.
+```
+
+H200 200-frame locomotion probe with unbuffered output:
+
+```text
+ROOT_X_START 0.002389000030234456
+ROOT_Y_START 0.011727999895811081
+ROOT_Z_START 0.7911660075187683
+ROOT_X_FINAL 0.0051521193236112595
+ROOT_Y_FINAL -0.009658973664045334
+ROOT_Z_FINAL 0.7868996262550354
+ROOT_Z_MIN 0.7512305378913879
+ROOT_Z_MAX 0.7911660075187683
+HORIZONTAL_DISPLACEMENT 0.021564727363902112
+PATH_LENGTH_XY 0.16066903187788673
+AVERAGE_SPEED_XY 0.005391181840975528
+YAW_DELTA -0.09394057327026872
+LEFT_CONTACT_FRAMES 196
+RIGHT_CONTACT_FRAMES 196
+LEFT_CONTACT_SWITCHES 1
+RIGHT_CONTACT_SWITCHES 1
+TOTAL_CONTACT_SWITCHES 2
+SINGLE_SUPPORT_FRAMES 0
+DOUBLE_SUPPORT_FRAMES 196
+NO_SUPPORT_FRAMES 4
+TRANSLATION_OBSERVED False
+FOOT_ALTERNATION_OBSERVED True
+LOCOMOTION_OBSERVED False
+GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK
+```
+
+Review: the user's visual read was correct. Current token replay validates a
+stable standing/settling decoder-only closed loop, not walking. The next route
+should find a captured SONIC walking command/token/action segment or connect
+the full online SONIC command -> encoder/planner -> decoder path, then require
+non-trivial root translation and single-support foot alternation as pass
+criteria.
