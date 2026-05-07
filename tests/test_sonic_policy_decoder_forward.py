@@ -5,6 +5,7 @@ import pytest
 from h200_locomotion_lab.tools.sonic_policy_decoder_forward import (
     is_finite,
     read_obs_csv,
+    read_obs_csv_rows,
     vector_range,
     zero_obs,
 )
@@ -25,6 +26,24 @@ def test_read_obs_csv_with_header() -> None:
     assert len(row) == 994
     assert row[0] == 0.0
     assert row[-1] == 0.993
+
+
+def test_read_obs_csv_rows_respects_max_rows() -> None:
+    rows = read_obs_csv_rows(_fixture_path("obs_994_with_header.csv"), 994, max_rows=1)
+
+    assert len(rows) == 1
+    assert len(rows[0]) == 994
+
+
+def test_read_obs_csv_rows_rejects_non_positive_max_rows() -> None:
+    with pytest.raises(ValueError, match="max rows must be positive"):
+        read_obs_csv_rows(_fixture_path("obs_994_with_header.csv"), 994, max_rows=0)
+
+
+def test_read_obs_csv_rows_accepts_cpp_trailing_commas() -> None:
+    rows = read_obs_csv_rows(_fixture_path("obs_cpp_trailing_commas.csv"), 4)
+
+    assert rows == [(1.0, 2.0, 3.0, 4.0), (5.0, 6.0, 7.0, 8.0)]
 
 
 def test_read_obs_csv_rejects_wrong_width() -> None:

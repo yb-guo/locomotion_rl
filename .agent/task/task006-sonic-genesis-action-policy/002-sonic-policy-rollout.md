@@ -201,3 +201,218 @@ the real `obs_dict` construction/history/reference-motion contract for the
 decoder input. The next step is to map Genesis state plus SONIC reference
 context into the 994D decoder observation, or to reuse the official C++ deploy
 input logging path to capture valid `obs_dict` rows.
+
+- 2026-05-07: Started route 1: reuse the official C++ deploy path to capture
+  valid policy `obs_dict` rows via `--policy-input-logfile`.
+
+  Findings while building the H200 harness:
+
+  - `scripts/setup_env.sh` must be sourced with `set +e`/`set +u`, matching
+    `deploy.sh`; otherwise optional environment probes can abort the harness.
+  - `TensorRT_ROOT` and `LD_LIBRARY_PATH` must explicitly prefer the task002
+    TensorRT 10.13.3/CUDA 12.9 extraction:
+
+```text
+TensorRT_ROOT=/root/h200-locomotion-lab-runs/task002-sonic-mujoco-smoke/trt-10.13.3-cuda12.9-root/usr
+LD_LIBRARY_PATH starts with:
+/root/h200-locomotion-lab-runs/task002-sonic-mujoco-smoke/trt-10.13.3-cuda12.9-root/usr/lib/x86_64-linux-gnu
+```
+
+  - If the system TensorRT library is selected instead, the official deploy
+    crashes before policy input capture:
+
+```text
+createInferRuntime: Error Code 6: API Usage Error (CUDA initialization failure with error: 35)
+Segmentation fault
+```
+
+  - The official keyboard start key is right bracket `]`, not left bracket
+    `[`. The previous harness label `sent_start_bracket` was ambiguous.
+  - When using a FIFO for stdin, the write side must be opened and held before
+    waiting for readiness. Otherwise the deploy process blocks while opening
+    stdin and cannot emit the readiness log line.
+
+  Successful official capture evidence:
+
+```text
+Command path:
+/root/h200-locomotion-lab-runs/task002-sonic-mujoco-smoke/GR00T-WholeBodyControl/gear_sonic_deploy/target/release/g1_deploy_onnx_ref
+
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/official_deploy_policy_input_capture.log
+
+Policy input CSV:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/actions/official_policy_input_capture.csv
+
+Target motion CSV:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/actions/official_target_motion_capture.csv
+
+Rows: 1007
+Dims: [994]
+Finite: True
+Min/max: -35.8944 / 42.5034
+First 10 obs values:
+(0.0, 0.125, 0.0, -0.125, 0.0625, -0.1875, 0.375, 0.1875, 0.125, -0.0625)
+Deploy status: 0
+```
+
+  Official deploy log confirms CONTROL mode:
+
+```text
+[HARNESS] ready=1
+[HARNESS] sent_start_right_bracket
+Init Done
+[Control] DEBUG: operator_state.start=true, transitioning to CONTROL state
+Loop timing ... Obs: ... Policy: ...
+Playing motion 0 from frame 0 to end (497 total frames)
+[InterfaceManager] EMERGENCY STOP triggered (O/o key pressed)
+[DEBUG] Program exiting normally...
+```
+
+- Added batch decoding support to:
+
+```text
+python -m h200_locomotion_lab.tools.sonic_policy_decoder_forward
+```
+
+  It can now read multiple numeric obs rows from `--obs-csv`, optionally limit
+  them with `--max-rows`, and write one 29D action row per obs row. The previous
+  single-row `--repeat-rows` behavior is preserved.
+
+  Local verification:
+
+```text
+Command: PYTHONPATH=src python -m pytest -p no:cacheprovider
+Result: 26 passed
+```
+
+  Follow-up completed after SSH recovered:
+
+```text
+H200 test command:
+PYTHONPATH=src python3 -m pytest -p no:cacheprovider tests/test_sonic_policy_decoder_forward.py
+Result: 8 passed
+```
+
+- 2026-05-07: Real official obs rows decoded through `model_decoder.onnx` on
+  H200 with the updated batch decoder path.
+
+```text
+Command:
+PYTHONPATH=src python3 -m h200_locomotion_lab.tools.sonic_policy_decoder_forward \
+  --decoder /root/h200-locomotion-lab-runs/task002-sonic-mujoco-smoke/GR00T-WholeBodyControl/gear_sonic_deploy/policy/release/model_decoder.onnx \
+  --obs-csv /root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/actions/official_policy_input_capture.csv \
+  --max-rows 50 \
+  --output-actions-csv /root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/actions/official_policy_input_decoder_actions_50f.csv
+
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/sonic_decoder_official_obs_50f.log
+
+OBS_ROWS 50
+OBS_DIM 994
+OBS_FINITE True
+ACTION_ROWS 50
+ACTION_DIM 29
+ACTION_FINITE True
+ACTION_MIN_MAX -3.584078311920166 5.846455097198486
+ACTION_MAX_ABS 5.846455097198486
+ACTION_FIRST10 (0.5058421492576599, 0.10938304662704468, -0.025784069672226906, -0.13401781022548676, 0.029130570590496063, 0.6880656480789185, -0.13201797008514404, -0.1565856784582138, -0.08554115146398544, 0.6643720269203186)
+OUTPUT_ACTION_ROWS 50
+SONIC_POLICY_DECODER_FORWARD_OK
+```
+
+  Note: the decoded action stream is not bounded to `[-1, 1]`; Genesis replay
+  reports and clips out-of-range values through the existing action contract.
+
+- 2026-05-07: H200 Genesis numeric smoke using the official-obs-decoded SONIC
+  actions passed.
+
+```text
+Command:
+PYTHONPATH=src python3 -m h200_locomotion_lab.tools.genesis_action_replay_smoke \
+  --asset /root/h200-locomotion-lab-runs/task002-sonic-mujoco-smoke/GR00T-WholeBodyControl/gear_sonic/data/robots/g1/g1_29dof.xml \
+  --actions-csv /root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/actions/official_policy_input_decoder_actions_50f.csv \
+  --frames 50 \
+  --backend cuda \
+  --logging-level warning \
+  --base-pos 0.002389 0.011728 0.791166 \
+  --base-quat 0.711231 -0.00883 -0.004562 -0.702888 \
+  --default-joint-pos-csv /root/h200-locomotion-lab-runs/task002-sonic-mujoco-smoke/GR00T-WholeBodyControl/gear_sonic_deploy/reference/example/walking_quip_360_R_002__A428/joint_pos.csv \
+  --default-joint-pos-row 0 \
+  --min-base-height 0.3 \
+  --max-base-height 1.2
+
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_official_obs_decoder_actions_50f.log
+
+REPLAY_FRAMES 50
+ACTION_MIN_MAX -3.58407831 5.8464551
+ACTION_MAX_ABS 5.8464551
+ACTION_OUT_OF_RANGE_VALUES 465
+FRAME 0 base_z 0.7911660075187683 min_link_z 0.7911660075187683 action_min -0.729726672 action_max 0.824930727 max_abs_qvel 2.802633285522461 obs_len 96
+FRAME 49 base_z 0.7911660075187683 min_link_z 0.7911660075187683 action_min -1.0 action_max 1.0 max_abs_qvel 3.5462851524353027 obs_len 96
+FINITE_OK True
+BASE_HEIGHT_MIN 0.7911660075187683
+BASE_HEIGHT_MAX 0.7911660075187683
+BASE_HEIGHT_FINAL 0.7911660075187683
+MIN_LINK_HEIGHT_MIN 0.7911660075187683
+MIN_LINK_HEIGHT_FINAL 0.7911660075187683
+MAX_ABS_QVEL 3.6143109798431396
+POLICY_STEPS 50
+SIM_STEPS 200
+HEIGHT_OK_RANGE 0.3 1.2 True
+GENESIS_ACTION_REPLAY_SMOKE_OK
+```
+
+  The local SSH wrapper timed out after the process had printed
+  `GENESIS_ACTION_REPLAY_SMOKE_OK`; a follow-up process check found no
+  `genesis_action_replay_smoke` or `run_sim_loop.py` process left running.
+
+- 2026-05-07: H200 GIF rendering for the first 20 official-obs-decoded actions
+  passed.
+
+```text
+Remote GIF:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/videos/genesis_g1_official_obs_decoder_actions_20f.gif
+
+Local GIF:
+.agent/task/task006-sonic-genesis-action-policy/artifacts/genesis_g1_official_obs_decoder_actions_20f.gif
+
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_official_obs_decoder_actions_20f_gif.log
+
+FRAMES 20
+ACTION_MIN_MAX -3.30871296 4.07460451
+ACTION_MAX_ABS 4.07460451
+ACTION_OUT_OF_RANGE_VALUES 156
+FRAME 0 base_z 0.7911660075187683 rgb_shape (320, 420, 3)
+FRAME 19 base_z 0.7911660075187683 rgb_shape (320, 420, 3)
+BASE_HEIGHT_MIN 0.7911660075187683
+BASE_HEIGHT_MAX 0.7911660075187683
+BASE_HEIGHT_FINAL 0.7911660075187683
+RENDERED_FRAMES 20
+GIF_BYTES 50474
+GENESIS_ACTION_REPLAY_GIF_OK
+```
+
+  Local artifact check:
+
+```text
+Length: 50474 bytes
+```
+
+# Review Update
+
+Status: route 1 passed for action-bridge validation.
+
+The path `official deploy obs capture -> SONIC decoder -> Genesis G1 action
+replay` now has H200 evidence. This is materially different from the earlier
+zero-observation decoder smoke: the action source is now 50 real `obs_dict[994]`
+rows emitted by the official C++ deploy loop while it was in CONTROL mode.
+
+Remaining limitation: this is still not a Genesis closed-loop SONIC policy. The
+policy observations are captured from the official MuJoCo/deploy stack, decoded
+offline, and replayed in Genesis. The next step for true closed-loop work is to
+construct the 994D policy observation online from Genesis state, reference
+tokens/history, and last-action buffers, then call the decoder each control
+step.
