@@ -507,3 +507,256 @@ GENESIS_ACTION_REPLAY_SMOKE_OK
   restore the previous route pass because the contact/min-link metric still
   needs replacement and the corrected 50-frame/GIF evidence has not been
   regenerated.
+
+- 2026-05-07: Checked Genesis documentation and official SONIC deploy source
+  after the user challenged the usage.
+
+  Genesis findings:
+
+  - Genesis docs for `gs.morphs.MJCF` say `pos` is a translational offset
+    applied to the original floating-base pose, and `quat` is the entity
+    baselink quaternion. This supports the diagnosis that passing the SONIC
+    reference root z directly as `MJCF(pos=...)` double-counted the G1 MJCF
+    pelvis `pos="0 0 0.793"`.
+  - H200 has Genesis `0.4.6`. Its installed source shows `get_pos()` returns
+    `self._solver.get_links_pos(self.base_link_idx, ...)`, while `get_qpos()`
+    and `set_qpos()` are the generalized-coordinate APIs. For this MJCF/free
+    joint path, dynamic root pose evidence should use qpos/free-joint state,
+    not the old constant `get_pos()` smoke field.
+  - Genesis control docs show `set_dofs_position` is a hard state set and
+    `control_dofs_position` is the PD target API. The action replay path should
+    keep using `control_dofs_position` for motor targets, but initialization
+    should set root qpos explicitly instead of relying on an entity-level offset
+    as a root-state substitute.
+
+  SONIC action-bridge findings:
+
+  - Official `policy_parameters.hpp` documents:
+    `action_scale = 0.25 * effort_limit / stiffness` and
+    `target = action * action_scale + default_angle`.
+  - Official `g1_deploy_onnx_ref.cpp` maps policy output from IsaacLab order to
+    MuJoCo/hardware order with `floatarr[isaaclab_to_mujoco[i]]`, then applies
+    `g1_action_scale[i]` and `default_angles[i]`.
+  - The current Genesis contract is not SONIC-compatible: it assumes action
+    rows are already in MuJoCo order, applies a uniform `0.25` rad scale,
+    clips raw policy outputs to `[-1, 1]`, and uses the reference motion first
+    row as the action-zero pose in previous policy-action replays.
+  - Therefore the previous decoder-action Genesis replays were invalid for
+    SONIC action semantics even after the root-height fix. They only proved
+    that Genesis can step finite under some numeric 29D commands.
+
+  Next correction: add an explicit SONIC action bridge that takes raw decoder
+  output in IsaacLab order and computes MuJoCo-order position targets exactly
+  as official deploy does:
+
+```text
+target_mujoco[i] =
+    default_angles[i]
+    + raw_action_isaaclab[isaaclab_to_mujoco[i]] * g1_action_scale[i]
+```
+
+  Do not clip policy output unless the official deploy path is changed or a
+  separate safety experiment is explicitly labelled as non-official. After that,
+  rerun H200 numeric smoke and GIF with corrected root qpos initialization and
+  a contact metric based on Genesis contact APIs or link contact forces.
+
+- 2026-05-07: Implemented the corrected offline SONIC action bridge.
+
+  Code changes:
+
+  - Added `h200_locomotion_lab.sonic.g1_policy_bridge` with official
+    `isaaclab_to_mujoco`, `default_angles`, and per-joint `g1_action_scale`.
+  - Added `action_mode="sonic_policy_raw"` to `GenesisG1SceneBackend` and the
+    action replay tools. In this mode raw decoder output is not clipped and is
+    converted exactly as the official deploy path does:
+
+```text
+target_mujoco[i] =
+    default_angles[i]
+    + raw_action_isaaclab[isaaclab_to_mujoco[i]] * g1_action_scale[i]
+```
+
+  - Changed the default MJCF entity offset to `(0, 0, 0)` and added explicit
+    `root_qpos` initialization/reset support.
+  - Updated SONIC reference replay to set the floating root via qpos instead of
+    using `MJCF(pos=ref_root)` / `robot.set_pos(ref_root)`.
+  - Added Genesis contact metrics:
+    `CONTACT_COUNT_*` and `MAX_LINK_CONTACT_FORCE_*`. `MIN_LINK_HEIGHT_*` is
+    kept only as a diagnostic because it can read `0.0` from non-foot/static
+    links on this MJCF import path.
+
+  Verification:
+
+```text
+Local:
+PYTHONPATH=src python -m pytest -p no:cacheprovider
+Result: 36 passed
+
+H200:
+cd /root/h200-locomotion-lab-runs/task004-genesis-g1-baseline/repo_replay_smoke
+PYTHONPATH=src python3 -m pytest -p no:cacheprovider \
+  tests/test_genesis_action_replay_smoke.py \
+  tests/test_sonic_g1_policy_bridge.py \
+  tests/test_genesis_adapter.py
+Result: 26 passed
+```
+
+  Corrected 20-frame offline replay smoke using real official obs-decoded raw
+  decoder actions:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_official_obs_decoder_actions_20f_sonic_bridge.log
+
+ACTION_MODE sonic_policy_raw
+ACTION_SCALE_MODE sonic_g1_per_joint
+ACTION_SCALES_MIN_MAX 0.07450087032524835 0.5475464651829304
+DEFAULT_JOINT_POS_SOURCE sonic_default_angles
+BASE_POS (0.0, 0.0, 0.0)
+ROOT_QPOS (0.002389, 0.011728, 0.791166, 0.711231, -0.00883, -0.004562, -0.702888)
+BASE_HEIGHT_SOURCE floating_base_dof
+FRAME 0 base_z 0.788633406162262 action_min -0.729726672 action_max 0.824930727
+FRAME 19 base_z 0.7169569134712219 action_min -2.26649046 action_max 4.07460451
+FINITE_OK True
+BASE_HEIGHT_MIN 0.7169569134712219
+BASE_HEIGHT_MAX 0.788633406162262
+BASE_HEIGHT_FINAL 0.7169569134712219
+MAX_ABS_QVEL 15.70450496673584
+HEIGHT_OK_RANGE 0.3 1.2 True
+GENESIS_ACTION_REPLAY_SMOKE_OK
+```
+
+  Corrected 20-frame GIF:
+
+```text
+Remote GIF:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/videos/genesis_g1_official_obs_decoder_actions_20f_sonic_bridge.gif
+
+Local GIF:
+.agent/task/task006-sonic-genesis-action-policy/artifacts/genesis_g1_official_obs_decoder_actions_20f_sonic_bridge.gif
+
+Local contact sheet:
+.agent/task/task006-sonic-genesis-action-policy/artifacts/genesis_g1_official_obs_decoder_actions_20f_sonic_bridge_contact.png
+
+GIF log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_official_obs_decoder_actions_20f_sonic_bridge_gif.log
+
+BASE_HEIGHT_MIN 0.7169569730758667
+BASE_HEIGHT_MAX 0.788633406162262
+BASE_HEIGHT_FINAL 0.7169569730758667
+GIF_BYTES 57402
+GENESIS_ACTION_REPLAY_GIF_OK
+```
+
+  Short contact-metric smoke:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_official_obs_decoder_actions_5f_sonic_bridge_contact.log
+
+FRAME 0 base_z 0.788633406162262 contact_count 0 max_contact_force 0.0
+FRAME 4 base_z 0.7527632713317871 contact_count 2 max_contact_force 117.78065754789701
+CONTACT_COUNT_MAX 2
+CONTACT_COUNT_FINAL 2
+MAX_LINK_CONTACT_FORCE_MAX 260.3147467625842
+MAX_LINK_CONTACT_FORCE_FINAL 117.78065754789701
+GENESIS_ACTION_REPLAY_SMOKE_OK
+```
+
+  Review: corrected offline bridge smoke passes numerically and produces
+  visible motion, but this is still not a closed-loop SONIC-in-Genesis policy.
+  The GIF/contact sheet shows posture/motion, not a validated walking rollout.
+  Remaining work is online 994D observation construction from Genesis state,
+  reference/history buffers, and previous raw actions, then decoder inference at
+  each control step.
+
+- 2026-05-07: Implemented decoder-only closed-loop SONIC policy smoke.
+
+  Code changes:
+
+  - Added `h200_locomotion_lab.sonic.g1_observation` for the official release
+    decoder observation layout:
+    `64 + 30 + 290 + 290 + 290 + 30 = 994`.
+  - The builder follows official `StateLogger::GetLatest(...,
+    newest_first=false)` ordering: oldest-to-newest, with leading zero padding
+    when history is short.
+  - Added MuJoCo-order motor state to SONIC policy-order `body_q/body_dq`
+    conversion. `body_q` is centered by subtracting official `default_angles`.
+  - Added Genesis online SONIC history recording on reset/step.
+  - Added `genesis_sonic_policy_rollout_smoke`, which builds 994D obs from
+    Genesis state, runs `model_decoder.onnx`, applies `sonic_policy_raw`, and
+    records base height/contact/action metrics.
+  - Added `--token-mode replay` and `--history-init official_obs` so the first
+    decoder observation can match a captured official 994D row while later
+    frames are progressively replaced by Genesis state.
+
+  Verification:
+
+```text
+Local:
+PYTHONPATH=src python -m pytest -p no:cacheprovider
+Result: 44 passed
+
+Local:
+python -m ruff check src tests
+Result: failed because ruff is not installed locally:
+No module named ruff
+
+H200, from /tmp with explicit PYTHONPATH to avoid a stale top-level package:
+PYTHONPATH=/root/h200-locomotion-lab-runs/task004-genesis-g1-baseline/repo_replay_smoke/src \
+python3 -m pytest -p no:cacheprovider \
+  .../tests/test_sonic_g1_observation.py \
+  .../tests/test_genesis_adapter.py
+Result: 18 passed
+```
+
+  H200 10-frame decoder-only closed-loop smoke:
+
+```text
+Command shape:
+python3 -m h200_locomotion_lab.tools.genesis_sonic_policy_rollout_smoke \
+  --asset .../gear_sonic/data/robots/g1/g1_29dof.xml \
+  --decoder .../gear_sonic_deploy/policy/release/model_decoder.onnx \
+  --obs-csv .../task006-sonic-genesis-action-policy/actions/official_policy_input_capture.csv \
+  --token-mode replay \
+  --history-init official_obs \
+  --frames 10 \
+  --root-qpos 0.002389 0.011728 0.791166 0.711231 -0.00883 -0.004562 -0.702888
+
+FRAME 0 base_z 0.7887014746665955 action_min -0.7297266721725464 action_max 0.824930727481842
+FRAME 5 base_z 0.7348557114601135 action_min -1.8372162580490112 action_max 1.702573537826538
+FRAME 9 base_z 0.6546086668968201 action_min -1.822142481803894 action_max 5.1907243728637695
+OBS_FINITE True
+ACTION_FINITE True
+BASE_HEIGHT_MIN 0.6546086668968201
+BASE_HEIGHT_MAX 0.7887014746665955
+BASE_HEIGHT_FINAL 0.6546086668968201
+MAX_ABS_QVEL 6.918185710906982
+ACTION_MAX_ABS 5.1907243728637695
+HEIGHT_OK_RANGE 0.3 1.2 True
+GENESIS_SONIC_POLICY_ROLLOUT_SMOKE_OK
+```
+
+  H200 20-frame decoder-only closed-loop smoke with the same settings failed:
+
+```text
+FRAME 0 base_z 0.7887014746665955 action_min -0.7297266721725464 action_max 0.824930727481842
+FRAME 5 base_z 0.7348557710647583 action_min -1.8372153043746948 action_max 1.7025740146636963
+FRAME 10 base_z 0.6256087422370911 action_min -2.0017192363739014 action_max 4.937207221984863
+FRAME 15 base_z 0.4301317036151886 action_min -4.970677852630615 action_max 4.425835132598877
+FRAME 19 base_z 0.2644214928150177 action_min -8.832411766052246 action_max 6.377843856811523
+OBS_FINITE True
+ACTION_FINITE True
+BASE_HEIGHT_MIN 0.2644214928150177
+BASE_HEIGHT_FINAL 0.2644214928150177
+ACTION_MAX_ABS 8.832411766052246
+HEIGHT_OK_RANGE 0.3 1.2 False
+GENESIS_SONIC_POLICY_ROLLOUT_SMOKE_FAILED
+```
+
+  Review: first-frame decoder output now matches the official captured obs
+  action range, so the current issue is no longer the first-frame observation
+  layout or action bridge. The remaining blocker is stable closed-loop
+  Genesis feedback: after roughly 10-20 frames the base falls and decoder
+  actions grow. L2 should be considered partially connected only; do not mark
+  stable policy rollout passed.

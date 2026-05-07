@@ -10,11 +10,16 @@ from pathlib import Path
 from typing import Sequence
 
 from h200_locomotion_lab.envs.genesis_adapter import GenesisG1Contract, GenesisG1Env
+from h200_locomotion_lab.sonic.g1_policy_bridge import (
+    SONIC_G1_ACTION_SCALES,
+    SONIC_G1_DEFAULT_ANGLES,
+)
 from h200_locomotion_lab.tools.sonic_reference_replay_smoke import (
     apply_sonic_g1_motor_config,
     _flatten_numeric,
     _read_floating_base_position,
     _is_finite,
+    _read_contact_metrics,
     _read_min_link_height,
 )
 
@@ -38,8 +43,20 @@ def main() -> None:
     parser.add_argument("--logging-level", default="warning")
     parser.add_argument("--convexify", action="store_true")
     parser.add_argument("--decimate", action="store_true")
-    parser.add_argument("--base-pos", nargs=3, type=float, default=(0.0, 0.0, 0.8))
+    parser.add_argument("--base-pos", nargs=3, type=float, default=(0.0, 0.0, 0.0))
     parser.add_argument("--base-quat", nargs=4, type=float, default=(1.0, 0.0, 0.0, 0.0))
+    parser.add_argument(
+        "--root-qpos",
+        nargs=7,
+        type=float,
+        help="Optional dynamic root qpos as x y z qw qx qy qz.",
+    )
+    parser.add_argument(
+        "--action-mode",
+        choices=("normalized_delta", "sonic_policy_raw"),
+        default="normalized_delta",
+        help="Interpret actions as local normalized deltas or raw SONIC policy outputs.",
+    )
     parser.add_argument(
         "--default-joint-pos-csv",
         help="CSV whose selected 29D row is used as the nominal action-zero pose.",
@@ -69,9 +86,23 @@ def main() -> None:
     print("ACTION_MIN_MAX", action_min, action_max)
     print("ACTION_MAX_ABS", action_max_abs)
     print("ACTION_OUT_OF_RANGE_VALUES", clipped_count)
-    print("ACTION_SCALE_RAD", contract.action_scale_rad)
+    print("ACTION_MODE", args.action_mode)
+    if args.action_mode == "sonic_policy_raw":
+        print("ACTION_SCALE_MODE", "sonic_g1_per_joint")
+        print("ACTION_SCALES_MIN_MAX", min(SONIC_G1_ACTION_SCALES), max(SONIC_G1_ACTION_SCALES))
+        print("DEFAULT_JOINT_POS_SOURCE", "sonic_default_angles")
+        print(
+            "DEFAULT_JOINT_POS_MIN_MAX",
+            min(SONIC_G1_DEFAULT_ANGLES),
+            max(SONIC_G1_DEFAULT_ANGLES),
+        )
+    else:
+        print("ACTION_SCALE_RAD", contract.action_scale_rad)
     print("BASE_POS", tuple(args.base_pos))
     print("BASE_QUAT", tuple(args.base_quat))
+    print("ROOT_QPOS", tuple(args.root_qpos) if args.root_qpos else "not_set")
+    if args.action_mode == "sonic_policy_raw" and args.default_joint_pos_csv:
+        raise ValueError("--default-joint-pos-csv is invalid with --action-mode sonic_policy_raw")
     default_motor_positions = (
         read_default_joint_positions(
             Path(args.default_joint_pos_csv),
@@ -81,17 +112,24 @@ def main() -> None:
         if args.default_joint_pos_csv
         else None
     )
-    print("DEFAULT_JOINT_POS_SOURCE", args.default_joint_pos_csv or "asset_qpos0")
-    if default_motor_positions is not None:
+    if args.action_mode != "sonic_policy_raw":
+        print("DEFAULT_JOINT_POS_SOURCE", args.default_joint_pos_csv or "asset_qpos0")
+    if default_motor_positions is not None and args.action_mode != "sonic_policy_raw":
         print("DEFAULT_JOINT_POS_ROW", args.default_joint_pos_row)
-        print("DEFAULT_JOINT_POS_MIN_MAX", min(default_motor_positions), max(default_motor_positions))
+        print(
+            "DEFAULT_JOINT_POS_MIN_MAX",
+            min(default_motor_positions),
+            max(default_motor_positions),
+        )
 
     env = GenesisG1Env.from_genesis_asset(
         args.asset,
         backend=args.backend,
         base_pos=tuple(args.base_pos),
         base_quat=tuple(args.base_quat),
+        root_qpos=tuple(args.root_qpos) if args.root_qpos else None,
         default_motor_positions=default_motor_positions,
+        action_mode=args.action_mode,
         convexify=args.convexify,
         decimate=args.decimate,
         logging_level=args.logging_level,
@@ -116,6 +154,8 @@ def main() -> None:
 
     base_heights: list[float] = []
     min_link_heights: list[float] = []
+    contact_counts: list[int] = []
+    max_contact_forces: list[float] = []
     max_abs_qvel: list[float] = []
     finite_ok = _is_finite(observation)
     start = time.time()
@@ -125,6 +165,7 @@ def main() -> None:
         qvel = _flatten_numeric(robot.get_dofs_velocity(dofs_idx_local=motor_idx))
         base_pos = _read_floating_base_position(robot, motor_idx)
         min_link_z = _read_min_link_height(robot)
+        contact_count, max_contact_force = _read_contact_metrics(robot)
 
         finite_ok = (
             finite_ok
@@ -132,14 +173,21 @@ def main() -> None:
             and _is_finite(qvel)
             and _is_finite(base_pos)
             and (min_link_z is None or math.isfinite(min_link_z))
+            and (max_contact_force is None or math.isfinite(max_contact_force))
         )
         base_heights.append(base_pos[2])
         if min_link_z is not None:
             min_link_heights.append(min_link_z)
+        if contact_count is not None:
+            contact_counts.append(contact_count)
+        if max_contact_force is not None:
+            max_contact_forces.append(max_contact_force)
         max_abs_qvel.append(max(abs(value) for value in qvel))
 
         if frame in {0, 1, 2, 9, 49, len(actions) - 1}:
-            clipped = clip_action(action)
+            reported_action = (
+                clip_action(action) if args.action_mode == "normalized_delta" else action
+            )
             print(
                 "FRAME",
                 frame,
@@ -147,10 +195,14 @@ def main() -> None:
                 base_pos[2],
                 "min_link_z",
                 min_link_z,
+                "contact_count",
+                contact_count,
+                "max_contact_force",
+                max_contact_force,
                 "action_min",
-                min(clipped),
+                min(reported_action),
                 "action_max",
-                max(clipped),
+                max(reported_action),
                 "max_abs_qvel",
                 max_abs_qvel[-1],
                 "obs_len",
@@ -172,6 +224,12 @@ def main() -> None:
     if min_link_heights:
         print("MIN_LINK_HEIGHT_MIN", min(min_link_heights))
         print("MIN_LINK_HEIGHT_FINAL", min_link_heights[-1])
+    if contact_counts:
+        print("CONTACT_COUNT_MAX", max(contact_counts))
+        print("CONTACT_COUNT_FINAL", contact_counts[-1])
+    if max_contact_forces:
+        print("MAX_LINK_CONTACT_FORCE_MAX", max(max_contact_forces))
+        print("MAX_LINK_CONTACT_FORCE_FINAL", max_contact_forces[-1])
     print("MAX_ABS_QVEL", max(max_abs_qvel))
     print("ELAPSED_S", elapsed)
     print("POLICY_STEPS", len(actions))
@@ -254,7 +312,10 @@ def build_action_fixture(
         for frame in range(frames):
             phase = 2.0 * math.pi * frame / denom
             rows.append(
-                tuple(amplitude * math.sin(phase + joint_index * 0.37) for joint_index in range(action_dim))
+                tuple(
+                    amplitude * math.sin(phase + joint_index * 0.37)
+                    for joint_index in range(action_dim)
+                )
             )
         return rows
 
@@ -264,7 +325,10 @@ def build_action_fixture(
         for frame in range(frames):
             sign = 1.0 if (frame // 10) % 2 == 0 else -1.0
             rows.append(
-                tuple(sign * amplitude if joint_index in active else 0.0 for joint_index in range(action_dim))
+                tuple(
+                    sign * amplitude if joint_index in active else 0.0
+                    for joint_index in range(action_dim)
+                )
             )
         return rows
 

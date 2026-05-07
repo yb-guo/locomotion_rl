@@ -10,6 +10,12 @@ from h200_locomotion_lab.envs.genesis_adapter import (
     GenesisG1SceneBackend,
     GenesisSceneConfig,
 )
+from h200_locomotion_lab.sonic.g1_policy_bridge import (
+    SONIC_G1_ACTION_SCALES,
+    SONIC_G1_DEFAULT_ANGLES,
+    SONIC_G1_POLICY_INDEX_TO_MUJOCO_INDEX,
+)
+from h200_locomotion_lab.sonic.g1_observation import field_by_name
 
 
 def test_genesis_contract_matches_g1_29dof_inventory() -> None:
@@ -103,6 +109,98 @@ def test_genesis_scene_backend_accepts_default_motor_position_override() -> None
     assert backend.robot.last_position_target == (0.325,) * backend.contract.action_dim
 
 
+def test_genesis_scene_backend_maps_raw_sonic_policy_action() -> None:
+    asset = Path(__file__)
+    backend = GenesisG1SceneBackend(
+        GenesisSceneConfig(asset_path=str(asset), backend="cuda", action_mode="sonic_policy_raw"),
+        genesis_module=_FakeGenesisModule(),
+    )
+
+    raw_action = tuple(float(index) for index in range(backend.contract.action_dim))
+    result = backend.step(raw_action)
+
+    assert result.info["action_mode"] == "sonic_policy_raw"
+    assert backend.default_motor_positions == SONIC_G1_DEFAULT_ANGLES
+    assert backend.previous_action == raw_action
+    assert backend.robot.last_position_target is not None
+    assert backend.robot.last_position_target[0] == pytest.approx(
+        SONIC_G1_DEFAULT_ANGLES[0] + 0.0 * SONIC_G1_ACTION_SCALES[0]
+    )
+    assert backend.robot.last_position_target[1] == pytest.approx(
+        SONIC_G1_DEFAULT_ANGLES[1] + 3.0 * SONIC_G1_ACTION_SCALES[1]
+    )
+
+
+def test_genesis_scene_backend_rejects_default_override_in_sonic_policy_mode() -> None:
+    asset = Path(__file__)
+
+    with pytest.raises(ValueError, match="default_motor_positions must not be provided"):
+        GenesisG1SceneBackend(
+            GenesisSceneConfig(
+                asset_path=str(asset),
+                backend="cuda",
+                action_mode="sonic_policy_raw",
+                default_motor_positions=(0.0,) * GenesisG1Contract().action_dim,
+            ),
+            genesis_module=_FakeGenesisModule(),
+        )
+
+
+def test_genesis_scene_backend_resets_root_qpos_when_configured() -> None:
+    asset = Path(__file__)
+    root_qpos = (0.1, 0.2, 0.79, 0.7, 0.0, 0.0, -0.7)
+    backend = GenesisG1SceneBackend(
+        GenesisSceneConfig(asset_path=str(asset), backend="cuda", root_qpos=root_qpos),
+        genesis_module=_FakeGenesisModule(),
+    )
+
+    backend.robot.qpos = [9.0] * 36
+    backend.reset()
+
+    assert backend.robot.qpos[:7] == list(root_qpos)
+
+
+def test_genesis_scene_backend_builds_sonic_decoder_observation_from_history() -> None:
+    asset = Path(__file__)
+    backend = GenesisG1SceneBackend(
+        GenesisSceneConfig(asset_path=str(asset), backend="cuda", action_mode="sonic_policy_raw"),
+        genesis_module=_FakeGenesisModule(),
+    )
+    backend.reset()
+    backend.robot.qpos[:7] = [0.0, 0.0, 0.79, 1.0, 0.0, 0.0, 0.0]
+    backend.robot.velocities[3:6] = [0.1, 0.2, 0.3]
+    for mujoco_index, dof_index in enumerate(backend.motor_dof_indices):
+        backend.robot.positions[dof_index] = (
+            SONIC_G1_DEFAULT_ANGLES[mujoco_index] + 10.0 + mujoco_index
+        )
+        backend.robot.velocities[dof_index] = 100.0 + mujoco_index
+    backend.previous_action = tuple(float(1000 + index) for index in range(29))
+
+    backend.record_sonic_history_frame()
+    observation = backend.sonic_decoder_observation((0.0,) * 64)
+
+    assert len(observation) == 994
+    assert _field_slice(observation, "his_base_angular_velocity_10frame_step1")[
+        -3:
+    ] == pytest.approx((0.1, 0.2, 0.3))
+    policy_index = 1
+    mujoco_index = SONIC_G1_POLICY_INDEX_TO_MUJOCO_INDEX[policy_index]
+    assert _field_slice(observation, "his_body_joint_positions_10frame_step1")[
+        9 * 29 + policy_index
+    ] == pytest.approx(10.0 + mujoco_index)
+    assert _field_slice(observation, "his_body_joint_velocities_10frame_step1")[
+        9 * 29 + policy_index
+    ] == pytest.approx(100.0 + mujoco_index)
+    assert _field_slice(observation, "his_last_actions_10frame_step1")[-29:] == tuple(
+        float(1000 + index) for index in range(29)
+    )
+    assert _field_slice(observation, "his_gravity_dir_10frame_step1")[-3:] == (
+        0.0,
+        0.0,
+        -1.0,
+    )
+
+
 def test_genesis_scene_backend_requires_existing_asset() -> None:
     missing_asset = Path(__file__).with_name("missing_g1_29dof.xml")
 
@@ -111,6 +209,11 @@ def test_genesis_scene_backend_requires_existing_asset() -> None:
             GenesisSceneConfig(asset_path=str(missing_asset)),
             genesis_module=_FakeGenesisModule(),
         )
+
+
+def _field_slice(observation: tuple[float, ...], field_name: str) -> tuple[float, ...]:
+    field = field_by_name(field_name)
+    return observation[field.offset : field.offset + field.dim]
 
 
 class _FakeGenesisModule:
@@ -179,6 +282,7 @@ class _FakeRobot:
     n_links = 31
 
     def __init__(self) -> None:
+        self.qpos = [0.0] * 36
         self.positions = [0.0] * self.n_dofs
         self.velocities = [0.0] * self.n_dofs
         self.last_position_target: tuple[float, ...] | None = None
@@ -194,6 +298,17 @@ class _FakeRobot:
 
     def get_dofs_velocity(self, dofs_idx_local: tuple[int, ...]) -> list[float]:
         return [self.velocities[index] for index in dofs_idx_local]
+
+    def set_qpos(
+        self,
+        qpos: tuple[float, ...],
+        qs_idx_local: tuple[int, ...],
+        zero_velocity: bool,
+    ) -> None:
+        for value, index in zip(qpos, qs_idx_local):
+            self.qpos[index] = value
+        if zero_velocity:
+            self.velocities = [0.0] * self.n_dofs
 
     def set_dofs_position(
         self,

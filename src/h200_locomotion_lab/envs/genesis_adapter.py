@@ -11,6 +11,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
 
+from h200_locomotion_lab.sonic.g1_policy_bridge import (
+    SONIC_G1_DEFAULT_ANGLES,
+    sonic_policy_action_to_mujoco_targets,
+)
+from h200_locomotion_lab.sonic.g1_observation import (
+    SonicG1HistoryBuffer,
+    SonicG1HistoryFrame,
+    build_sonic_g1_decoder_observation,
+    mujoco_motor_state_to_sonic_body_state,
+)
+
 
 G1_29DOF_JOINT_ORDER: tuple[str, ...] = (
     "left_hip_pitch_joint",
@@ -125,9 +136,11 @@ class GenesisSceneConfig:
     show_viewer: bool = False
     n_envs: int = 1
     add_plane: bool = True
-    base_pos: tuple[float, float, float] = (0.0, 0.0, 0.8)
+    base_pos: tuple[float, float, float] = (0.0, 0.0, 0.0)
     base_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
+    root_qpos: tuple[float, float, float, float, float, float, float] | None = None
     default_motor_positions: tuple[float, ...] | None = None
+    action_mode: str = "normalized_delta"
     convexify: bool = False
     decimate: bool = False
     logging_level: str = "warning"
@@ -177,16 +190,21 @@ class GenesisG1SceneBackend:
             raise NotImplementedError("GenesisG1SceneBackend currently supports n_envs=1 only")
         if not Path(self.config.asset_path).is_file():
             raise FileNotFoundError(f"Genesis G1 asset not found: {self.config.asset_path}")
+        if self.config.action_mode not in {"normalized_delta", "sonic_policy_raw"}:
+            raise ValueError(f"Unknown Genesis action_mode: {self.config.action_mode}")
 
         self.gs = genesis_module or import_genesis_module()
         self._init_genesis()
         self.scene = self._build_scene()
+        self._reset_root_qpos()
         self.motor_dof_indices = self._resolve_motor_dof_indices()
         self.default_motor_positions = self._resolve_default_motor_positions()
         self.previous_action = (0.0,) * self.contract.action_dim
+        self.sonic_history = SonicG1HistoryBuffer()
         self.step_count = 0
 
     def reset(self, seed: int | None = None) -> tuple[float, ...]:
+        self._reset_root_qpos()
         self.robot.set_dofs_position(
             self.default_motor_positions,
             dofs_idx_local=self.motor_dof_indices,
@@ -195,21 +213,21 @@ class GenesisG1SceneBackend:
         self.robot.set_dofs_velocity(None)
         self.previous_action = (0.0,) * self.contract.action_dim
         self.step_count = 0
+        self.sonic_history = SonicG1HistoryBuffer()
+        self.record_sonic_history_frame()
         return self._observation()
 
     def step(self, action: Sequence[float]) -> StepResult:
         if len(action) != self.contract.action_dim:
             raise ValueError(f"Expected action_dim={self.contract.action_dim}, got {len(action)}")
-        clipped_action = tuple(max(-1.0, min(1.0, float(value))) for value in action)
-        target = tuple(
-            default + self.contract.action_scale_rad * delta
-            for default, delta in zip(self.default_motor_positions, clipped_action)
-        )
+        action_values = tuple(float(value) for value in action)
+        target = self._motor_targets_from_action(action_values)
         self.robot.control_dofs_position(target, dofs_idx_local=self.motor_dof_indices)
         for _ in range(self.contract.decimation):
             self.scene.step()
-        self.previous_action = clipped_action
+        self.previous_action = self._observation_action(action_values)
         self.step_count += 1
+        self.record_sonic_history_frame()
         return StepResult(
             observation=self._observation(),
             reward=0.0,
@@ -221,7 +239,23 @@ class GenesisG1SceneBackend:
                 "asset_path": self.config.asset_path,
                 "robot_n_dofs": int(getattr(self.robot, "n_dofs", -1)),
                 "motor_dof_count": len(self.motor_dof_indices),
+                "action_mode": self.config.action_mode,
             },
+        )
+
+    def record_sonic_history_frame(self) -> SonicG1HistoryFrame:
+        """Append current Genesis state in official SONIC decoder history format."""
+
+        frame = self._sonic_history_frame()
+        self.sonic_history.append(frame)
+        return frame
+
+    def sonic_decoder_observation(self, token_state: Sequence[float]) -> tuple[float, ...]:
+        """Build the official 994D decoder observation from recorded Genesis history."""
+
+        return build_sonic_g1_decoder_observation(
+            token_state,
+            self.sonic_history.latest_oldest_first(),
         )
 
     def _init_genesis(self) -> None:
@@ -247,6 +281,22 @@ class GenesisG1SceneBackend:
         scene.build(n_envs=self.config.n_envs)
         return scene
 
+    def _reset_root_qpos(self) -> None:
+        if self.config.root_qpos is None:
+            return
+        root_qpos = tuple(float(value) for value in self.config.root_qpos)
+        if len(root_qpos) != 7:
+            raise ValueError(f"Expected root_qpos length 7, got {len(root_qpos)}")
+        if hasattr(self.robot, "set_qpos"):
+            self.robot.set_qpos(
+                root_qpos,
+                qs_idx_local=tuple(range(7)),
+                zero_velocity=True,
+            )
+            return
+        self.robot.set_pos(root_qpos[:3], zero_velocity=True)
+        self.robot.set_quat(root_qpos[3:], zero_velocity=True)
+
     def _resolve_motor_dof_indices(self) -> tuple[int, ...]:
         indices: list[int] = []
         for joint_name in self.contract.joint_order:
@@ -267,6 +317,13 @@ class GenesisG1SceneBackend:
         return _flatten_numeric(self.robot.get_dofs_position(dofs_idx_local=self.motor_dof_indices))
 
     def _resolve_default_motor_positions(self) -> tuple[float, ...]:
+        if self.config.action_mode == "sonic_policy_raw":
+            if self.config.default_motor_positions is not None:
+                raise ValueError(
+                    "default_motor_positions must not be provided in sonic_policy_raw mode; "
+                    "official SONIC uses fixed default_angles"
+                )
+            return SONIC_G1_DEFAULT_ANGLES
         if self.config.default_motor_positions is None:
             return self._read_motor_positions()
         if len(self.config.default_motor_positions) != self.contract.action_dim:
@@ -278,6 +335,57 @@ class GenesisG1SceneBackend:
 
     def _read_motor_velocities(self) -> tuple[float, ...]:
         return _flatten_numeric(self.robot.get_dofs_velocity(dofs_idx_local=self.motor_dof_indices))
+
+    def _read_root_qpos(self) -> tuple[float, ...]:
+        if hasattr(self.robot, "get_qpos"):
+            return _flatten_numeric(self.robot.get_qpos())
+        if hasattr(self.robot, "qpos"):
+            return _flatten_numeric(getattr(self.robot, "qpos"))
+        return self.config.base_pos + self.config.base_quat
+
+    def _read_base_quat(self) -> tuple[float, float, float, float]:
+        qpos = self._read_root_qpos()
+        if len(qpos) >= 7:
+            return tuple(qpos[3:7])  # type: ignore[return-value]
+        return self.config.base_quat
+
+    def _read_base_angular_velocity(self) -> tuple[float, float, float]:
+        try:
+            root_velocity = _flatten_numeric(
+                self.robot.get_dofs_velocity(dofs_idx_local=tuple(range(6)))
+            )
+        except Exception:
+            return (0.0, 0.0, 0.0)
+        if len(root_velocity) < 6:
+            return (0.0, 0.0, 0.0)
+        return tuple(root_velocity[3:6])  # type: ignore[return-value]
+
+    def _sonic_history_frame(self) -> SonicG1HistoryFrame:
+        body_q, body_dq = mujoco_motor_state_to_sonic_body_state(
+            self._read_motor_positions(),
+            self._read_motor_velocities(),
+        )
+        return SonicG1HistoryFrame(
+            base_ang_vel=self._read_base_angular_velocity(),
+            body_q=body_q,
+            body_dq=body_dq,
+            last_action=self.previous_action,
+            base_quat=self._read_base_quat(),
+        )
+
+    def _motor_targets_from_action(self, action: Sequence[float]) -> tuple[float, ...]:
+        if self.config.action_mode == "sonic_policy_raw":
+            return sonic_policy_action_to_mujoco_targets(action)
+        clipped_action = tuple(max(-1.0, min(1.0, float(value))) for value in action)
+        return tuple(
+            default + self.contract.action_scale_rad * delta
+            for default, delta in zip(self.default_motor_positions, clipped_action)
+        )
+
+    def _observation_action(self, action: Sequence[float]) -> tuple[float, ...]:
+        if self.config.action_mode == "sonic_policy_raw":
+            return tuple(float(value) for value in action)
+        return tuple(max(-1.0, min(1.0, float(value))) for value in action)
 
     def _observation(self) -> tuple[float, ...]:
         motor_positions = self._read_motor_positions()
@@ -329,9 +437,11 @@ class GenesisG1Env:
         *,
         backend: str = "cuda",
         show_viewer: bool = False,
-        base_pos: tuple[float, float, float] = (0.0, 0.0, 0.8),
+        base_pos: tuple[float, float, float] = (0.0, 0.0, 0.0),
         base_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0),
+        root_qpos: tuple[float, float, float, float, float, float, float] | None = None,
         default_motor_positions: tuple[float, ...] | None = None,
+        action_mode: str = "normalized_delta",
         convexify: bool = False,
         decimate: bool = False,
         logging_level: str = "warning",
@@ -343,7 +453,9 @@ class GenesisG1Env:
             show_viewer=show_viewer,
             base_pos=base_pos,
             base_quat=base_quat,
+            root_qpos=root_qpos,
             default_motor_positions=default_motor_positions,
+            action_mode=action_mode,
             convexify=convexify,
             decimate=decimate,
             logging_level=logging_level,

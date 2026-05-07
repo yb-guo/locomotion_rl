@@ -14,7 +14,11 @@ def main() -> None:
     parser.add_argument("--decoder", required=True, help="Path to SONIC model_decoder.onnx.")
     parser.add_argument("--obs-csv", help="CSV containing one or more obs_dict rows.")
     parser.add_argument("--obs-dim", type=int, default=994)
-    parser.add_argument("--max-rows", type=int, help="Maximum numeric obs rows to decode from --obs-csv.")
+    parser.add_argument(
+        "--max-rows",
+        type=int,
+        help="Maximum numeric obs rows to decode from --obs-csv.",
+    )
     parser.add_argument("--output-actions-csv", help="Write decoded 29D action rows to this CSV.")
     parser.add_argument("--repeat-rows", type=int, default=1)
     args = parser.parse_args()
@@ -55,12 +59,41 @@ def main() -> None:
     if any(len(action) != 29 for action in action_rows):
         dims = sorted({len(action) for action in action_rows})
         raise SystemExit(f"SONIC decoder produced action dims {dims}, expected 29")
-    if not all(is_finite(obs) for obs in obs_rows) or not all(is_finite(action) for action in action_rows):
+    if not all(is_finite(obs) for obs in obs_rows) or not all(
+        is_finite(action) for action in action_rows
+    ):
         raise SystemExit("non-finite SONIC decoder input/output")
     print("SONIC_POLICY_DECODER_FORWARD_OK")
 
 
 def run_decoder_reference(decoder: Path, obs: Sequence[float]) -> tuple[float, ...]:
+    return SonicOnnxReferenceDecoder(decoder).run(obs)
+
+
+class SonicOnnxReferenceDecoder:
+    """Small ONNX ReferenceEvaluator wrapper that keeps the decoder loaded."""
+
+    def __init__(self, decoder: Path) -> None:
+        try:
+            import numpy as np
+            import onnx
+            from onnx.reference import ReferenceEvaluator
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "Running the SONIC decoder requires numpy and onnx with ReferenceEvaluator"
+            ) from exc
+
+        self._np = np
+        model = onnx.load(str(decoder))
+        self._evaluator = ReferenceEvaluator(model)
+
+    def run(self, obs: Sequence[float]) -> tuple[float, ...]:
+        obs_array = self._np.asarray(obs, dtype=self._np.float32).reshape(1, len(obs))
+        output = self._evaluator.run(None, {"obs_dict": obs_array})[0].reshape(-1)
+        return tuple(float(value) for value in output.tolist())
+
+
+def _run_decoder_reference_slow(decoder: Path, obs: Sequence[float]) -> tuple[float, ...]:
     try:
         import numpy as np
         import onnx
@@ -87,7 +120,11 @@ def read_obs_csv(path: Path, obs_dim: int) -> tuple[float, ...]:
     return read_obs_csv_rows(path, obs_dim, max_rows=1)[0]
 
 
-def read_obs_csv_rows(path: Path, obs_dim: int, max_rows: int | None = None) -> list[tuple[float, ...]]:
+def read_obs_csv_rows(
+    path: Path,
+    obs_dim: int,
+    max_rows: int | None = None,
+) -> list[tuple[float, ...]]:
     if max_rows is not None and max_rows <= 0:
         raise ValueError("max rows must be positive")
     rows: list[tuple[float, ...]] = []
@@ -104,7 +141,9 @@ def read_obs_csv_rows(path: Path, obs_dim: int, max_rows: int | None = None) -> 
                     continue
                 raise ValueError(f"{path}:{row_index} contains a non-numeric obs value")
             if len(values) != obs_dim:
-                raise ValueError(f"{path}:{row_index} expected {obs_dim} obs values, got {len(values)}")
+                raise ValueError(
+                    f"{path}:{row_index} expected {obs_dim} obs values, got {len(values)}"
+                )
             rows.append(values)
             if max_rows is not None and len(rows) >= max_rows:
                 break

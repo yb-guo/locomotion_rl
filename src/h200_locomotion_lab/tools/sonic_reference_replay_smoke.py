@@ -171,8 +171,9 @@ def main() -> None:
     env = GenesisG1Env.from_genesis_asset(
         str(asset),
         backend=args.backend,
-        base_pos=root0,
-        base_quat=root_quat0,
+        base_pos=(0.0, 0.0, 0.0),
+        base_quat=(1.0, 0.0, 0.0, 0.0),
+        root_qpos=root0 + root_quat0,
         convexify=args.convexify,
         decimate=args.decimate,
         logging_level=args.logging_level,
@@ -184,8 +185,7 @@ def main() -> None:
     print("MOTOR_DOF_INDICES", motor_idx)
 
     apply_sonic_g1_motor_config(robot, motor_idx)
-    robot.set_pos(root0)
-    robot.set_quat(root_quat0)
+    _set_floating_root_qpos(robot, root0 + root_quat0)
     robot.set_dofs_position(tuple(joint_rows[0]), dofs_idx_local=motor_idx, zero_velocity=True)
     robot.set_dofs_velocity(None)
 
@@ -204,9 +204,16 @@ def main() -> None:
         v = _flatten_numeric(robot.get_dofs_velocity(dofs_idx_local=motor_idx))
         pos = _read_floating_base_position(robot, motor_idx)
         min_link_z = _read_min_link_height(robot)
+        contact_count, max_contact_force = _read_contact_metrics(robot)
         if min_link_z is not None:
             min_link_heights.append(min_link_z)
-        finite_ok = finite_ok and _is_finite(q) and _is_finite(v) and _is_finite(pos)
+        finite_ok = (
+            finite_ok
+            and _is_finite(q)
+            and _is_finite(v)
+            and _is_finite(pos)
+            and (max_contact_force is None or math.isfinite(max_contact_force))
+        )
         err = [abs(actual - expected) for actual, expected in zip(q, target)]
         mean_abs_errors.append(sum(err) / len(err))
         max_abs_errors.append(max(err))
@@ -220,6 +227,10 @@ def main() -> None:
                 pos[2],
                 "min_link_z",
                 min_link_z,
+                "contact_count",
+                contact_count,
+                "max_contact_force",
+                max_contact_force,
                 "mean_abs_err",
                 mean_abs_errors[-1],
                 "max_abs_err",
@@ -307,22 +318,60 @@ def _read_min_link_height(robot: Any) -> float | None:
     return min(link_pos[index] for index in range(2, len(link_pos), 3))
 
 
+def _read_contact_metrics(robot: Any) -> tuple[int | None, float | None]:
+    return (_read_contact_count(robot), _read_max_link_contact_force(robot))
+
+
+def _read_contact_count(robot: Any) -> int | None:
+    if not hasattr(robot, "get_contacts"):
+        return None
+    try:
+        contacts = robot.get_contacts(exclude_self_contact=True)
+    except TypeError:
+        contacts = robot.get_contacts()
+    if not contacts:
+        return 0
+    if "valid_mask" in contacts:
+        return sum(1 for value in _flatten_numeric(contacts["valid_mask"]) if bool(value))
+    for key in ("geom_a", "link_a", "position"):
+        if key not in contacts:
+            continue
+        values = _flatten_numeric(contacts[key])
+        return len(values) // 3 if key == "position" else len(values)
+    return 0
+
+
+def _read_max_link_contact_force(robot: Any) -> float | None:
+    if not hasattr(robot, "get_links_net_contact_force"):
+        return None
+    forces = _flatten_numeric(robot.get_links_net_contact_force())
+    if len(forces) < 3:
+        return None
+    return max(
+        math.sqrt(
+            forces[index] * forces[index]
+            + forces[index + 1] * forces[index + 1]
+            + forces[index + 2] * forces[index + 2]
+        )
+        for index in range(0, len(forces) - 2, 3)
+    )
+
+
 def _read_floating_base_position(
     robot: Any,
     motor_dof_indices: Sequence[int],
 ) -> tuple[float, float, float]:
     """Read dynamic root translation from free-joint DOFs when present.
 
-    Genesis `robot.get_pos()` returns the entity spawn pose for this MJCF path,
-    not the changing floating-base state. The first controlled motor DOF starts
-    after the root free-joint DOFs, so the qpos entries before that motor index
-    are the dynamic root coordinates/orientation.
+    The first controlled motor DOF starts after the root free-joint DOFs. Prefer
+    qpos because a free joint has 7 q coordinates, while DOF position exposes a
+    6-DoF representation.
     """
 
     if motor_dof_indices:
         root_dof_count = min(int(index) for index in motor_dof_indices)
         if root_dof_count >= 3:
-            all_positions = _read_all_dof_positions(robot)
+            all_positions = _read_all_qpos(robot)
             if len(all_positions) >= 3:
                 return (
                     float(all_positions[0]),
@@ -337,6 +386,26 @@ def _read_spawn_position(robot: Any) -> tuple[float, float, float]:
     if len(pos) < 3:
         raise ValueError("robot.get_pos() returned fewer than 3 values")
     return (pos[0], pos[1], pos[2])
+
+
+def _set_floating_root_qpos(
+    robot: Any,
+    root_qpos: Sequence[float],
+) -> None:
+    values = tuple(float(value) for value in root_qpos)
+    if len(values) != 7:
+        raise ValueError(f"Expected root_qpos length 7, got {len(values)}")
+    if hasattr(robot, "set_qpos"):
+        robot.set_qpos(values, qs_idx_local=tuple(range(7)), zero_velocity=True)
+        return
+    robot.set_pos(values[:3], zero_velocity=True)
+    robot.set_quat(values[3:], zero_velocity=True)
+
+
+def _read_all_qpos(robot: Any) -> tuple[float, ...]:
+    if hasattr(robot, "get_qpos"):
+        return _flatten_numeric(robot.get_qpos())
+    return _read_all_dof_positions(robot)
 
 
 def _read_all_dof_positions(robot: Any) -> tuple[float, ...]:

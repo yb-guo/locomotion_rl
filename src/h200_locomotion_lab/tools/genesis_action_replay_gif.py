@@ -11,6 +11,11 @@ from h200_locomotion_lab.envs.genesis_adapter import (
     GenesisG1Contract,
     import_genesis_module,
 )
+from h200_locomotion_lab.sonic.g1_policy_bridge import (
+    SONIC_G1_ACTION_SCALES,
+    SONIC_G1_DEFAULT_ANGLES,
+    sonic_policy_action_to_mujoco_targets,
+)
 from h200_locomotion_lab.tools.genesis_action_replay_smoke import (
     action_range,
     clip_action,
@@ -22,6 +27,7 @@ from h200_locomotion_lab.tools.sonic_reference_replay_smoke import (
     apply_sonic_g1_motor_config,
     _flatten_numeric,
     _read_floating_base_position,
+    _set_floating_root_qpos,
 )
 
 
@@ -40,8 +46,19 @@ def main() -> None:
     parser.add_argument("--logging-level", default="warning")
     parser.add_argument("--decimate", action="store_true")
     parser.add_argument("--convexify", action="store_true")
-    parser.add_argument("--base-pos", nargs=3, type=float, default=(0.0, 0.0, 0.8))
+    parser.add_argument("--base-pos", nargs=3, type=float, default=(0.0, 0.0, 0.0))
     parser.add_argument("--base-quat", nargs=4, type=float, default=(1.0, 0.0, 0.0, 0.0))
+    parser.add_argument(
+        "--root-qpos",
+        nargs=7,
+        type=float,
+        help="Optional dynamic root qpos as x y z qw qx qy qz.",
+    )
+    parser.add_argument(
+        "--action-mode",
+        choices=("normalized_delta", "sonic_policy_raw"),
+        default="normalized_delta",
+    )
     parser.add_argument("--default-joint-pos-csv")
     parser.add_argument("--default-joint-pos-row", type=int, default=0)
     parser.add_argument("--no-sonic-motor-config", action="store_true")
@@ -74,11 +91,18 @@ def main() -> None:
     print("ACTION_MIN_MAX", action_min, action_max)
     print("ACTION_MAX_ABS", action_max_abs)
     print("ACTION_OUT_OF_RANGE_VALUES", count_out_of_range_actions(actions))
+    print("ACTION_MODE", args.action_mode)
+    if args.action_mode == "sonic_policy_raw":
+        print("ACTION_SCALE_MODE", "sonic_g1_per_joint")
+        print("ACTION_SCALES_MIN_MAX", min(SONIC_G1_ACTION_SCALES), max(SONIC_G1_ACTION_SCALES))
     print("RES", (args.width, args.height))
     print("DECIMATE", args.decimate)
     print("CONVEXIFY", args.convexify)
     print("BASE_POS", tuple(args.base_pos))
     print("BASE_QUAT", tuple(args.base_quat))
+    print("ROOT_QPOS", tuple(args.root_qpos) if args.root_qpos else "not_set")
+    if args.action_mode == "sonic_policy_raw" and args.default_joint_pos_csv:
+        raise ValueError("--default-joint-pos-csv is invalid with --action-mode sonic_policy_raw")
     default_motor_positions_override = (
         read_default_joint_positions(
             Path(args.default_joint_pos_csv),
@@ -88,7 +112,12 @@ def main() -> None:
         if args.default_joint_pos_csv
         else None
     )
-    print("DEFAULT_JOINT_POS_SOURCE", args.default_joint_pos_csv or "asset_qpos0")
+    print(
+        "DEFAULT_JOINT_POS_SOURCE",
+        "sonic_default_angles"
+        if args.action_mode == "sonic_policy_raw"
+        else args.default_joint_pos_csv or "asset_qpos0",
+    )
     if default_motor_positions_override is not None:
         print("DEFAULT_JOINT_POS_ROW", args.default_joint_pos_row)
         print(
@@ -124,8 +153,13 @@ def main() -> None:
     scene.build(n_envs=1)
 
     motor_dof_indices = _resolve_motor_dof_indices(robot)
-    default_motor_positions = default_motor_positions_override or _flatten_numeric(
-        robot.get_dofs_position(dofs_idx_local=motor_dof_indices)
+    if args.root_qpos:
+        _set_floating_root_qpos(robot, args.root_qpos)
+    default_motor_positions = (
+        SONIC_G1_DEFAULT_ANGLES
+        if args.action_mode == "sonic_policy_raw"
+        else default_motor_positions_override
+        or _flatten_numeric(robot.get_dofs_position(dofs_idx_local=motor_dof_indices))
     )
     if not args.no_sonic_motor_config:
         apply_sonic_g1_motor_config(robot, motor_dof_indices)
@@ -140,17 +174,23 @@ def main() -> None:
     robot.set_dofs_velocity(None)
     print("MOTOR_DOF_COUNT", len(motor_dof_indices))
     print("MOTOR_DOF_INDICES", motor_dof_indices)
-    print("BASE_HEIGHT_SOURCE", "floating_base_dof" if min(motor_dof_indices) >= 3 else "spawn_pose")
+    print(
+        "BASE_HEIGHT_SOURCE",
+        "floating_base_dof" if min(motor_dof_indices) >= 3 else "spawn_pose",
+    )
 
     rendered_frames = []
     base_heights: list[float] = []
     start = time.time()
     for frame_index, action in enumerate(actions):
-        clipped_action = clip_action(action)
-        target = tuple(
-            default + contract.action_scale_rad * delta
-            for default, delta in zip(default_motor_positions, clipped_action)
-        )
+        if args.action_mode == "sonic_policy_raw":
+            target = sonic_policy_action_to_mujoco_targets(action)
+        else:
+            clipped_action = clip_action(action)
+            target = tuple(
+                default + contract.action_scale_rad * delta
+                for default, delta in zip(default_motor_positions, clipped_action)
+            )
         robot.control_dofs_position(target, dofs_idx_local=motor_dof_indices)
         for _ in range(contract.decimation):
             scene.step()
@@ -164,7 +204,14 @@ def main() -> None:
         base_pos = _read_floating_base_position(robot, motor_dof_indices)
         base_heights.append(base_pos[2])
         if frame_index in {0, len(actions) - 1}:
-            print("FRAME", frame_index, "base_z", base_pos[2], "rgb_shape", getattr(rgb, "shape", None))
+            print(
+                "FRAME",
+                frame_index,
+                "base_z",
+                base_pos[2],
+                "rgb_shape",
+                getattr(rgb, "shape", None),
+            )
 
     import imageio.v2 as imageio
 

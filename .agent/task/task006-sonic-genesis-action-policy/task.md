@@ -53,8 +53,9 @@ Do not continue to L2 unless L1 passes on H200.
 
 ## Review
 
-Status: L1 action replay passed; L2 route 1 action-bridge validation is under
-correction.
+Status: L1 generic action replay passed; SONIC-compatible offline action bridge
+has corrected smoke evidence. L2 now has a short decoder-only closed-loop smoke
+through Genesis, but stable SONIC policy rollout is still not passed.
 
 L1 pass evidence is recorded in `001-genesis-action-replay.md`. L2 may now
 inspect and connect the SONIC policy path, but must not erase the distinction
@@ -67,3 +68,50 @@ pass was invalidated because the smoke read `robot.get_pos()`/spawn pose as base
 height instead of the floating-base DOF state, and the Genesis MJCF entity pose
 double-counted the pelvis height. Corrected dynamic-root instrumentation has a
 20-frame partial smoke only; do not treat L2 as passed yet.
+
+Documentation check found an additional action-bridge mismatch: official SONIC
+deploy maps raw policy actions from IsaacLab order to MuJoCo order, then applies
+per-joint `g1_action_scale` and `default_angles`. The current Genesis contract
+still uses MuJoCo-order actions, a uniform `0.25` rad scale, clipping to
+`[-1, 1]`, and often a reference-motion row as the nominal pose. Treat this as
+valid only for synthetic Genesis action replay, not for replaying SONIC policy
+outputs.
+
+Correction implemented:
+
+- `sonic_policy_raw` action mode maps raw decoder output using official
+  `isaaclab_to_mujoco`, per-joint `g1_action_scale`, and `default_angles`.
+- Root initialization can now use explicit `root_qpos` instead of abusing
+  `MJCF(pos=...)`.
+- Smoke logs now include Genesis contact count and max link contact force;
+  `min_link_z` remains diagnostic only.
+
+H200 corrected offline smoke:
+
+- 20-frame numeric log:
+  `/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_official_obs_decoder_actions_20f_sonic_bridge.log`
+- 20-frame GIF:
+  `/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/videos/genesis_g1_official_obs_decoder_actions_20f_sonic_bridge.gif`
+- 5-frame contact-metric log:
+  `/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_official_obs_decoder_actions_5f_sonic_bridge_contact.log`
+
+L2 decoder-only closed-loop evidence:
+
+- Implemented official 994D decoder observation layout:
+  `token_state[64]`, 10-frame base angular velocity, 10-frame centered
+  policy-order joint positions/velocities, 10-frame raw last actions, and
+  10-frame gravity direction.
+- Added Genesis online history recording and
+  `genesis_sonic_policy_rollout_smoke`.
+- H200 10-frame smoke with `--token-mode replay --history-init official_obs`
+  passed: obs/action finite, base height final `0.6546086668968201`,
+  height range `0.3..1.2`, action max abs `5.1907243728637695`.
+- H200 20-frame smoke with the same settings failed height: base height final
+  `0.2644214928150177`, below the `0.3` threshold, action max abs
+  `8.832411766052246`.
+
+Review: first-frame decoder action now matches the official captured obs action
+range, so the current blocker is not the first-frame 994D layout or action
+mapping. The remaining blocker is stable closed-loop dynamics/state feedback in
+Genesis: after several steps the policy reacts into larger actions and the G1
+falls below the height gate.

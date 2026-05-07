@@ -142,9 +142,15 @@ CONTACT shape (320, 2100, 3)
 
 # Review
 
-Status: pass.
+Status: pass for the local synthetic Genesis action contract only.
 
 H200 numeric action replay passed through `GenesisG1Env.step(action)` with a
 50-step 29D normalized sine fixture. Visual GIF/contact-sheet review also passed
 for the same root pose, nominal joint pose, and action sequence. L2 SONIC policy
 rollout is now unblocked.
+
+This pass does not prove that raw SONIC policy outputs are wired correctly.
+Later documentation/source review showed the official deploy path uses
+IsaacLab-order policy actions, maps them into MuJoCo/hardware order, and applies
+per-joint `g1_action_scale` plus `default_angles`. The synthetic replay contract
+uses MuJoCo-order actions and a uniform `0.25` rad scale.
