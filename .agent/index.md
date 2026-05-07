@@ -17,6 +17,7 @@ H200 Locomotion Lab 的 agent 入口。
 - `task/task003-h200-simulator-smoke/task.md`
 - `task/task004-genesis-g1-baseline/task.md`
 - `task/task005-locoformer-min-reproduction/task.md`
+- `task/task006-sonic-genesis-action-policy/task.md`
 
 ## Consensus
 
@@ -34,4 +35,3 @@ H200 Locomotion Lab 的 agent 入口。
 - 先复现官方最短链路，再改算法。
 - SONIC 先跑 MuJoCo sim2sim，再试 Isaac Lab headless。
 - LocoFormer 先做最小可验证版本，不从 full scale 开始。
-
