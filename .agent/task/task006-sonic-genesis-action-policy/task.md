@@ -129,3 +129,14 @@ official walking reference joint-position replay moved about 0.14 m in 50
 frames and stayed upright. The active blocker is now the SONIC policy-action
 path under Genesis dynamics/contact, not the availability of a walking
 reference clip.
+
+Latest diagnose update: the official walking action replay failure was narrowed
+to a root-pose initialization mismatch. The walking capture's `base_quat.csv`
+starts near identity, but the failing Genesis replays used a quaternion from a
+different capture. With official `action.csv` rows, measured q0 initialization,
+and the walking capture base quaternion, the 50-frame H200 action replay now
+passes height smoke with `BASE_HEIGHT_MIN 0.3062208294868469` and
+`GENESIS_ACTION_REPLAY_SMOKE_OK`. L2 was reattempted under the same corrected
+root pose and produced partial 100-frame locomotion evidence up to frame 80
+(`disp_xy 0.243m`, single-support observed at frame 60), but SSH closed before
+the final summary, so L2 remains unpassed until a complete run finishes.

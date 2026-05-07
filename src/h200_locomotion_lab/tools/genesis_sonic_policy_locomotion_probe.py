@@ -20,6 +20,7 @@ from h200_locomotion_lab.tools.sonic_policy_decoder_forward import (
     read_obs_csv_rows,
     vector_range,
 )
+from h200_locomotion_lab.tools.genesis_action_replay_smoke import read_default_joint_positions
 from h200_locomotion_lab.tools.sonic_reference_replay_smoke import (
     apply_sonic_g1_motor_config,
     _flatten_numeric,
@@ -54,6 +55,11 @@ def main() -> None:
     parser.add_argument("--base-pos", nargs=3, type=float, default=(0.0, 0.0, 0.0))
     parser.add_argument("--base-quat", nargs=4, type=float, default=(1.0, 0.0, 0.0, 0.0))
     parser.add_argument("--root-qpos", nargs=7, type=float)
+    parser.add_argument(
+        "--initial-joint-pos-csv",
+        help="CSV whose selected 29D row is used as the physical reset motor pose.",
+    )
+    parser.add_argument("--initial-joint-pos-row", type=int, default=0)
     parser.add_argument("--log-every", type=int, default=10)
     parser.add_argument("--left-foot-link", default="left_ankle_roll_link")
     parser.add_argument("--right-foot-link", default="right_ankle_roll_link")
@@ -75,6 +81,15 @@ def main() -> None:
     obs_rows = tuple(read_obs_csv_rows(Path(args.obs_csv), SONIC_DECODER_OBS_DIM, args.frames))
     token_states = tuple(tuple(obs[:SONIC_TOKEN_DIM]) for obs in obs_rows)
     fixed_token_state = token_states[0]
+    initial_motor_positions = (
+        read_default_joint_positions(
+            Path(args.initial_joint_pos_csv),
+            args.initial_joint_pos_row,
+            29,
+        )
+        if args.initial_joint_pos_csv
+        else None
+    )
 
     backend = GenesisG1SceneBackend(
         GenesisSceneConfig(
@@ -83,6 +98,7 @@ def main() -> None:
             base_pos=tuple(args.base_pos),
             base_quat=tuple(args.base_quat),
             root_qpos=tuple(args.root_qpos) if args.root_qpos else None,
+            initial_motor_positions=initial_motor_positions,
             action_mode="sonic_policy_raw",
             logging_level="warning",
         )
@@ -124,6 +140,10 @@ def main() -> None:
     print("MOTOR_CONFIG", motor_config)
     print("FRAMES", args.frames)
     print("ROOT_QPOS", tuple(args.root_qpos) if args.root_qpos else None)
+    print("INITIAL_JOINT_POS_SOURCE", args.initial_joint_pos_csv or "default_motor_positions")
+    if initial_motor_positions is not None:
+        print("INITIAL_JOINT_POS_ROW", args.initial_joint_pos_row)
+        print("INITIAL_JOINT_POS_MIN_MAX", min(initial_motor_positions), max(initial_motor_positions))
     print("LEFT_FOOT_LINK", args.left_foot_link, "INDEX", left_link_idx)
     print("RIGHT_FOOT_LINK", args.right_foot_link, "INDEX", right_link_idx)
     print("FOOT_CONTACT_FORCE_THRESHOLD", args.foot_contact_force_threshold)

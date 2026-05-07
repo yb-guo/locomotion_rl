@@ -13,6 +13,7 @@ from h200_locomotion_lab.envs.genesis_adapter import GenesisG1Contract, GenesisG
 from h200_locomotion_lab.sonic.g1_policy_bridge import (
     SONIC_G1_ACTION_SCALES,
     SONIC_G1_DEFAULT_ANGLES,
+    sonic_policy_action_to_mujoco_targets,
 )
 from h200_locomotion_lab.tools.sonic_reference_replay_smoke import (
     apply_sonic_g1_motor_config,
@@ -62,6 +63,16 @@ def main() -> None:
         help="CSV whose selected 29D row is used as the nominal action-zero pose.",
     )
     parser.add_argument("--default-joint-pos-row", type=int, default=0)
+    parser.add_argument(
+        "--initial-joint-pos-csv",
+        help="CSV whose selected 29D row is used as the physical reset motor pose.",
+    )
+    parser.add_argument("--initial-joint-pos-row", type=int, default=0)
+    parser.add_argument(
+        "--reference-joint-pos-csv",
+        help="Optional 29D CSV used only for tracking diagnostics against another simulator.",
+    )
+    parser.add_argument("--reference-joint-pos-row-offset", type=int, default=0)
     parser.add_argument("--min-base-height", type=float, default=0.2)
     parser.add_argument("--max-base-height", type=float, default=1.5)
     parser.add_argument("--no-sonic-motor-config", action="store_true")
@@ -112,6 +123,29 @@ def main() -> None:
         if args.default_joint_pos_csv
         else None
     )
+    initial_motor_positions = (
+        read_default_joint_positions(
+            Path(args.initial_joint_pos_csv),
+            args.initial_joint_pos_row,
+            contract.action_dim,
+        )
+        if args.initial_joint_pos_csv
+        else None
+    )
+    reference_joint_rows = (
+        read_action_csv(Path(args.reference_joint_pos_csv), contract.action_dim)
+        if args.reference_joint_pos_csv
+        else None
+    )
+    if args.reference_joint_pos_row_offset < 0:
+        raise ValueError("--reference-joint-pos-row-offset must be non-negative")
+    if reference_joint_rows is not None and (
+        args.reference_joint_pos_row_offset + len(actions) > len(reference_joint_rows)
+    ):
+        raise ValueError(
+            f"{args.reference_joint_pos_csv} has {len(reference_joint_rows)} rows, "
+            f"cannot read {len(actions)} frames at offset {args.reference_joint_pos_row_offset}"
+        )
     if args.action_mode != "sonic_policy_raw":
         print("DEFAULT_JOINT_POS_SOURCE", args.default_joint_pos_csv or "asset_qpos0")
     if default_motor_positions is not None and args.action_mode != "sonic_policy_raw":
@@ -121,6 +155,18 @@ def main() -> None:
             min(default_motor_positions),
             max(default_motor_positions),
         )
+    print("INITIAL_JOINT_POS_SOURCE", args.initial_joint_pos_csv or "default_motor_positions")
+    if initial_motor_positions is not None:
+        print("INITIAL_JOINT_POS_ROW", args.initial_joint_pos_row)
+        print(
+            "INITIAL_JOINT_POS_MIN_MAX",
+            min(initial_motor_positions),
+            max(initial_motor_positions),
+        )
+    print("REFERENCE_JOINT_POS_SOURCE", args.reference_joint_pos_csv or "not_set")
+    if reference_joint_rows is not None:
+        print("REFERENCE_JOINT_POS_ROW_OFFSET", args.reference_joint_pos_row_offset)
+        print("REFERENCE_JOINT_POS_ROWS", len(reference_joint_rows))
 
     env = GenesisG1Env.from_genesis_asset(
         args.asset,
@@ -129,6 +175,7 @@ def main() -> None:
         base_quat=tuple(args.base_quat),
         root_qpos=tuple(args.root_qpos) if args.root_qpos else None,
         default_motor_positions=default_motor_positions,
+        initial_motor_positions=initial_motor_positions,
         action_mode=args.action_mode,
         convexify=args.convexify,
         decimate=args.decimate,
@@ -157,11 +204,24 @@ def main() -> None:
     contact_counts: list[int] = []
     max_contact_forces: list[float] = []
     max_abs_qvel: list[float] = []
+    mean_abs_target_errors: list[float] = []
+    max_abs_target_errors: list[float] = []
+    mean_abs_reference_errors: list[float] = []
+    max_abs_reference_errors: list[float] = []
+    mean_abs_target_reference_errors: list[float] = []
+    max_abs_target_reference_errors: list[float] = []
     finite_ok = _is_finite(observation)
     start = time.time()
     for frame, action in enumerate(actions):
+        target = motor_targets_from_replay_action(
+            action,
+            action_mode=args.action_mode,
+            default_motor_positions=backend.default_motor_positions,  # type: ignore[attr-defined]
+            contract=contract,
+        )
         result = env.step(action)
         observation = result.observation
+        q = _flatten_numeric(robot.get_dofs_position(dofs_idx_local=motor_idx))
         qvel = _flatten_numeric(robot.get_dofs_velocity(dofs_idx_local=motor_idx))
         base_pos = _read_floating_base_position(robot, motor_idx)
         min_link_z = _read_min_link_height(robot)
@@ -170,11 +230,26 @@ def main() -> None:
         finite_ok = (
             finite_ok
             and _is_finite(observation)
+            and _is_finite(q)
             and _is_finite(qvel)
             and _is_finite(base_pos)
             and (min_link_z is None or math.isfinite(min_link_z))
             and (max_contact_force is None or math.isfinite(max_contact_force))
         )
+        mean_target_err, max_target_err = mean_and_max_abs_error(q, target)
+        mean_abs_target_errors.append(mean_target_err)
+        max_abs_target_errors.append(max_target_err)
+        if reference_joint_rows is not None:
+            reference = reference_joint_rows[frame + args.reference_joint_pos_row_offset]
+            mean_reference_err, max_reference_err = mean_and_max_abs_error(q, reference)
+            mean_target_reference_err, max_target_reference_err = mean_and_max_abs_error(
+                target,
+                reference,
+            )
+            mean_abs_reference_errors.append(mean_reference_err)
+            max_abs_reference_errors.append(max_reference_err)
+            mean_abs_target_reference_errors.append(mean_target_reference_err)
+            max_abs_target_reference_errors.append(max_target_reference_err)
         base_heights.append(base_pos[2])
         if min_link_z is not None:
             min_link_heights.append(min_link_z)
@@ -203,6 +278,18 @@ def main() -> None:
                 min(reported_action),
                 "action_max",
                 max(reported_action),
+                "mean_abs_target_err",
+                mean_target_err,
+                "max_abs_target_err",
+                max_target_err,
+                "mean_abs_reference_err",
+                mean_abs_reference_errors[-1] if mean_abs_reference_errors else None,
+                "mean_abs_target_reference_err",
+                (
+                    mean_abs_target_reference_errors[-1]
+                    if mean_abs_target_reference_errors
+                    else None
+                ),
                 "max_abs_qvel",
                 max_abs_qvel[-1],
                 "obs_len",
@@ -230,6 +317,22 @@ def main() -> None:
     if max_contact_forces:
         print("MAX_LINK_CONTACT_FORCE_MAX", max(max_contact_forces))
         print("MAX_LINK_CONTACT_FORCE_FINAL", max_contact_forces[-1])
+    print(
+        "MEAN_ABS_TARGET_TRACKING_ERROR_AVG",
+        sum(mean_abs_target_errors) / len(mean_abs_target_errors),
+    )
+    print("MAX_ABS_TARGET_TRACKING_ERROR", max(max_abs_target_errors))
+    if mean_abs_reference_errors:
+        print(
+            "MEAN_ABS_REFERENCE_TRACKING_ERROR_AVG",
+            sum(mean_abs_reference_errors) / len(mean_abs_reference_errors),
+        )
+        print("MAX_ABS_REFERENCE_TRACKING_ERROR", max(max_abs_reference_errors))
+        print(
+            "MEAN_ABS_TARGET_REFERENCE_ERROR_AVG",
+            sum(mean_abs_target_reference_errors) / len(mean_abs_target_reference_errors),
+        )
+        print("MAX_ABS_TARGET_REFERENCE_ERROR", max(max_abs_target_reference_errors))
     print("MAX_ABS_QVEL", max(max_abs_qvel))
     print("ELAPSED_S", elapsed)
     print("POLICY_STEPS", len(actions))
@@ -337,6 +440,42 @@ def build_action_fixture(
 
 def clip_action(action: Sequence[float]) -> tuple[float, ...]:
     return tuple(max(-1.0, min(1.0, float(value))) for value in action)
+
+
+def motor_targets_from_replay_action(
+    action: Sequence[float],
+    *,
+    action_mode: str,
+    default_motor_positions: Sequence[float],
+    contract: GenesisG1Contract,
+) -> tuple[float, ...]:
+    if len(action) != contract.action_dim:
+        raise ValueError(f"Expected action_dim={contract.action_dim}, got {len(action)}")
+    if action_mode == "sonic_policy_raw":
+        return sonic_policy_action_to_mujoco_targets(action)
+    if action_mode != "normalized_delta":
+        raise ValueError(f"Unknown action_mode: {action_mode}")
+    if len(default_motor_positions) != contract.action_dim:
+        raise ValueError(
+            f"Expected {contract.action_dim} default motor positions, "
+            f"got {len(default_motor_positions)}"
+        )
+    return tuple(
+        default + contract.action_scale_rad * delta
+        for default, delta in zip(default_motor_positions, clip_action(action))
+    )
+
+
+def mean_and_max_abs_error(
+    actual: Sequence[float],
+    expected: Sequence[float],
+) -> tuple[float, float]:
+    if len(actual) != len(expected):
+        raise ValueError(f"Cannot compare vectors of length {len(actual)} and {len(expected)}")
+    if not actual:
+        raise ValueError("Cannot compare empty vectors")
+    errors = [abs(float(lhs) - float(rhs)) for lhs, rhs in zip(actual, expected)]
+    return sum(errors) / len(errors), max(errors)
 
 
 def count_out_of_range_actions(actions: Sequence[Sequence[float]]) -> int:

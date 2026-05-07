@@ -151,6 +151,7 @@ class GenesisSceneConfig:
     base_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
     root_qpos: tuple[float, float, float, float, float, float, float] | None = None
     default_motor_positions: tuple[float, ...] | None = None
+    initial_motor_positions: tuple[float, ...] | None = None
     action_mode: str = "normalized_delta"
     convexify: bool = False
     decimate: bool = False
@@ -212,6 +213,7 @@ class GenesisG1SceneBackend:
         self._reset_root_qpos()
         self.motor_dof_indices = self._resolve_motor_dof_indices()
         self.default_motor_positions = self._resolve_default_motor_positions()
+        self.initial_motor_positions = self._resolve_initial_motor_positions()
         self.previous_action = (0.0,) * self.contract.action_dim
         self.sonic_history = SonicG1HistoryBuffer()
         self.step_count = 0
@@ -219,7 +221,7 @@ class GenesisG1SceneBackend:
     def reset(self, seed: int | None = None) -> tuple[float, ...]:
         self._reset_root_qpos()
         self.robot.set_dofs_position(
-            self.default_motor_positions,
+            self.initial_motor_positions,
             dofs_idx_local=self.motor_dof_indices,
             zero_velocity=True,
         )
@@ -354,6 +356,16 @@ class GenesisG1SceneBackend:
             )
         return tuple(float(value) for value in self.config.default_motor_positions)
 
+    def _resolve_initial_motor_positions(self) -> tuple[float, ...]:
+        if self.config.initial_motor_positions is None:
+            return self.default_motor_positions
+        if len(self.config.initial_motor_positions) != self.contract.action_dim:
+            raise ValueError(
+                f"Expected {self.contract.action_dim} initial motor positions, "
+                f"got {len(self.config.initial_motor_positions)}"
+            )
+        return tuple(float(value) for value in self.config.initial_motor_positions)
+
     def _read_motor_velocities(self) -> tuple[float, ...]:
         return _flatten_numeric(self.robot.get_dofs_velocity(dofs_idx_local=self.motor_dof_indices))
 
@@ -462,6 +474,7 @@ class GenesisG1Env:
         base_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0),
         root_qpos: tuple[float, float, float, float, float, float, float] | None = None,
         default_motor_positions: tuple[float, ...] | None = None,
+        initial_motor_positions: tuple[float, ...] | None = None,
         action_mode: str = "normalized_delta",
         convexify: bool = False,
         decimate: bool = False,
@@ -476,6 +489,7 @@ class GenesisG1Env:
             base_quat=base_quat,
             root_qpos=root_qpos,
             default_motor_positions=default_motor_positions,
+            initial_motor_positions=initial_motor_positions,
             action_mode=action_mode,
             convexify=convexify,
             decimate=decimate,

@@ -410,3 +410,122 @@ should compare the generated motor targets, contact forces, and online history
 against official MuJoCo for the same walking window, or move to a fuller
 planner/encoder integration that keeps the target motion and policy feedback in
 phase.
+
+## Diagnose Root Pose 2026-05-07
+
+Added focused instrumentation to `genesis_action_replay_smoke.py`:
+
+- optional physical reset pose via `--initial-joint-pos-csv`;
+- optional 29D reference q CSV via `--reference-joint-pos-csv`;
+- per-frame policy-target tracking error and target-vs-reference error.
+
+Verification:
+
+```text
+Local targeted pytest: 34 passed
+H200 targeted pytest: 34 passed
+```
+
+Extracted pure 29D official walking logs:
+
+```text
+Script:
+.agent/task/task006-sonic-genesis-action-policy/extract_official_log_29d.py
+
+Actions:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/actions/official_walking_raw_actions_log_300f.csv
+rows: 300
+finite: True
+row0_absmax: 0.0
+min/max: -12.897335052 / 10.547904968
+
+Measured q:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/actions/official_walking_q_log_300f.csv
+rows: 300
+finite: True
+min/max: -1.419189334 / 1.354117393
+```
+
+Action-row alignment was tested by replaying the official `action.csv` rows
+directly, including row 0 zero action. With the old root quaternion
+`0.711231 -0.00883 -0.004562 -0.702888`, the 50-frame replay still fell:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_official_walking_raw_log_actions_50f_tracking.log
+
+BASE_HEIGHT_MIN 0.07961206138134003
+BASE_HEIGHT_FINAL 0.10619580000638962
+HEIGHT_OK_RANGE 0.3 1.2 False
+MEAN_ABS_TARGET_TRACKING_ERROR_AVG 0.24277533566380488
+MEAN_ABS_REFERENCE_TRACKING_ERROR_AVG 0.12572087241865232
+MEAN_ABS_TARGET_REFERENCE_ERROR_AVG 0.22703592721239374
+```
+
+Using official measured q0 as the physical reset pose did not fix the old-root
+run:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_official_walking_raw_log_actions_50f_official_q0_init_tracking.log
+
+BASE_HEIGHT_MIN 0.16823244094848633
+BASE_HEIGHT_FINAL 0.19532467424869537
+HEIGHT_OK_RANGE 0.3 1.2 False
+MEAN_ABS_TARGET_TRACKING_ERROR_AVG 0.2502752844080102
+MEAN_ABS_REFERENCE_TRACKING_ERROR_AVG 0.1218093288250086
+MEAN_ABS_TARGET_REFERENCE_ERROR_AVG 0.22703592721239374
+```
+
+The walking capture's actual `base_quat.csv` row 0 is near identity:
+
+```text
+base_q = 0.999910712 -0.006119614 0.011878765 0.000052081
+```
+
+Replacing only the root quaternion with that walking capture quaternion, while
+keeping official `action.csv` row alignment and measured q0 initialization,
+changed the 50-frame replay from falling to passing the height smoke:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_official_walking_raw_log_actions_50f_walking_base_quat_tracking.log
+
+ROOT_QPOS (0.002389, 0.011728, 0.791166, 0.999910712, -0.006119614, 0.011878765, 5.2081e-05)
+FRAME 49 base_z 0.3062208294868469
+BASE_HEIGHT_MIN 0.3062208294868469
+BASE_HEIGHT_FINAL 0.3062208294868469
+HEIGHT_OK_RANGE 0.3 1.2 True
+MEAN_ABS_TARGET_TRACKING_ERROR_AVG 0.2502038281348184
+MEAN_ABS_REFERENCE_TRACKING_ERROR_AVG 0.11873773822838386
+MEAN_ABS_TARGET_REFERENCE_ERROR_AVG 0.22703592721239374
+GENESIS_ACTION_REPLAY_SMOKE_OK
+```
+
+Diagnosis conclusion: the earlier official walking action replay failure was
+primarily caused by using a root quaternion from the wrong capture. It was not
+caused by the decoder, missing action row 0, or the physical motor q0 alone.
+The replay is still marginal at 50 frames, so this is a smoke pass, not a
+walking-quality pass.
+
+L2 decoder-only locomotion probe with the corrected walking root quaternion and
+official q0 was started for 100 frames:
+
+```text
+Script:
+.agent/task/task006-sonic-genesis-action-policy/run_h200_walking_locomotion_probe.sh
+
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_sonic_walking_obs_100f_walking_base_quat_q0_locomotion.log
+
+FRAME 20 disp_xy 0.1339092214345273 path_xy 0.13691639215811013 root_z 0.760623037815094
+FRAME 40 disp_xy 0.17986304279316542 path_xy 0.19964767986303977 root_z 0.7679933309555054
+FRAME 60 disp_xy 0.21374395871356025 path_xy 0.2687822544722506 root_z 0.7868149876594543 left_contact True right_contact False
+FRAME 80 disp_xy 0.24342315138543422 path_xy 0.30610471773944953 root_z 0.7728626728057861
+```
+
+The SSH session was closed by the remote host before the 100-frame summary
+printed. A shorter 80-frame retry was interrupted after frame 0, and then the
+H200 SSH endpoint started refusing connections. Treat the L2 result as
+promising partial evidence only; it is not a pass until a complete run prints
+the final `GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK` summary.

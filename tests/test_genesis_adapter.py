@@ -131,6 +131,28 @@ def test_genesis_scene_backend_maps_raw_sonic_policy_action() -> None:
     )
 
 
+def test_genesis_scene_backend_keeps_sonic_default_targets_separate_from_initial_pose() -> None:
+    asset = Path(__file__)
+    initial_pose = tuple(0.01 * index for index in range(GenesisG1Contract().action_dim))
+    backend = GenesisG1SceneBackend(
+        GenesisSceneConfig(
+            asset_path=str(asset),
+            backend="cuda",
+            action_mode="sonic_policy_raw",
+            initial_motor_positions=initial_pose,
+        ),
+        genesis_module=_FakeGenesisModule(),
+    )
+
+    backend.reset()
+    assert backend.robot.get_dofs_position(backend.motor_dof_indices) == list(initial_pose)
+    backend.step([0.0] * backend.contract.action_dim)
+
+    assert backend.default_motor_positions == SONIC_G1_DEFAULT_ANGLES
+    assert backend.initial_motor_positions == initial_pose
+    assert backend.robot.last_position_target == SONIC_G1_DEFAULT_ANGLES
+
+
 def test_genesis_scene_backend_rejects_default_override_in_sonic_policy_mode() -> None:
     asset = Path(__file__)
 
@@ -141,6 +163,20 @@ def test_genesis_scene_backend_rejects_default_override_in_sonic_policy_mode() -
                 backend="cuda",
                 action_mode="sonic_policy_raw",
                 default_motor_positions=(0.0,) * GenesisG1Contract().action_dim,
+            ),
+            genesis_module=_FakeGenesisModule(),
+        )
+
+
+def test_genesis_scene_backend_rejects_wrong_initial_motor_position_shape() -> None:
+    asset = Path(__file__)
+
+    with pytest.raises(ValueError, match="Expected 29 initial motor positions"):
+        GenesisG1SceneBackend(
+            GenesisSceneConfig(
+                asset_path=str(asset),
+                backend="cuda",
+                initial_motor_positions=(0.0,) * 28,
             ),
             genesis_module=_FakeGenesisModule(),
         )

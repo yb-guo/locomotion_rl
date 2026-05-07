@@ -8,9 +8,13 @@ from h200_locomotion_lab.tools.genesis_action_replay_smoke import (
     clip_action,
     count_out_of_range_actions,
     load_action_sequence,
+    mean_and_max_abs_error,
+    motor_targets_from_replay_action,
     read_action_csv,
     read_default_joint_positions,
 )
+from h200_locomotion_lab.envs.genesis_adapter import GenesisG1Contract
+from h200_locomotion_lab.sonic.g1_policy_bridge import sonic_policy_action_to_mujoco_targets
 from h200_locomotion_lab.tools.sonic_reference_replay_smoke import (
     _horizontal_distance,
     _read_contact_metrics,
@@ -89,6 +93,38 @@ def test_clip_and_out_of_range_count() -> None:
 
     assert clip_action(actions[0]) == (-1.0, -1.0, 0.0, 1.0, 1.0)
     assert count_out_of_range_actions(actions) == 2
+
+
+def test_motor_targets_from_replay_action_maps_normalized_delta() -> None:
+    contract = GenesisG1Contract()
+    default = tuple(0.1 * index for index in range(contract.action_dim))
+    target = motor_targets_from_replay_action(
+        (2.0,) * contract.action_dim,
+        action_mode="normalized_delta",
+        default_motor_positions=default,
+        contract=contract,
+    )
+
+    assert target[0] == pytest.approx(0.25)
+    assert target[1] == pytest.approx(0.35)
+
+
+def test_motor_targets_from_replay_action_maps_raw_sonic_policy_action() -> None:
+    contract = GenesisG1Contract()
+    action = tuple(0.01 * index for index in range(contract.action_dim))
+
+    target = motor_targets_from_replay_action(
+        action,
+        action_mode="sonic_policy_raw",
+        default_motor_positions=(999.0,) * contract.action_dim,
+        contract=contract,
+    )
+
+    assert target == sonic_policy_action_to_mujoco_targets(action)
+
+
+def test_mean_and_max_abs_error() -> None:
+    assert mean_and_max_abs_error((1.0, 3.0, -2.0), (0.0, 1.0, -3.0)) == (4.0 / 3.0, 2.0)
 
 
 def test_read_floating_base_position_prefers_root_qpos() -> None:
