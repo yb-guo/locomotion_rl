@@ -812,3 +812,65 @@ GENESIS_SONIC_POLICY_ROLLOUT_SMOKE_OK
   Review: the original 20-frame failure no longer reproduces. This closes the
   diagnosed smoke failure, but not the broader claim of long-horizon walking or
   a fully online encoder/planner token path.
+
+- 2026-05-07: Captured and tested an official walking segment.
+
+  A repeatable harness now creates a walking-only reference directory pointing
+  at `walking_quip_360_R_002__A428`, runs the official deploy binary against
+  the H200 MuJoCo sim2sim stack, and sends `]`, `T`, `O` to capture policy
+  inputs and target motion.
+
+```text
+Policy input:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/actions/official_policy_input_walking_capture.csv
+Rows: 922
+Dims: [994]
+Finite: True
+
+Target motion:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/actions/official_target_motion_walking_capture.csv
+Rows: 922
+Dims: [36]
+Target xy path length: 10.128800215398531
+```
+
+  Genesis decoder-only closed-loop with those official walking obs/token rows
+  stayed upright but did not walk:
+
+```text
+Frames: 200
+HORIZONTAL_DISPLACEMENT 0.04495996297353397
+PATH_LENGTH_XY 0.18772288302671417
+AVERAGE_SPEED_XY 0.011239990743383492
+SINGLE_SUPPORT_FRAMES 0
+DOUBLE_SUPPORT_FRAMES 196
+LOCOMOTION_OBSERVED False
+```
+
+  Teacher-forcing the first 50 decoded walking actions through
+  `sonic_policy_raw` was unstable in Genesis:
+
+```text
+ACTION_MAX_ABS 5.41317034
+BASE_HEIGHT_MIN 0.14942580461502075
+BASE_HEIGHT_FINAL 0.2155306339263916
+HEIGHT_OK_RANGE 0.3 1.2 False
+```
+
+  Direct official walking reference joint-position replay in Genesis does
+  produce non-trivial root motion and stays upright:
+
+```text
+Frames: 50
+HORIZONTAL_DISPLACEMENT 0.13962996362873248
+PATH_LENGTH_XY 0.19400965954206936
+AVERAGE_SPEED_XY 0.13962996362873248
+BASE_HEIGHT_MIN 0.7714895009994507
+BASE_HEIGHT_FINAL 0.7714895009994507
+SONIC_REFERENCE_REPLAY_GENESIS_SMOKE_OK
+```
+
+  Review: walking reference data exists, and Genesis can move the G1 under
+  official walking joint targets. The remaining blocker is the SONIC
+  policy-action feedback path under Genesis dynamics/contact; the decoder-only
+  token replay is not sufficient to reproduce official walking.

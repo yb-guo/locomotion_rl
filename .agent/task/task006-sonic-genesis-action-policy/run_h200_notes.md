@@ -280,3 +280,133 @@ should find a captured SONIC walking command/token/action segment or connect
 the full online SONIC command -> encoder/planner -> decoder path, then require
 non-trivial root translation and single-support foot alternation as pass
 criteria.
+
+## Walking Capture And Triage 2026-05-07
+
+Added a repeatable official capture harness:
+
+```text
+.agent/task/task006-sonic-genesis-action-policy/capture_official_walking.sh
+```
+
+The harness creates a walking-only reference directory that symlinks the
+official `walking_quip_360_R_002__A428` clip, then runs the official deploy
+binary with the same H200 MuJoCo sim2sim stack and sends:
+
+```text
+]  start control
+T  play walking motion 0
+O  stop
+```
+
+Official walking capture result:
+
+```text
+Deploy status: 0
+Policy input CSV:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/actions/official_policy_input_walking_capture.csv
+Rows: 922
+Dims: [994]
+Finite: True
+
+Target motion CSV:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/actions/official_target_motion_walking_capture.csv
+Rows: 922
+Dims: [36]
+Target xy path length: 10.128800215398531
+Target net xy displacement: 0.0
+```
+
+The target motion has a long xy path but returns close to the start, consistent
+with the `walking_quip_360` clip.
+
+Genesis decoder-only closed-loop with official walking obs/token replay:
+
+```text
+Frames: 200
+ROOT_X_START 0.002389000030234456
+ROOT_Y_START 0.011727999895811081
+ROOT_X_FINAL 0.01647598296403885
+ROOT_Y_FINAL -0.03096807934343815
+HORIZONTAL_DISPLACEMENT 0.04495996297353397
+PATH_LENGTH_XY 0.18772288302671417
+AVERAGE_SPEED_XY 0.011239990743383492
+ROOT_Z_MIN 0.7476961612701416
+ROOT_Z_FINAL 0.7856734991073608
+LEFT_CONTACT_FRAMES 196
+RIGHT_CONTACT_FRAMES 196
+SINGLE_SUPPORT_FRAMES 0
+DOUBLE_SUPPORT_FRAMES 196
+TRANSLATION_OBSERVED False
+LOCOMOTION_OBSERVED False
+GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK
+```
+
+Review: the walking token/obs capture did not turn the current Genesis
+decoder-only closed loop into locomotion. It remains upright, but has negligible
+net translation and no single-support gait.
+
+Teacher-forced action replay from the same official walking obs:
+
+```text
+Decoder export:
+official_policy_input_walking_capture.csv -> official_walking_decoder_actions_300f.csv
+Rows decoded: 300
+Action dim: 29
+Action finite: True
+Action min/max: -12.89730453491211 / 10.547945022583008
+
+Genesis action replay, first 50 frames:
+ACTION_MODE sonic_policy_raw
+ACTION_MAX_ABS 5.41317034
+FRAME 0 base_z 0.7885566353797913
+FRAME 49 base_z 0.2155306339263916
+BASE_HEIGHT_MIN 0.14942580461502075
+BASE_HEIGHT_FINAL 0.2155306339263916
+HEIGHT_OK_RANGE 0.3 1.2 False
+```
+
+Review: raw walking policy actions decoded from official MuJoCo observations
+are not stable when directly teacher-forced into Genesis. The failure is not
+just a missing walking token; the Genesis policy-action replay path still has a
+dynamics/contact/feedback mismatch for walking-scale actions.
+
+Added root-motion metrics to:
+
+```text
+python -m h200_locomotion_lab.tools.sonic_reference_replay_smoke
+```
+
+Verification:
+
+```text
+Local related pytest: 18 passed
+H200 test_genesis_action_replay_smoke.py: 13 passed
+```
+
+Official walking reference joint-position replay in Genesis:
+
+```text
+Reference: walking_quip_360_R_002__A428
+Frames: 50
+ROOT_X_START 0.00381189095787704
+ROOT_Y_START 0.010537360794842243
+ROOT_X_FINAL -0.04089926555752754
+ROOT_Y_FINAL 0.1428152471780777
+HORIZONTAL_DISPLACEMENT 0.13962996362873248
+PATH_LENGTH_XY 0.19400965954206936
+AVERAGE_SPEED_XY 0.13962996362873248
+BASE_HEIGHT_MIN 0.7714895009994507
+BASE_HEIGHT_FINAL 0.7714895009994507
+HEIGHT_OK_RANGE 0.3 1.2 True
+SONIC_REFERENCE_REPLAY_GENESIS_SMOKE_OK
+```
+
+Review: Genesis can produce non-trivial root motion when driven by the official
+walking reference joint positions. The current blocker is therefore narrower:
+the SONIC policy-action path in Genesis does not yet reproduce the official
+walking behavior, even when given official walking obs/token rows. Next work
+should compare the generated motor targets, contact forces, and online history
+against official MuJoCo for the same walking window, or move to a fuller
+planner/encoder integration that keeps the target motion and policy feedback in
+phase.

@@ -116,6 +116,16 @@ L2 decoder-only closed-loop evidence:
   `GENESIS_SONIC_POLICY_ROLLOUT_SMOKE_OK`.
 
 Review: the original 20-frame closed-loop failure no longer reproduces. This is
-still a decoder-only smoke with replayed token/history initialization; longer
-horizon walking quality and online encoder/planner token generation remain
-separate validation work.
+still a decoder-only smoke with replayed token/history initialization; walking
+quality is not passed.
+
+Follow-up locomotion probes confirmed the 100/200-frame token replay was a
+stable standing/settling behavior. A new official walking capture from
+`walking_quip_360_R_002__A428` produced 922 finite 994D obs rows and a target
+motion with about 10.13 m xy path length, but replaying those walking tokens in
+Genesis still produced negligible displacement and no single-support gait.
+Teacher-forced walking decoder actions fell within 50 frames, while direct
+official walking reference joint-position replay moved about 0.14 m in 50
+frames and stayed upright. The active blocker is now the SONIC policy-action
+path under Genesis dynamics/contact, not the availability of a walking
+reference clip.

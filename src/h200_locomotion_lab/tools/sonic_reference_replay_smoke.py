@@ -190,6 +190,7 @@ def main() -> None:
     robot.set_dofs_velocity(None)
 
     base_heights: list[float] = []
+    base_positions: list[tuple[float, float, float]] = []
     min_link_heights: list[float] = []
     mean_abs_errors: list[float] = []
     max_abs_errors: list[float] = []
@@ -207,6 +208,7 @@ def main() -> None:
         contact_count, max_contact_force = _read_contact_metrics(robot)
         if min_link_z is not None:
             min_link_heights.append(min_link_z)
+        base_positions.append(pos)
         finite_ok = (
             finite_ok
             and _is_finite(q)
@@ -223,6 +225,10 @@ def main() -> None:
             print(
                 "FRAME",
                 frame,
+                "base_x",
+                pos[0],
+                "base_y",
+                pos[1],
                 "base_z",
                 pos[2],
                 "min_link_z",
@@ -243,11 +249,21 @@ def main() -> None:
     base_min = min(base_heights)
     base_max = max(base_heights)
     base_final = base_heights[-1]
+    displacement_xy = _horizontal_distance(base_positions[0], base_positions[-1])
+    path_xy = _xy_path_length(base_positions)
+    duration_s = len(base_positions) / 50.0
     height_ok = (
         args.min_base_height <= base_min <= args.max_base_height
         and args.min_base_height <= base_final <= args.max_base_height
     )
     print("FINITE_OK", finite_ok)
+    print("ROOT_X_START", base_positions[0][0])
+    print("ROOT_Y_START", base_positions[0][1])
+    print("ROOT_X_FINAL", base_positions[-1][0])
+    print("ROOT_Y_FINAL", base_positions[-1][1])
+    print("HORIZONTAL_DISPLACEMENT", displacement_xy)
+    print("PATH_LENGTH_XY", path_xy)
+    print("AVERAGE_SPEED_XY", displacement_xy / duration_s if duration_s > 0 else 0.0)
     print("BASE_HEIGHT_MIN", base_min)
     print("BASE_HEIGHT_MAX", base_max)
     print("BASE_HEIGHT_FINAL", base_final)
@@ -414,6 +430,19 @@ def _read_all_dof_positions(robot: Any) -> tuple[float, ...]:
     except TypeError:
         n_dofs = int(getattr(robot, "n_dofs"))
         return _flatten_numeric(robot.get_dofs_position(dofs_idx_local=tuple(range(n_dofs))))
+
+
+def _horizontal_distance(
+    start: tuple[float, float, float],
+    end: tuple[float, float, float],
+) -> float:
+    dx = end[0] - start[0]
+    dy = end[1] - start[1]
+    return math.sqrt(dx * dx + dy * dy)
+
+
+def _xy_path_length(positions: Sequence[tuple[float, float, float]]) -> float:
+    return sum(_horizontal_distance(prev, curr) for prev, curr in zip(positions, positions[1:]))
 
 
 if __name__ == "__main__":

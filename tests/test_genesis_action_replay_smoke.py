@@ -12,8 +12,10 @@ from h200_locomotion_lab.tools.genesis_action_replay_smoke import (
     read_default_joint_positions,
 )
 from h200_locomotion_lab.tools.sonic_reference_replay_smoke import (
+    _horizontal_distance,
     _read_contact_metrics,
     _read_floating_base_position,
+    _xy_path_length,
 )
 
 
@@ -105,6 +107,17 @@ def test_read_contact_metrics_uses_genesis_contact_apis() -> None:
     robot = _FakeContactRobot()
 
     assert _read_contact_metrics(robot) == (2, 5.0)
+
+
+def test_xy_root_motion_helpers_report_displacement_and_path() -> None:
+    positions = (
+        (0.0, 0.0, 0.8),
+        (0.03, 0.04, 0.79),
+        (0.06, 0.08, 0.78),
+    )
+
+    assert _horizontal_distance(positions[0], positions[-1]) == pytest.approx(0.1)
+    assert _xy_path_length(positions) == pytest.approx(0.1)
 
 
 def _fixture_path(name: str) -> Path:
