@@ -35,3 +35,17 @@ action max abs: 8.832411766052246
 
 Conclusion: SONIC decoder is now connected to Genesis state/action feedback for
 a short smoke, but stable closed-loop rollout is not passed.
+
+Visual evidence:
+
+```text
+Remote GIF:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/videos/genesis_g1_sonic_closed_loop_20f.gif
+
+Local GIF:
+.agent/task/task006-sonic-genesis-action-policy/artifacts/genesis_g1_sonic_closed_loop_20f.gif
+
+Frames: 20
+base_z: 0.7887014746665955 -> 0.2644214630126953
+action max abs: 8.832415580749512
+```

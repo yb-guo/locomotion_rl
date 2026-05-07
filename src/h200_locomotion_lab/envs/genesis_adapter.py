@@ -128,6 +128,17 @@ class GenesisBackend(Protocol):
 
 
 @dataclass(frozen=True)
+class GenesisCameraConfig:
+    """Camera options that must be attached before Genesis scene build."""
+
+    res: tuple[int, int] = (420, 320)
+    pos: tuple[float, float, float] = (3.4, -4.2, 2.2)
+    lookat: tuple[float, float, float] = (0.0, 0.0, 0.85)
+    fov: float = 42.0
+    gui: bool = False
+
+
+@dataclass(frozen=True)
 class GenesisSceneConfig:
     """Runtime options for the single-env Genesis G1 smoke backend."""
 
@@ -144,6 +155,7 @@ class GenesisSceneConfig:
     convexify: bool = False
     decimate: bool = False
     logging_level: str = "warning"
+    camera: GenesisCameraConfig | None = None
 
 
 class ContractOnlyBackend:
@@ -195,6 +207,7 @@ class GenesisG1SceneBackend:
 
         self.gs = genesis_module or import_genesis_module()
         self._init_genesis()
+        self.camera = None
         self.scene = self._build_scene()
         self._reset_root_qpos()
         self.motor_dof_indices = self._resolve_motor_dof_indices()
@@ -278,6 +291,14 @@ class GenesisG1SceneBackend:
                 decimate=self.config.decimate,
             )
         )
+        if self.config.camera is not None:
+            self.camera = scene.add_camera(
+                res=self.config.camera.res,
+                pos=self.config.camera.pos,
+                lookat=self.config.camera.lookat,
+                fov=self.config.camera.fov,
+                GUI=self.config.camera.gui,
+            )
         scene.build(n_envs=self.config.n_envs)
         return scene
 
