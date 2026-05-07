@@ -267,6 +267,41 @@ direct 116.198.70.4:22376: kex_exchange_identification / banner exchange error
 Visual dynamic GIF verification is therefore still pending; do not treat the
 dynamic visual route as reviewed until SSH is stable and the GIF is generated.
 
+- 2026-05-07: H200 SSH stabilized and the dynamic visual replay was completed.
+  Two GIFs were rendered; the second uses a better full-body camera and is the
+  inspection artifact to use:
+
+```text
+Log: /root/h200-locomotion-lab-runs/task004-genesis-g1-baseline/logs/genesis_g1_sonic_reference_replay_dynamic_official_init_fullbody_gif_40f.log
+Remote GIF: /root/h200-locomotion-lab-runs/task004-genesis-g1-baseline/videos/genesis_g1_sonic_reference_replay_dynamic_official_init_fullbody_40f.gif
+Remote contact sheet: /root/h200-locomotion-lab-runs/task004-genesis-g1-baseline/videos/genesis_g1_sonic_reference_replay_dynamic_official_init_fullbody_40f_contact.png
+Local GIF: .agent/task/task004-genesis-g1-baseline/artifacts/genesis_g1_sonic_reference_replay_dynamic_official_init_fullbody_40f.gif
+Local contact sheet: .agent/task/task004-genesis-g1-baseline/artifacts/genesis_g1_sonic_reference_replay_dynamic_official_init_fullbody_40f_contact.png
+MODE dynamic
+RES (420, 320)
+RENDERED_FRAMES 40
+GIF_BYTES 88434
+BASE_HEIGHT_MIN 0.7911660075187683
+BASE_HEIGHT_MAX 0.7911660075187683
+BASE_HEIGHT_FINAL 0.7911660075187683
+SONIC_REFERENCE_REPLAY_GIF_OK
+```
+
+Remote `imageio` read-back of the full-body GIF:
+
+```text
+READ_FRAMES 40
+DIFF_MIN 0.03939484126984127
+DIFF_MAX 0.11858382936507937
+DIFF_AVG 0.07370325854700854
+CONTACT shape (320, 2100, 3)
+```
+
+Visual review of the 5-frame contact sheet shows the robot remains above the
+plane; the previous "sunk under the floor" symptom is no longer present in this
+official-init dynamic replay. The motion is small because this is still a short
+reference joint-position PD replay, not a learned SONIC policy rollout.
+
 - Local verification command:
 
 ```bash
@@ -287,9 +322,8 @@ Hardware: pass for raw Genesis CUDA import/build/step smoke on H200.
 Verify: local reset/step tests passed; raw Genesis H200 plane, SONIC G1 MJCF
 build/step, repo `GenesisG1Env` real backend reset/step smoke, and decimated
 SONIC reference joint-position replay smoke passed. Official-style dynamic
-Genesis replay smoke also passed numerically on H200; dynamic visual GIF review
-is still pending because the H200 SSH connection failed before the render command
-could start.
+Genesis replay smoke also passed numerically on H200, and the full-body dynamic
+GIF/contact-sheet visual check no longer shows the robot sunk below the plane.
 Findings: PPO training is still pending. The observation is contract-shaped and
 minimal; reward, termination, vectorized envs, and locomotion reset curriculum
 belong in the PPO baseline subtask. A true SONIC ONNX policy-action replay is
