@@ -13,6 +13,7 @@ from h200_locomotion_lab.envs.genesis_adapter import GenesisG1Contract, GenesisG
 from h200_locomotion_lab.tools.sonic_reference_replay_smoke import (
     apply_sonic_g1_motor_config,
     _flatten_numeric,
+    _read_floating_base_position,
     _is_finite,
     _read_min_link_height,
 )
@@ -102,6 +103,7 @@ def main() -> None:
     motor_idx = backend.motor_dof_indices  # type: ignore[attr-defined]
     print("MOTOR_DOF_COUNT", len(motor_idx))
     print("MOTOR_DOF_INDICES", motor_idx)
+    print("BASE_HEIGHT_SOURCE", "floating_base_dof" if min(motor_idx) >= 3 else "spawn_pose")
 
     if not args.no_sonic_motor_config:
         apply_sonic_g1_motor_config(robot, motor_idx)
@@ -121,7 +123,7 @@ def main() -> None:
         result = env.step(action)
         observation = result.observation
         qvel = _flatten_numeric(robot.get_dofs_velocity(dofs_idx_local=motor_idx))
-        base_pos = _flatten_numeric(robot.get_pos())
+        base_pos = _read_floating_base_position(robot, motor_idx)
         min_link_z = _read_min_link_height(robot)
 
         finite_ok = (

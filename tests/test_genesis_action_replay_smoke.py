@@ -11,6 +11,7 @@ from h200_locomotion_lab.tools.genesis_action_replay_smoke import (
     read_action_csv,
     read_default_joint_positions,
 )
+from h200_locomotion_lab.tools.sonic_reference_replay_smoke import _read_floating_base_position
 
 
 def test_build_sine_fixture_has_expected_shape_and_range() -> None:
@@ -85,5 +86,30 @@ def test_clip_and_out_of_range_count() -> None:
     assert count_out_of_range_actions(actions) == 2
 
 
+def test_read_floating_base_position_prefers_root_dofs() -> None:
+    robot = _FakeFloatingBaseRobot()
+
+    assert _read_floating_base_position(robot, motor_dof_indices=(6, 7)) == (0.1, 0.2, 1.3)
+
+
+def test_read_floating_base_position_falls_back_to_spawn_pose() -> None:
+    robot = _FakeFloatingBaseRobot()
+
+    assert _read_floating_base_position(robot, motor_dof_indices=(0, 1)) == (9.0, 8.0, 7.0)
+
+
 def _fixture_path(name: str) -> Path:
     return Path(__file__).with_name("fixtures") / name
+
+
+class _FakeFloatingBaseRobot:
+    n_dofs = 8
+
+    def get_dofs_position(self, dofs_idx_local: tuple[int, ...] | None = None) -> list[float]:
+        values = [0.1, 0.2, 1.3, 0.0, 0.0, 0.0, 0.4, 0.5]
+        if dofs_idx_local is None:
+            return values
+        return [values[index] for index in dofs_idx_local]
+
+    def get_pos(self) -> list[float]:
+        return [9.0, 8.0, 7.0]

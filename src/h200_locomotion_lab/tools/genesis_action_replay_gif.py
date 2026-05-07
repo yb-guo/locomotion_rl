@@ -21,6 +21,7 @@ from h200_locomotion_lab.tools.genesis_action_replay_smoke import (
 from h200_locomotion_lab.tools.sonic_reference_replay_smoke import (
     apply_sonic_g1_motor_config,
     _flatten_numeric,
+    _read_floating_base_position,
 )
 
 
@@ -139,6 +140,7 @@ def main() -> None:
     robot.set_dofs_velocity(None)
     print("MOTOR_DOF_COUNT", len(motor_dof_indices))
     print("MOTOR_DOF_INDICES", motor_dof_indices)
+    print("BASE_HEIGHT_SOURCE", "floating_base_dof" if min(motor_dof_indices) >= 3 else "spawn_pose")
 
     rendered_frames = []
     base_heights: list[float] = []
@@ -159,7 +161,7 @@ def main() -> None:
             normal=False,
         )
         rendered_frames.append(rgb)
-        base_pos = _flatten_numeric(robot.get_pos())
+        base_pos = _read_floating_base_position(robot, motor_dof_indices)
         base_heights.append(base_pos[2])
         if frame_index in {0, len(actions) - 1}:
             print("FRAME", frame_index, "base_z", base_pos[2], "rgb_shape", getattr(rgb, "shape", None))

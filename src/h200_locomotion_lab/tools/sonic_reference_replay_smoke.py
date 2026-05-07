@@ -202,7 +202,7 @@ def main() -> None:
             backend.scene.step()  # type: ignore[attr-defined]
         q = _flatten_numeric(robot.get_dofs_position(dofs_idx_local=motor_idx))
         v = _flatten_numeric(robot.get_dofs_velocity(dofs_idx_local=motor_idx))
-        pos = _flatten_numeric(robot.get_pos())
+        pos = _read_floating_base_position(robot, motor_idx)
         min_link_z = _read_min_link_height(robot)
         if min_link_z is not None:
             min_link_heights.append(min_link_z)
@@ -305,6 +305,46 @@ def _read_min_link_height(robot: Any) -> float | None:
     if len(link_pos) < 3:
         return None
     return min(link_pos[index] for index in range(2, len(link_pos), 3))
+
+
+def _read_floating_base_position(
+    robot: Any,
+    motor_dof_indices: Sequence[int],
+) -> tuple[float, float, float]:
+    """Read dynamic root translation from free-joint DOFs when present.
+
+    Genesis `robot.get_pos()` returns the entity spawn pose for this MJCF path,
+    not the changing floating-base state. The first controlled motor DOF starts
+    after the root free-joint DOFs, so the qpos entries before that motor index
+    are the dynamic root coordinates/orientation.
+    """
+
+    if motor_dof_indices:
+        root_dof_count = min(int(index) for index in motor_dof_indices)
+        if root_dof_count >= 3:
+            all_positions = _read_all_dof_positions(robot)
+            if len(all_positions) >= 3:
+                return (
+                    float(all_positions[0]),
+                    float(all_positions[1]),
+                    float(all_positions[2]),
+                )
+    return _read_spawn_position(robot)
+
+
+def _read_spawn_position(robot: Any) -> tuple[float, float, float]:
+    pos = _flatten_numeric(robot.get_pos())
+    if len(pos) < 3:
+        raise ValueError("robot.get_pos() returned fewer than 3 values")
+    return (pos[0], pos[1], pos[2])
+
+
+def _read_all_dof_positions(robot: Any) -> tuple[float, ...]:
+    try:
+        return _flatten_numeric(robot.get_dofs_position())
+    except TypeError:
+        n_dofs = int(getattr(robot, "n_dofs"))
+        return _flatten_numeric(robot.get_dofs_position(dofs_idx_local=tuple(range(n_dofs))))
 
 
 if __name__ == "__main__":

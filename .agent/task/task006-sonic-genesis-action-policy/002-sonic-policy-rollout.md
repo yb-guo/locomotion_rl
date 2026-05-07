@@ -403,12 +403,14 @@ Length: 50474 bytes
 
 # Review Update
 
-Status: route 1 passed for action-bridge validation.
+Status: route 1 previous pass invalidated; correction in progress.
 
 The path `official deploy obs capture -> SONIC decoder -> Genesis G1 action
-replay` now has H200 evidence. This is materially different from the earlier
-zero-observation decoder smoke: the action source is now 50 real `obs_dict[994]`
-rows emitted by the official C++ deploy loop while it was in CONTROL mode.
+replay` has H200 evidence for the official obs capture and decoder action
+export, but the Genesis replay height evidence above is invalid. The smoke used
+`robot.get_pos()[2]` as base height; on this Genesis/MJCF path that value is the
+entity spawn pose and stays constant. The dynamic floating-base state is in the
+root DOFs before the first motor DOF.
 
 Remaining limitation: this is still not a Genesis closed-loop SONIC policy. The
 policy observations are captured from the official MuJoCo/deploy stack, decoded
@@ -416,3 +418,92 @@ offline, and replayed in Genesis. The next step for true closed-loop work is to
 construct the 994D policy observation online from Genesis state, reference
 tokens/history, and last-action buffers, then call the decoder each control
 step.
+
+- 2026-05-07: User challenged the visual/log evidence. Re-ran diagnosis and
+  reproduced the core issue.
+
+  Minimal H200 probe with no motor commands:
+
+```text
+N_DOFS 35
+GET_POS_0 (0.002389000030234456, 0.011727999895811081, 0.7911660075187683)
+DOFS_POS_0_FIRST10 (0.007086518686264753, 0.026773979887366295, 1.5840092897415161, ...)
+STEP 200 GET_POS (0.002389000030234456, 0.011727999895811081, 0.7911660075187683)
+STEP 200 ROOT_Q_FIRST6 (0.0435638502240181, 0.32732799649238586, 1.3173229694366455, ...)
+```
+
+  Interpretation:
+
+  - `robot.get_pos()` is not the dynamic floating-base pose here.
+  - The root qpos z changed from about `1.584` to `1.317`, proving the earlier
+    constant `BASE_HEIGHT_* 0.791166` was a false pass.
+  - `get_links_pos()` also includes a static/spawn-position z in the minimum,
+    so `MIN_LINK_HEIGHT_*` is not a trustworthy foot/contact metric yet.
+
+  The G1 MJCF itself starts the pelvis at z `0.793`:
+
+```xml
+<body name="pelvis" pos="0 0 0.793">
+  <joint name="floating_base_joint" type="free" .../>
+```
+
+  Therefore passing `--base-pos ... 0.791166` to Genesis double-counted the
+  pelvis height and initialized the floating root around z `1.584`. The corrected
+  entity z for the reference pose is approximately:
+
+```text
+0.791166 - 0.793 = -0.001834
+```
+
+- Added dynamic-root height instrumentation to the Genesis smoke tools:
+
+```text
+BASE_HEIGHT_SOURCE floating_base_dof
+```
+
+  H200/local tests for the helper:
+
+```text
+Local: PYTHONPATH=src python -m pytest -p no:cacheprovider tests/test_genesis_action_replay_smoke.py
+Result: 11 passed
+
+H200: PYTHONPATH=src python3 -m pytest -p no:cacheprovider tests/test_genesis_action_replay_smoke.py
+Result: 11 passed
+```
+
+  Re-running the same official-obs-decoded actions with the corrected height
+  reader but the old double-counted `--base-pos ... 0.791166` fails as expected:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_official_obs_decoder_actions_20f_corrected_height.log
+
+BASE_HEIGHT_SOURCE floating_base_dof
+FRAME 0 base_z 1.584699034690857
+FRAME 19 base_z 1.5525048971176147
+HEIGHT_OK_RANGE 0.3 1.2 False
+base height left smoke range during Genesis action replay
+```
+
+  Re-running 20 frames with corrected entity z `--base-pos 0.002389 0.011728
+  -0.001834` gives a plausible dynamic root height:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_official_obs_decoder_actions_20f_corrected_init.log
+
+BASE_HEIGHT_SOURCE floating_base_dof
+FRAME 0 base_z 0.7931939363479614
+FRAME 19 base_z 0.7633495330810547
+FINITE_OK True
+BASE_HEIGHT_MIN 0.7620419859886169
+BASE_HEIGHT_MAX 0.7931952476501465
+BASE_HEIGHT_FINAL 0.7633495330810547
+HEIGHT_OK_RANGE 0.3 1.2 True
+GENESIS_ACTION_REPLAY_SMOKE_OK
+```
+
+  This corrected-init 20-frame result is a partial smoke only. It does not
+  restore the previous route pass because the contact/min-link metric still
+  needs replacement and the corrected 50-frame/GIF evidence has not been
+  regenerated.

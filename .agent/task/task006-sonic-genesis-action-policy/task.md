@@ -53,14 +53,17 @@ Do not continue to L2 unless L1 passes on H200.
 
 ## Review
 
-Status: L1 action replay passed; L2 route 1 action-bridge validation passed.
+Status: L1 action replay passed; L2 route 1 action-bridge validation is under
+correction.
 
 L1 pass evidence is recorded in `001-genesis-action-replay.md`. L2 may now
 inspect and connect the SONIC policy path, but must not erase the distinction
 between action replay and real policy rollout.
 
 L2 route 1 evidence is recorded in `002-sonic-policy-rollout.md`: official C++
-deploy emitted 1007 finite `obs_dict[994]` rows on H200, the SONIC decoder
-turned 50 real obs rows into 50 finite 29D actions, Genesis numeric action
-replay passed for 50 frames, and a 20-frame GIF was generated. This is still an
-offline action bridge, not a Genesis closed-loop policy.
+deploy emitted 1007 finite `obs_dict[994]` rows on H200, and the SONIC decoder
+turned 50 real obs rows into 50 finite 29D actions. The earlier Genesis replay
+pass was invalidated because the smoke read `robot.get_pos()`/spawn pose as base
+height instead of the floating-base DOF state, and the Genesis MJCF entity pose
+double-counted the pelvis height. Corrected dynamic-root instrumentation has a
+20-frame partial smoke only; do not treat L2 as passed yet.
