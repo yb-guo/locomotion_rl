@@ -125,3 +125,54 @@ Review: the original 20-frame closed-loop failure no longer reproduces when the
 tools use the official SONIC motor gains/force limits. Longer-horizon walking
 quality is still a separate validation item; this only closes the 20-frame
 smoke failure.
+
+## Longer Horizon 2026-05-07
+
+Command class:
+
+```text
+genesis_sonic_policy_rollout_smoke.py
+token replay + official_obs history init + SONIC motor config
+frames: 100
+root_qpos: 0.002389 0.011728 0.791166 0.711231 -0.00883 -0.004562 -0.702888
+```
+
+H200 100-frame verification:
+
+```text
+MOTOR_CONFIG sonic_g1_kp_kv_force_range
+FRAME 0 base_z 0.788633406162262 action_max_abs 0.824930727481842
+FRAME 20 base_z 0.7884613275527954 action_max_abs 3.3407137393951416
+FRAME 40 base_z 0.7871977090835571 action_max_abs 3.4064137935638428
+FRAME 60 base_z 0.7874587178230286 action_max_abs 2.485649585723877
+FRAME 80 base_z 0.7869091629981995 action_max_abs 2.2736780643463135
+FRAME 99 base_z 0.7874253988265991 action_max_abs 2.059873580932617
+OBS_FINITE True
+ACTION_FINITE True
+BASE_HEIGHT_MIN 0.7512305378913879
+BASE_HEIGHT_FINAL 0.7874253988265991
+MAX_ABS_QVEL 4.189242839813232
+ACTION_MAX_ABS 3.6153788566589355
+HEIGHT_OK_RANGE 0.3 1.2 True
+GENESIS_SONIC_POLICY_ROLLOUT_SMOKE_OK
+```
+
+100-frame visual evidence:
+
+```text
+Remote GIF:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/videos/genesis_g1_sonic_closed_loop_100f_motor_config.gif
+
+Local GIF:
+.agent/task/task006-sonic-genesis-action-policy/artifacts/genesis_g1_sonic_closed_loop_100f_motor_config.gif
+
+Rendered frames: 100
+Resolution: 420 x 320
+FPS: 12
+GIF bytes: 205932
+```
+
+Review: the 100-frame decoder-only Genesis rollout remains upright under the
+same token replay and official captured history initialization used for the
+20-frame smoke. This is still replay-token validation, not a full online SONIC
+planner/encoder rollout.
