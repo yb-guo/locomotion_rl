@@ -54,8 +54,8 @@ Do not continue to L2 unless L1 passes on H200.
 ## Review
 
 Status: L1 generic action replay passed; SONIC-compatible offline action bridge
-has corrected smoke evidence. L2 now has a short decoder-only closed-loop smoke
-through Genesis, but stable SONIC policy rollout is still not passed.
+has corrected smoke evidence. L2 decoder-only closed-loop 20-frame smoke now
+passes after applying SONIC's official G1 motor kp/kv/force limits.
 
 L1 pass evidence is recorded in `001-genesis-action-replay.md`. L2 may now
 inspect and connect the SONIC policy path, but must not erase the distinction
@@ -106,12 +106,16 @@ L2 decoder-only closed-loop evidence:
 - H200 10-frame smoke with `--token-mode replay --history-init official_obs`
   passed: obs/action finite, base height final `0.6546086668968201`,
   height range `0.3..1.2`, action max abs `5.1907243728637695`.
-- H200 20-frame smoke with the same settings failed height: base height final
-  `0.2644214928150177`, below the `0.3` threshold, action max abs
+- Initial H200 20-frame smoke with the same settings failed height: base height
+  final `0.2644214928150177`, below the `0.3` threshold, action max abs
   `8.832411766052246`.
+- Diagnose found the closed-loop tools had not applied SONIC's official G1
+  motor kp/kv/force limits. With `MOTOR_CONFIG sonic_g1_kp_kv_force_range`,
+  the same 20-frame smoke passes: base height final `0.7882418632507324`,
+  base height min `0.7512305378913879`, action max abs `3.2313764095306396`,
+  `GENESIS_SONIC_POLICY_ROLLOUT_SMOKE_OK`.
 
-Review: first-frame decoder action now matches the official captured obs action
-range, so the current blocker is not the first-frame 994D layout or action
-mapping. The remaining blocker is stable closed-loop dynamics/state feedback in
-Genesis: after several steps the policy reacts into larger actions and the G1
-falls below the height gate.
+Review: the original 20-frame closed-loop failure no longer reproduces. This is
+still a decoder-only smoke with replayed token/history initialization; longer
+horizon walking quality and online encoder/planner token generation remain
+separate validation work.

@@ -760,3 +760,55 @@ GENESIS_SONIC_POLICY_ROLLOUT_SMOKE_FAILED
   Genesis feedback: after roughly 10-20 frames the base falls and decoder
   actions grow. L2 should be considered partially connected only; do not mark
   stable policy rollout passed.
+
+- 2026-05-07: Diagnosed and fixed the 20-frame closed-loop fall.
+
+  Diagnose loop:
+
+  - Reproduced the failure with H200 20-frame decoder-only closed loop:
+    `token-mode replay`, `history-init official_obs`, corrected `root_qpos`.
+  - Added `genesis_sonic_policy_rollout_probe` to compare Genesis-generated
+    994D obs against captured official obs by field, and to replace individual
+    fields with official values.
+  - Tested hypotheses:
+    - replacing only base angular velocity did not recover height;
+    - replacing only body joint velocities reduced action drift but did not
+      recover height;
+    - replacing only last-action history reduced action drift but did not
+      recover height;
+    - teacher-forcing all official obs still fell when the closed-loop tool used
+      Genesis default motor config.
+  - Compared with the passing action-replay path and found the difference:
+    action replay applied `apply_sonic_g1_motor_config` but the closed-loop
+    smoke/probe/GIF tools did not.
+
+  Fix:
+
+  - `genesis_sonic_policy_rollout_smoke.py`,
+    `genesis_sonic_policy_rollout_gif.py`, and
+    `genesis_sonic_policy_rollout_probe.py` now apply SONIC's official G1
+    kp/kv/force limits by default.
+  - `--no-sonic-motor-config` is retained for explicit negative-control debug
+    runs.
+
+  H200 verification after fix:
+
+```text
+MOTOR_CONFIG sonic_g1_kp_kv_force_range
+FRAME 0 base_z 0.788633406162262 action_max_abs 0.824930727481842
+FRAME 5 base_z 0.751387357711792 action_max_abs 1.555012583732605
+FRAME 10 base_z 0.7731913924217224 action_max_abs 2.3254857063293457
+FRAME 15 base_z 0.785487949848175 action_max_abs 2.797891616821289
+FRAME 19 base_z 0.7882418632507324 action_max_abs 3.2313764095306396
+OBS_FINITE True
+ACTION_FINITE True
+BASE_HEIGHT_MIN 0.7512305378913879
+BASE_HEIGHT_FINAL 0.7882418632507324
+MAX_ABS_QVEL 4.189242839813232
+HEIGHT_OK_RANGE 0.3 1.2 True
+GENESIS_SONIC_POLICY_ROLLOUT_SMOKE_OK
+```
+
+  Review: the original 20-frame failure no longer reproduces. This closes the
+  diagnosed smoke failure, but not the broader claim of long-horizon walking or
+  a fully online encoder/planner token path.

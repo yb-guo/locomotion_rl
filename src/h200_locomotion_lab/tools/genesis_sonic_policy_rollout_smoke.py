@@ -19,7 +19,10 @@ from h200_locomotion_lab.tools.sonic_policy_decoder_forward import (
     read_obs_csv_rows,
     vector_range,
 )
-from h200_locomotion_lab.tools.sonic_reference_replay_smoke import _read_contact_metrics
+from h200_locomotion_lab.tools.sonic_reference_replay_smoke import (
+    apply_sonic_g1_motor_config,
+    _read_contact_metrics,
+)
 
 
 def main() -> None:
@@ -40,6 +43,7 @@ def main() -> None:
     parser.add_argument("--height-ok-min", type=float, default=0.3)
     parser.add_argument("--height-ok-max", type=float, default=1.2)
     parser.add_argument("--log-every", type=int, default=1)
+    parser.add_argument("--no-sonic-motor-config", action="store_true")
     args = parser.parse_args()
 
     if args.frames <= 0:
@@ -71,6 +75,11 @@ def main() -> None:
     )
     decoder = SonicOnnxReferenceDecoder(Path(args.decoder))
 
+    if not args.no_sonic_motor_config:
+        apply_sonic_g1_motor_config(backend.robot, backend.motor_dof_indices)
+        motor_config = "sonic_g1_kp_kv_force_range"
+    else:
+        motor_config = "genesis_default"
     backend.reset()
     if args.history_init == "official_obs":
         _, initial_frames = sonic_g1_history_from_decoder_observation(obs_rows[0])
@@ -94,6 +103,7 @@ def main() -> None:
     print("HISTORY_INIT", args.history_init)
     print("OBS_DIM", SONIC_DECODER_OBS_DIM)
     print("ACTION_MODE sonic_policy_raw")
+    print("MOTOR_CONFIG", motor_config)
     print("BASE_POS", tuple(args.base_pos))
     print("BASE_QUAT", tuple(args.base_quat))
     print("ROOT_QPOS", tuple(args.root_qpos) if args.root_qpos else None)

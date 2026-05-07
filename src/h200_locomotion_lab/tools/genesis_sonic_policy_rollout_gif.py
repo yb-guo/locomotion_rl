@@ -22,6 +22,7 @@ from h200_locomotion_lab.tools.sonic_policy_decoder_forward import (
     read_obs_csv_rows,
     vector_range,
 )
+from h200_locomotion_lab.tools.sonic_reference_replay_smoke import apply_sonic_g1_motor_config
 
 
 def main() -> None:
@@ -44,6 +45,7 @@ def main() -> None:
     parser.add_argument("--camera-lookat", nargs=3, type=float, default=(0.0, 0.0, 0.85))
     parser.add_argument("--fov", type=float, default=42.0)
     parser.add_argument("--log-every", type=int, default=5)
+    parser.add_argument("--no-sonic-motor-config", action="store_true")
     args = parser.parse_args()
 
     if args.frames <= 0:
@@ -90,6 +92,11 @@ def main() -> None:
     camera = backend.camera
     decoder = SonicOnnxReferenceDecoder(Path(args.decoder))
 
+    if not args.no_sonic_motor_config:
+        apply_sonic_g1_motor_config(backend.robot, backend.motor_dof_indices)
+        motor_config = "sonic_g1_kp_kv_force_range"
+    else:
+        motor_config = "genesis_default"
     backend.reset()
     if args.history_init == "official_obs":
         _, initial_frames = sonic_g1_history_from_decoder_observation(obs_rows[0])
@@ -104,6 +111,7 @@ def main() -> None:
     print("TOKEN_SOURCE", args.obs_csv or "zero")
     print("TOKEN_MODE", args.token_mode)
     print("HISTORY_INIT", args.history_init)
+    print("MOTOR_CONFIG", motor_config)
     print("FRAMES", args.frames)
     print("RES", (args.width, args.height))
     print("ROOT_QPOS", tuple(args.root_qpos) if args.root_qpos else None)
