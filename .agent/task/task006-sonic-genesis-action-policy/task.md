@@ -53,7 +53,8 @@ Do not continue to L2 unless L1 passes on H200.
 
 ## Review
 
-Status: open.
+Status: L1 action replay passed; L2 SONIC policy rollout remains open.
 
-L1 action replay is the next executable step. L2 SONIC policy rollout is blocked
-until L1 has H200 pass evidence.
+L1 pass evidence is recorded in `001-genesis-action-replay.md`. L2 may now
+inspect and connect the SONIC policy path, but must not erase the distinction
+between action replay and real policy rollout.

@@ -84,6 +84,25 @@ def test_genesis_scene_backend_maps_29_motor_dofs_and_steps() -> None:
     assert backend.robot.last_position_target == (0.125,) * backend.contract.action_dim
 
 
+def test_genesis_scene_backend_accepts_default_motor_position_override() -> None:
+    asset = Path(__file__)
+    backend = GenesisG1SceneBackend(
+        GenesisSceneConfig(
+            asset_path=str(asset),
+            backend="cuda",
+            default_motor_positions=(0.2,) * GenesisG1Contract().action_dim,
+        ),
+        genesis_module=_FakeGenesisModule(),
+    )
+
+    backend.reset()
+    result = backend.step([0.5] * backend.contract.action_dim)
+
+    assert result.info["motor_dof_count"] == 29
+    assert backend.default_motor_positions == (0.2,) * backend.contract.action_dim
+    assert backend.robot.last_position_target == (0.325,) * backend.contract.action_dim
+
+
 def test_genesis_scene_backend_requires_existing_asset() -> None:
     missing_asset = Path(__file__).with_name("missing_g1_29dof.xml")
 

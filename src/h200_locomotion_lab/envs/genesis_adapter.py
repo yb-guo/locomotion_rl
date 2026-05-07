@@ -127,6 +127,7 @@ class GenesisSceneConfig:
     add_plane: bool = True
     base_pos: tuple[float, float, float] = (0.0, 0.0, 0.8)
     base_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
+    default_motor_positions: tuple[float, ...] | None = None
     convexify: bool = False
     decimate: bool = False
     logging_level: str = "warning"
@@ -181,7 +182,7 @@ class GenesisG1SceneBackend:
         self._init_genesis()
         self.scene = self._build_scene()
         self.motor_dof_indices = self._resolve_motor_dof_indices()
-        self.default_motor_positions = self._read_motor_positions()
+        self.default_motor_positions = self._resolve_default_motor_positions()
         self.previous_action = (0.0,) * self.contract.action_dim
         self.step_count = 0
 
@@ -265,6 +266,16 @@ class GenesisG1SceneBackend:
     def _read_motor_positions(self) -> tuple[float, ...]:
         return _flatten_numeric(self.robot.get_dofs_position(dofs_idx_local=self.motor_dof_indices))
 
+    def _resolve_default_motor_positions(self) -> tuple[float, ...]:
+        if self.config.default_motor_positions is None:
+            return self._read_motor_positions()
+        if len(self.config.default_motor_positions) != self.contract.action_dim:
+            raise ValueError(
+                f"Expected {self.contract.action_dim} default motor positions, "
+                f"got {len(self.config.default_motor_positions)}"
+            )
+        return tuple(float(value) for value in self.config.default_motor_positions)
+
     def _read_motor_velocities(self) -> tuple[float, ...]:
         return _flatten_numeric(self.robot.get_dofs_velocity(dofs_idx_local=self.motor_dof_indices))
 
@@ -320,6 +331,7 @@ class GenesisG1Env:
         show_viewer: bool = False,
         base_pos: tuple[float, float, float] = (0.0, 0.0, 0.8),
         base_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0),
+        default_motor_positions: tuple[float, ...] | None = None,
         convexify: bool = False,
         decimate: bool = False,
         logging_level: str = "warning",
@@ -331,6 +343,7 @@ class GenesisG1Env:
             show_viewer=show_viewer,
             base_pos=base_pos,
             base_quat=base_quat,
+            default_motor_positions=default_motor_positions,
             convexify=convexify,
             decimate=decimate,
             logging_level=logging_level,

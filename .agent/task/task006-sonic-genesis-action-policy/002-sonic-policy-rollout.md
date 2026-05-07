@@ -36,7 +36,9 @@ Implementation plan:
 # Log
 
 - 2026-05-07: Opened route as L2. Blocked until action replay L1 passes.
+- 2026-05-07: L1 action replay passed. This route is now unblocked, but no
+  SONIC policy inspection or rollout has been run yet.
 
 # Review
 
-Status: blocked on L1 action replay.
+Status: open.
