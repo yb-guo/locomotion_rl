@@ -529,3 +529,24 @@ printed. A shorter 80-frame retry was interrupted after frame 0, and then the
 H200 SSH endpoint started refusing connections. Treat the L2 result as
 promising partial evidence only; it is not a pass until a complete run prints
 the final `GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK` summary.
+
+After commit `0ecb2cf`, an 80-frame `nohup` retry was started so that SSH
+disconnects would not kill the job:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_sonic_walking_obs_80f_walking_base_quat_q0_locomotion_nohup.log
+```
+
+That retry printed only frame 0 and then the Python process stayed at 99% CPU
+for roughly 30 minutes:
+
+```text
+pid: 221946
+command: python3 -u -m h200_locomotion_lab.tools.genesis_sonic_policy_locomotion_probe ...
+```
+
+The stuck process was killed. Do not rerun long L2 probes unchanged. The next
+attempt should add an internal per-frame timeout/progress heartbeat or reduce
+the tool to an action-export + shorter Genesis stepping loop before attempting
+another 80/100-frame run.
