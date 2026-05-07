@@ -13,7 +13,9 @@ from h200_locomotion_lab.envs.genesis_adapter import (
 )
 from h200_locomotion_lab.tools.sonic_reference_replay_smoke import (
     SONIC_G1_KDS,
+    SONIC_G1_FORCE_LIMITS,
     SONIC_G1_KPS,
+    apply_sonic_g1_motor_config,
     _flatten_numeric,
     _read_csv_rows,
 )
@@ -82,7 +84,8 @@ def main() -> None:
     robot = scene.add_entity(
         gs.morphs.MJCF(
             file=str(asset),
-            pos=(0.0, 0.0, 0.8),
+            pos=tuple(body_rows[0][:3]),
+            quat=tuple(body_quat_rows[0][:4]),
             convexify=args.convexify,
             decimate=args.decimate,
         )
@@ -99,8 +102,10 @@ def main() -> None:
     motor_dof_indices = _resolve_motor_dof_indices(robot)
     print("MOTOR_DOF_COUNT", len(motor_dof_indices))
     print("MOTOR_DOF_INDICES", motor_dof_indices)
-    robot.set_dofs_kp(SONIC_G1_KPS, dofs_idx_local=motor_dof_indices)
-    robot.set_dofs_kv(SONIC_G1_KDS, dofs_idx_local=motor_dof_indices)
+    print("KPS_MIN_MAX", min(SONIC_G1_KPS), max(SONIC_G1_KPS))
+    print("KDS_MIN_MAX", min(SONIC_G1_KDS), max(SONIC_G1_KDS))
+    print("FORCE_LIMITS_MIN_MAX", min(SONIC_G1_FORCE_LIMITS), max(SONIC_G1_FORCE_LIMITS))
+    apply_sonic_g1_motor_config(robot, motor_dof_indices)
     robot.set_pos(tuple(body_rows[0][:3]))
     robot.set_quat(tuple(body_quat_rows[0][:4]))
     robot.set_dofs_position(

@@ -29,6 +29,11 @@ DAMPING_7520_14 = 2.0 * DAMPING_RATIO * ARMATURE_7520_14 * NATURAL_FREQ
 DAMPING_7520_22 = 2.0 * DAMPING_RATIO * ARMATURE_7520_22 * NATURAL_FREQ
 DAMPING_4010 = 2.0 * DAMPING_RATIO * ARMATURE_4010 * NATURAL_FREQ
 
+EFFORT_LIMIT_5020 = 25.0
+EFFORT_LIMIT_7520_14 = 88.0
+EFFORT_LIMIT_7520_22 = 139.0
+EFFORT_LIMIT_4010 = 5.0
+
 SONIC_G1_KPS: tuple[float, ...] = (
     STIFFNESS_7520_22,
     STIFFNESS_7520_22,
@@ -93,6 +98,38 @@ SONIC_G1_KDS: tuple[float, ...] = (
     DAMPING_4010,
 )
 
+SONIC_G1_FORCE_LIMITS: tuple[float, ...] = (
+    EFFORT_LIMIT_7520_22,
+    EFFORT_LIMIT_7520_22,
+    EFFORT_LIMIT_7520_14,
+    EFFORT_LIMIT_7520_22,
+    EFFORT_LIMIT_5020,
+    EFFORT_LIMIT_5020,
+    EFFORT_LIMIT_7520_22,
+    EFFORT_LIMIT_7520_22,
+    EFFORT_LIMIT_7520_14,
+    EFFORT_LIMIT_7520_22,
+    EFFORT_LIMIT_5020,
+    EFFORT_LIMIT_5020,
+    EFFORT_LIMIT_7520_14,
+    EFFORT_LIMIT_5020,
+    EFFORT_LIMIT_5020,
+    EFFORT_LIMIT_5020,
+    EFFORT_LIMIT_5020,
+    EFFORT_LIMIT_5020,
+    EFFORT_LIMIT_5020,
+    EFFORT_LIMIT_5020,
+    EFFORT_LIMIT_4010,
+    EFFORT_LIMIT_4010,
+    EFFORT_LIMIT_5020,
+    EFFORT_LIMIT_5020,
+    EFFORT_LIMIT_5020,
+    EFFORT_LIMIT_5020,
+    EFFORT_LIMIT_5020,
+    EFFORT_LIMIT_4010,
+    EFFORT_LIMIT_4010,
+)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -111,25 +148,31 @@ def main() -> None:
     reference_dir = Path(args.reference_dir)
     joint_rows = _read_csv_rows(reference_dir / "joint_pos.csv", 29)
     body_rows = _read_csv_rows(reference_dir / "body_pos.csv", 42)
+    body_quat_rows = _read_csv_rows(reference_dir / "body_quat.csv", 56)
     frames = min(args.frames, len(joint_rows))
     if frames <= 0:
         raise ValueError("frames must be positive")
 
     root0 = tuple(body_rows[0][:3])
+    root_quat0 = tuple(body_quat_rows[0][:4])
     print("SONIC_REFERENCE_REPLAY_MODE joint_pos_as_position_targets")
     print("ASSET", asset)
     print("REF_DIR", reference_dir)
     print("JOINT_POS_ROWS", len(joint_rows))
     print("REPLAY_FRAMES", frames)
     print("ROOT0", root0)
+    print("ROOT_QUAT0", root_quat0)
     print("TARGET0_MIN_MAX", min(joint_rows[0]), max(joint_rows[0]))
     print("TARGET_LAST_MIN_MAX", min(joint_rows[frames - 1]), max(joint_rows[frames - 1]))
     print("KPS_MIN_MAX", min(SONIC_G1_KPS), max(SONIC_G1_KPS))
     print("KDS_MIN_MAX", min(SONIC_G1_KDS), max(SONIC_G1_KDS))
+    print("FORCE_LIMITS_MIN_MAX", min(SONIC_G1_FORCE_LIMITS), max(SONIC_G1_FORCE_LIMITS))
 
     env = GenesisG1Env.from_genesis_asset(
         str(asset),
         backend=args.backend,
+        base_pos=root0,
+        base_quat=root_quat0,
         convexify=args.convexify,
         decimate=args.decimate,
         logging_level=args.logging_level,
@@ -140,13 +183,14 @@ def main() -> None:
     print("MOTOR_DOF_COUNT", len(motor_idx))
     print("MOTOR_DOF_INDICES", motor_idx)
 
-    robot.set_dofs_kp(SONIC_G1_KPS, dofs_idx_local=motor_idx)
-    robot.set_dofs_kv(SONIC_G1_KDS, dofs_idx_local=motor_idx)
+    apply_sonic_g1_motor_config(robot, motor_idx)
     robot.set_pos(root0)
+    robot.set_quat(root_quat0)
     robot.set_dofs_position(tuple(joint_rows[0]), dofs_idx_local=motor_idx, zero_velocity=True)
     robot.set_dofs_velocity(None)
 
     base_heights: list[float] = []
+    min_link_heights: list[float] = []
     mean_abs_errors: list[float] = []
     max_abs_errors: list[float] = []
     max_abs_qvel: list[float] = []
@@ -159,6 +203,9 @@ def main() -> None:
         q = _flatten_numeric(robot.get_dofs_position(dofs_idx_local=motor_idx))
         v = _flatten_numeric(robot.get_dofs_velocity(dofs_idx_local=motor_idx))
         pos = _flatten_numeric(robot.get_pos())
+        min_link_z = _read_min_link_height(robot)
+        if min_link_z is not None:
+            min_link_heights.append(min_link_z)
         finite_ok = finite_ok and _is_finite(q) and _is_finite(v) and _is_finite(pos)
         err = [abs(actual - expected) for actual, expected in zip(q, target)]
         mean_abs_errors.append(sum(err) / len(err))
@@ -171,6 +218,8 @@ def main() -> None:
                 frame,
                 "base_z",
                 pos[2],
+                "min_link_z",
+                min_link_z,
                 "mean_abs_err",
                 mean_abs_errors[-1],
                 "max_abs_err",
@@ -191,6 +240,9 @@ def main() -> None:
     print("BASE_HEIGHT_MIN", base_min)
     print("BASE_HEIGHT_MAX", base_max)
     print("BASE_HEIGHT_FINAL", base_final)
+    if min_link_heights:
+        print("MIN_LINK_HEIGHT_MIN", min(min_link_heights))
+        print("MIN_LINK_HEIGHT_FINAL", min_link_heights[-1])
     print("MEAN_ABS_TRACKING_ERROR_AVG", sum(mean_abs_errors) / len(mean_abs_errors))
     print("MAX_ABS_TRACKING_ERROR", max(max_abs_errors))
     print("MAX_ABS_QVEL", max(max_abs_qvel))
@@ -202,6 +254,18 @@ def main() -> None:
     if not height_ok:
         raise SystemExit("base height left smoke range during SONIC reference replay")
     print("SONIC_REFERENCE_REPLAY_GENESIS_SMOKE_OK")
+
+
+def apply_sonic_g1_motor_config(robot: Any, motor_idx: Sequence[int]) -> None:
+    """Apply SONIC motor gains using the Genesis official control-demo API shape."""
+
+    robot.set_dofs_kp(SONIC_G1_KPS, dofs_idx_local=motor_idx)
+    robot.set_dofs_kv(SONIC_G1_KDS, dofs_idx_local=motor_idx)
+    robot.set_dofs_force_range(
+        tuple(-limit for limit in SONIC_G1_FORCE_LIMITS),
+        SONIC_G1_FORCE_LIMITS,
+        dofs_idx_local=motor_idx,
+    )
 
 
 def _read_csv_rows(path: Path, cols: int) -> list[list[float]]:
@@ -232,6 +296,15 @@ def _flatten_numeric(values: Any) -> tuple[float, ...]:
 
 def _is_finite(values: Sequence[float]) -> bool:
     return all(math.isfinite(float(value)) for value in values)
+
+
+def _read_min_link_height(robot: Any) -> float | None:
+    if not hasattr(robot, "get_links_pos"):
+        return None
+    link_pos = _flatten_numeric(robot.get_links_pos())
+    if len(link_pos) < 3:
+        return None
+    return min(link_pos[index] for index in range(2, len(link_pos), 3))
 
 
 if __name__ == "__main__":

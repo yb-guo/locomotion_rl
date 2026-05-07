@@ -126,6 +126,7 @@ class GenesisSceneConfig:
     n_envs: int = 1
     add_plane: bool = True
     base_pos: tuple[float, float, float] = (0.0, 0.0, 0.8)
+    base_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
     convexify: bool = False
     decimate: bool = False
     logging_level: str = "warning"
@@ -237,6 +238,7 @@ class GenesisG1SceneBackend:
             self.gs.morphs.MJCF(
                 file=self.config.asset_path,
                 pos=self.config.base_pos,
+                quat=self.config.base_quat,
                 convexify=self.config.convexify,
                 decimate=self.config.decimate,
             )
@@ -316,6 +318,8 @@ class GenesisG1Env:
         *,
         backend: str = "cuda",
         show_viewer: bool = False,
+        base_pos: tuple[float, float, float] = (0.0, 0.0, 0.8),
+        base_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0),
         convexify: bool = False,
         decimate: bool = False,
         logging_level: str = "warning",
@@ -325,6 +329,8 @@ class GenesisG1Env:
             asset_path=asset_path,
             backend=backend,
             show_viewer=show_viewer,
+            base_pos=base_pos,
+            base_quat=base_quat,
             convexify=convexify,
             decimate=decimate,
             logging_level=logging_level,

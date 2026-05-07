@@ -214,6 +214,59 @@ SONIC_REFERENCE_REPLAY_GIF_OK
 SONIC_REFERENCE_REPLAY_KINEMATIC_HIGHCAM_GIF_40F_EXIT_STATUS=0
 ```
 
+- 2026-05-07: Reworked the SONIC reference replay initialization to follow the
+  Genesis control-demo shape more closely:
+  - pass the SONIC reference root `pos` and `quat` into `gs.morphs.MJCF(...)`
+    at entity creation time instead of relying only on a post-build pose set;
+  - resolve motor DOFs through joint names and apply `set_dofs_kp`,
+    `set_dofs_kv`, and `set_dofs_force_range`;
+  - continue to drive dynamic replay through `control_dofs_position`;
+  - record `body_quat.csv` and min-link-height diagnostics in the smoke output.
+
+Genesis references checked:
+
+- `gs.morphs.MJCF` accepts `pos` and `quat` and documents that those override the
+  MJCF root/base pose.
+- `RigidEntity` exposes `set_dofs_force_range`, `set_dofs_position`, and
+  `control_dofs_position` on local DOF indices.
+
+- H200 dynamic replay smoke with official-style initialization passed:
+
+```text
+Log: /root/h200-locomotion-lab-runs/task004-genesis-g1-baseline/logs/genesis_g1_sonic_reference_replay_official_init_decimate_20f.log
+SONIC_REFERENCE_REPLAY_MODE joint_pos_as_position_targets
+REF_DIR .../gear_sonic_deploy/reference/example/walking_quip_360_R_002__A428
+REPLAY_FRAMES 20
+ROOT0 (0.002389, 0.011728, 0.791166)
+ROOT_QUAT0 (0.711231, -0.00883, -0.004562, -0.702888)
+FORCE_LIMITS_MIN_MAX 5.0 139.0
+MOTOR_DOF_COUNT 29
+FRAME 0 base_z 0.7911660075187683 min_link_z 0.7911660075187683 mean_abs_err 0.007587959634948395 max_abs_err 0.062162503591537466 max_abs_qvel 3.953256130218506
+FRAME 19 base_z 0.7911660075187683 min_link_z 0.7911660075187683 mean_abs_err 0.08002924763951451 max_abs_err 0.3317313223991394 max_abs_qvel 1.2765580415725708
+FINITE_OK True
+BASE_HEIGHT_MIN 0.7911660075187683
+BASE_HEIGHT_FINAL 0.7911660075187683
+MIN_LINK_HEIGHT_MIN 0.7911660075187683
+MIN_LINK_HEIGHT_FINAL 0.7911660075187683
+MEAN_ABS_TRACKING_ERROR_AVG 0.05136528159935812
+MAX_ABS_TRACKING_ERROR 0.3317313223991394
+MAX_ABS_QVEL 6.954092979431152
+SIM_STEPS 80
+SONIC_REFERENCE_REPLAY_GENESIS_SMOKE_OK
+```
+
+- Attempted to start a dynamic 40-frame official-init GIF afterward, but both
+  H200 SSH routes failed during banner/key-exchange before the Genesis command
+  started:
+
+```text
+proxy myserver: Connection timed out during banner exchange
+direct 116.198.70.4:22376: kex_exchange_identification / banner exchange error
+```
+
+Visual dynamic GIF verification is therefore still pending; do not treat the
+dynamic visual route as reviewed until SSH is stable and the GIF is generated.
+
 - Local verification command:
 
 ```bash
@@ -233,7 +286,10 @@ Efficiency: pass; no global scene singleton and no per-step logging.
 Hardware: pass for raw Genesis CUDA import/build/step smoke on H200.
 Verify: local reset/step tests passed; raw Genesis H200 plane, SONIC G1 MJCF
 build/step, repo `GenesisG1Env` real backend reset/step smoke, and decimated
-SONIC reference joint-position replay smoke passed.
+SONIC reference joint-position replay smoke passed. Official-style dynamic
+Genesis replay smoke also passed numerically on H200; dynamic visual GIF review
+is still pending because the H200 SSH connection failed before the render command
+could start.
 Findings: PPO training is still pending. The observation is contract-shaped and
 minimal; reward, termination, vectorized envs, and locomotion reset curriculum
 belong in the PPO baseline subtask. A true SONIC ONNX policy-action replay is

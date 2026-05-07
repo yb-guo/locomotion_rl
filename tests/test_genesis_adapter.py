@@ -111,11 +111,13 @@ class _FakeGenesisModule:
                 self,
                 file: str,
                 pos: tuple[float, float, float],
+                quat: tuple[float, float, float, float],
                 convexify: bool,
                 decimate: bool,
             ) -> None:
                 self.file = file
                 self.pos = pos
+                self.quat = quat
                 self.convexify = convexify
                 self.decimate = decimate
 
