@@ -106,3 +106,12 @@ Each implementation subtask must be a minimum closed loop:
   matters on the target.
 
 Prefer many closed loops over one large refactor.
+
+## Router Workflow
+
+Use one task branch and one task worktree. The Router delegates implementation
+to one coding subagent and read-only review to another subagent until the
+subtask passes, then repeats this loop until the task is complete. The Router
+records route, verification evidence, review result, branch/worktree state, and
+remaining risk so outcomes stay explainable. `pr_gate.py` is not required for
+task completion.

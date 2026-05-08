@@ -27,8 +27,21 @@ Fail condition:
 # Log
 
 - 2026-05-08: Pending profile loader.
+- 2026-05-08: Implemented `ScalarActionBridge.from_profile()` and
+  `policy_action_to_command_targets()` using compiled profile mapping,
+  default angles, and action scales. Verified targeted tests with
+  `PYTHONPATH=src python -m pytest -q tests/test_scalar_action_bridge.py tests/test_robot_profile_loader.py tests/test_unitree_g1_29dof_sonic_profile_yaml.py tests/test_sonic_g1_policy_bridge.py`:
+  `26 passed, 1 warning in 0.44s` (warning was pytest cache write permission).
+  Verified full local suite with
+  `PYTHONPATH=src python -m pytest -q -p no:cacheprovider`: `98 passed in 0.65s`.
 
 # Review
 
-Status: pending.
+Status: passed.
+
+- 2026-05-08: Read-only reviewer reported no blocking findings. Reviewer ran
+  `PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 python -m pytest -q tests/test_scalar_action_bridge.py -p no:cacheprovider`:
+  `10 passed in 0.17s`.
+  Residual suggestion: add constructor-level invariant checks later if direct
+  construction becomes public API beyond `from_profile()`.
 
