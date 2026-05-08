@@ -11,7 +11,11 @@ import time
 from pathlib import Path
 from typing import Any, Sequence
 
-from h200_locomotion_lab.envs.genesis_adapter import GenesisG1SceneBackend, GenesisSceneConfig
+from h200_locomotion_lab.envs.genesis_adapter import (
+    GenesisCameraConfig,
+    GenesisG1SceneBackend,
+    GenesisSceneConfig,
+)
 from h200_locomotion_lab.sonic.g1_observation import SONIC_TOKEN_DIM
 from h200_locomotion_lab.sonic.g1_planner_encoder import (
     SONIC_ENCODER_OBS_DIM,
@@ -100,6 +104,14 @@ def main() -> None:
     parser.add_argument("--heartbeat-every-frame", action="store_true")
     parser.add_argument("--progress-file")
     parser.add_argument("--max-wall-time-s", type=float)
+    parser.add_argument("--output-gif", help="Optional GIF rendered from the same rollout.")
+    parser.add_argument("--output-mp4", help="Optional MP4 rendered from the same rollout.")
+    parser.add_argument("--fps", type=float, default=12.0)
+    parser.add_argument("--width", type=int, default=420)
+    parser.add_argument("--height-px", type=int, default=320)
+    parser.add_argument("--camera-pos", nargs=3, type=float, default=(3.4, -4.2, 2.2))
+    parser.add_argument("--camera-lookat", nargs=3, type=float, default=(0.0, 0.0, 0.85))
+    parser.add_argument("--fov", type=float, default=42.0)
     args = parser.parse_args()
 
     sys.stdout.reconfigure(line_buffering=True)
@@ -113,6 +125,9 @@ def main() -> None:
         raise ValueError("--planner-timeout-s must be positive")
     if args.max_wall_time_s is not None and args.max_wall_time_s <= 0:
         raise ValueError("--max-wall-time-s must be positive")
+    if args.fps <= 0:
+        raise ValueError("--fps must be positive")
+    render_enabled = args.output_gif is not None or args.output_mp4 is not None
 
     work_dir = Path(args.work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -138,8 +153,21 @@ def main() -> None:
             initial_motor_positions=initial_motor_positions,
             action_mode="sonic_policy_raw",
             logging_level="warning",
+            camera=(
+                GenesisCameraConfig(
+                    res=(args.width, args.height_px),
+                    pos=tuple(args.camera_pos),
+                    lookat=tuple(args.camera_lookat),
+                    fov=args.fov,
+                    gui=False,
+                )
+                if render_enabled
+                else None
+            ),
         )
     )
+    if render_enabled and backend.camera is None:
+        raise RuntimeError("Genesis camera was not created")
     encoder = SonicOnnxReferenceModel(Path(args.encoder))
     decoder = SonicOnnxReferenceDecoder(Path(args.decoder))
 
@@ -179,6 +207,7 @@ def main() -> None:
     max_contact_forces: list[float] = []
     left_samples = []
     right_samples = []
+    rendered_frames = []
     encoder_observation_finite = True
     token_finite = True
     decoder_observation_finite = True
@@ -206,6 +235,13 @@ def main() -> None:
     emit("SKIP_FOOT_METRICS", args.skip_foot_metrics)
     emit("PROGRESS_FILE", progress_path or "not_set")
     emit("MAX_WALL_TIME_S", args.max_wall_time_s or "not_set")
+    emit("OUTPUT_GIF", args.output_gif or "not_set")
+    emit("OUTPUT_MP4", args.output_mp4 or "not_set")
+    if render_enabled:
+        emit("RENDER_RES", (args.width, args.height_px))
+        emit("RENDER_FPS", args.fps)
+        emit("CAMERA_POS", tuple(args.camera_pos))
+        emit("CAMERA_LOOKAT", tuple(args.camera_lookat))
 
     for frame_index in range(args.frames):
         enforce_wall_time(started_at, args.max_wall_time_s)
@@ -271,6 +307,15 @@ def main() -> None:
         backend.step(action)
         heartbeat(args, progress_path, frame_index, "step")
         genesis_qpos_history.append(read_planner_qpos_from_genesis(backend))
+        if render_enabled:
+            rgb, _, _, _ = backend.camera.render(
+                rgb=True,
+                depth=False,
+                segmentation=False,
+                normal=False,
+            )
+            rendered_frames.append(rgb)
+            heartbeat(args, progress_path, frame_index, "render")
 
         root_pose = read_root_pose(backend)
         contact_count, max_contact_force = (
@@ -378,6 +423,9 @@ def main() -> None:
     emit("FOOT_ALTERNATION_OBSERVED", foot_alternation_observed)
     emit("LOCOMOTION_OBSERVED", locomotion_observed)
     emit("HEIGHT_OK_RANGE", args.height_ok_min, args.height_ok_max, height_ok)
+    if render_enabled:
+        write_video_outputs(args, rendered_frames)
+        emit("RENDERED_FRAMES", len(rendered_frames))
     if not finite_ok or not height_ok:
         raise SystemExit("GENESIS_SONIC_PLANNER_ENCODER_ROLLOUT_PROBE_FAILED")
     heartbeat(args, progress_path, args.frames, "done")
@@ -448,6 +496,25 @@ def run_planner_runner(
         num_pred_frames=num_pred_frames,
     )
     return motion, num_pred_frames
+
+
+def write_video_outputs(args: argparse.Namespace, rendered_frames: Sequence[Any]) -> None:
+    if not rendered_frames:
+        raise ValueError("rendered_frames must not be empty")
+    import imageio.v2 as imageio
+
+    if args.output_gif:
+        output_gif = Path(args.output_gif)
+        output_gif.parent.mkdir(parents=True, exist_ok=True)
+        imageio.mimsave(output_gif, rendered_frames, duration=1.0 / args.fps)
+        emit("GIF_OUTPUT", output_gif)
+        emit("GIF_BYTES", output_gif.stat().st_size)
+    if args.output_mp4:
+        output_mp4 = Path(args.output_mp4)
+        output_mp4.parent.mkdir(parents=True, exist_ok=True)
+        imageio.mimsave(output_mp4, rendered_frames, fps=args.fps)
+        emit("MP4_OUTPUT", output_mp4)
+        emit("MP4_BYTES", output_mp4.stat().st_size)
 
 
 def read_planner_qpos_from_genesis(backend: GenesisG1SceneBackend) -> tuple[float, ...]:

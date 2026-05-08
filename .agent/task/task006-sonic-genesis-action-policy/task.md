@@ -207,3 +207,25 @@ frames. The 120-frame run reported `PLANNER_CALLS 12`,
 Genesis-feedback planner/encoder/decoder closed-loop stability pass. Remaining
 work: online-path GIF/video, 200-frame scale-up, and parity checks against the
 official planner context convention.
+
+The Genesis-feedback online path now passes 200 frames and has visual evidence.
+The numeric 200-frame run reported `PLANNER_CALLS 20`,
+`GENESIS_QPOS_HISTORY_FRAMES 201`, `ROOT_Z_MIN 0.6891541481018066`,
+`HORIZONTAL_DISPLACEMENT 2.249557914799456`, `SINGLE_SUPPORT_FRAMES 128`,
+`TOTAL_CONTACT_SWITCHES 18`, `LOCOMOTION_OBSERVED True`, and
+`GENESIS_SONIC_PLANNER_ENCODER_ROLLOUT_PROBE_OK`. The rendered 200-frame run
+produced
+`.agent/task/task006-sonic-genesis-action-policy/artifacts/genesis_g1_sonic_planner_encoder_genesisctx_replan10_200f.gif`
+and
+`.agent/task/task006-sonic-genesis-action-policy/artifacts/genesis_g1_sonic_planner_encoder_genesisctx_replan10_200f.mp4`.
+
+Official context parity check: H200 SONIC source shows official initialization
+uses live joint q but normalizes root context to `x=0`, `y=0`,
+`z=default_height`, `quat=identity`. Official replanning calls
+`UpdatePlanning(current_frame_, planner_motion_, ...)`, then samples 4 rows from
+that `MotionSequence` at 30 Hz with a 2-frame 50 Hz lookahead. Therefore
+`initial_context_source=initial_joint_csv + replan_context_source=motion` is the
+closest current official-convention path. The passing
+`initial_context_source=genesis + replan_context_source=genesis` path is a
+valid Genesis-feedback closed-loop stability experiment, but it is not exactly
+the official planner context convention.

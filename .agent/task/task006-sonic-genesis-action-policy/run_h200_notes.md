@@ -1091,3 +1091,133 @@ motion self-sampling. The 120-frame result is stable under the current height
 and locomotion gates. Remaining work is visual evidence for the online path,
 200-frame scale-up, and closer parity checks against the official deployment
 context convention.
+
+## Online 200-Frame Scale-Up And Visual 2026-05-08
+
+Added optional rendering to the same online planner/encoder rollout probe:
+
+```text
+--output-gif <path>
+--output-mp4 <path>
+```
+
+Rendering happens inside the same loop as the numeric probe, after each Genesis
+step, so the visual artifact corresponds to the Genesis-feedback planner context
+run rather than a separate replay path.
+
+H200 200-frame Genesis-feedback closed-loop, no rendering:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_sonic_planner_encoder_runtime_genesisctx_replan10_200f.log
+
+INITIAL_CONTEXT_SOURCE genesis
+REPLAN_CONTEXT_SOURCE genesis
+PLANNER_CALLS 20
+GENESIS_QPOS_HISTORY_FRAMES 201
+FINITE_OK True
+ROOT_Z_MIN 0.6891541481018066
+ROOT_Z_MAX 0.7911660075187683
+HORIZONTAL_DISPLACEMENT 2.249557914799456
+PATH_LENGTH_XY 2.346827985821677
+AVERAGE_SPEED_XY 0.562389478699864
+ACTION_MAX_ABS 4.365278720855713
+SINGLE_SUPPORT_FRAMES 128
+TOTAL_CONTACT_SWITCHES 18
+LOCOMOTION_OBSERVED True
+HEIGHT_OK_RANGE 0.3 1.2 True
+GENESIS_SONIC_PLANNER_ENCODER_ROLLOUT_PROBE_OK
+```
+
+H200 200-frame Genesis-feedback closed-loop with GIF/MP4 rendering:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_sonic_planner_encoder_runtime_genesisctx_replan10_200f_render.log
+
+Remote GIF:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/videos/genesis_g1_sonic_planner_encoder_genesisctx_replan10_200f.gif
+
+Remote MP4:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/videos/genesis_g1_sonic_planner_encoder_genesisctx_replan10_200f.mp4
+
+Local GIF:
+.agent/task/task006-sonic-genesis-action-policy/artifacts/genesis_g1_sonic_planner_encoder_genesisctx_replan10_200f.gif
+
+Local MP4:
+.agent/task/task006-sonic-genesis-action-policy/artifacts/genesis_g1_sonic_planner_encoder_genesisctx_replan10_200f.mp4
+
+RENDERED_FRAMES 200
+GIF_BYTES 418700
+MP4_BYTES 56405
+GENESIS_SONIC_PLANNER_ENCODER_ROLLOUT_PROBE_OK
+```
+
+The rendered run reproduced the same stability envelope:
+
+```text
+PLANNER_CALLS 20
+GENESIS_QPOS_HISTORY_FRAMES 201
+FINITE_OK True
+ROOT_Z_MIN 0.6891546845436096
+HORIZONTAL_DISPLACEMENT 2.249562539745548
+PATH_LENGTH_XY 2.34683346652748
+SINGLE_SUPPORT_FRAMES 128
+TOTAL_CONTACT_SWITCHES 18
+LOCOMOTION_OBSERVED True
+HEIGHT_OK_RANGE 0.3 1.2 True
+```
+
+## Official Planner Context Parity Check 2026-05-08
+
+Checked the H200 official SONIC deploy source:
+
+```text
+/root/h200-locomotion-lab-runs/task002-sonic-mujoco-smoke/GR00T-WholeBodyControl/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/include/localmotion_kplanner.hpp
+```
+
+Relevant official behavior:
+
+- `PlannerConfig.motion_look_ahead_steps = 2`.
+- `InitializeContext(...)` uses live robot joint positions, but normalizes root
+  to `x=0`, `y=0`, `z=default_height`, and identity quaternion.
+- `UpdatePlanning(...)` sets `gen_frame_ = gen_frame + motion_look_ahead_steps`.
+- `UpdateContextFromMotion(...)` samples 4 context rows at 30 Hz starting at
+  `gen_frame_/50.0`, from a `MotionSequence`.
+- The sampled context is `[root xyz, root quat wxyz, 29 joints]`.
+- Joints are written into MuJoCo order with
+  `context_qpos[7 + mujoco_to_isaaclab[i]] = motion_sequence->JointPositions(...)[i]`.
+
+Official call-site behavior in:
+
+```text
+/root/h200-locomotion-lab-runs/task002-sonic-mujoco-smoke/GR00T-WholeBodyControl/gear_sonic_deploy/src/g1/g1_deploy_onnx_ref/src/g1_deploy_onnx_ref.cpp
+```
+
+- Initial planner setup reads `base_quat` and 29 motor q from `LowState`, but
+  `InitializeContext` only uses joint q for context; root context is normalized.
+- Replanning calls `planner_->UpdatePlanning(current_frame_, planner_motion_, ...)`.
+  That means the official replan context comes from `planner_motion_`, not
+  directly from live low-level robot qpos.
+
+Parity conclusion:
+
+```text
+initial_context_source=initial_joint_csv + replan_context_source=motion
+```
+
+is the closest current path to the official planner context convention.
+
+```text
+initial_context_source=genesis + replan_context_source=genesis
+```
+
+is intentionally a stronger Genesis-feedback closed-loop experiment, but it is
+not exactly the official planner context convention because it feeds live
+Genesis root/motor qpos history directly to planner context during replanning.
+
+Review: the new 200-frame Genesis-feedback result is a valid closed-loop
+stability result for this repo's Genesis integration, but it should not be
+described as bit-for-bit or convention-exact official SONIC planner context.
+For official parity, keep the motion-context route as the reference path and use
+the Genesis-context route as a feedback robustness experiment.
