@@ -6,8 +6,23 @@ from h200_locomotion_lab.sonic.g1_policy_bridge import (
     SONIC_G1_DEFAULT_ANGLES,
     SONIC_G1_ISAACLAB_TO_MUJOCO,
     STIFFNESS_7520_22,
+    get_default_sonic_g1_action_bridge,
+    get_default_sonic_g1_profile,
     sonic_policy_action_to_mujoco_targets,
 )
+
+
+def test_sonic_g1_compat_constants_are_profile_backed() -> None:
+    profile = get_default_sonic_g1_profile()
+    bridge = get_default_sonic_g1_action_bridge()
+
+    assert SONIC_G1_ISAACLAB_TO_MUJOCO == (
+        profile.mapping.command_mujoco_index_to_policy_isaaclab_index
+    )
+    assert SONIC_G1_DEFAULT_ANGLES == profile.control.default_angles_rad
+    assert SONIC_G1_ACTION_SCALES == profile.control.action_scales_rad
+    assert bridge.default_angles_command == profile.control.default_angles_rad
+    assert bridge.action_scale_command == profile.control.action_scales_rad
 
 
 def test_sonic_policy_zero_action_targets_default_angles() -> None:
@@ -20,7 +35,11 @@ def test_sonic_policy_action_uses_official_order_and_scale() -> None:
     raw_action = tuple(float(index) for index in range(29))
 
     targets = sonic_policy_action_to_mujoco_targets(raw_action)
+    bridge_targets = get_default_sonic_g1_action_bridge().policy_action_to_command_targets(
+        raw_action
+    )
 
+    assert targets == bridge_targets
     assert SONIC_G1_ISAACLAB_TO_MUJOCO[1] == 3
     assert targets[1] == pytest.approx(
         SONIC_G1_DEFAULT_ANGLES[1] + raw_action[3] * SONIC_G1_ACTION_SCALES[1]

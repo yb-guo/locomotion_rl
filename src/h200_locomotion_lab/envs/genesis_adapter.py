@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
 
 from h200_locomotion_lab.sonic.g1_policy_bridge import (
-    SONIC_G1_DEFAULT_ANGLES,
-    sonic_policy_action_to_mujoco_targets,
+    get_default_sonic_g1_action_bridge,
 )
+from h200_locomotion_lab.runtime import ScalarActionBridge
 from h200_locomotion_lab.sonic.g1_observation import (
     SonicG1HistoryBuffer,
     SonicG1HistoryFrame,
@@ -205,6 +205,11 @@ class GenesisG1SceneBackend:
             raise FileNotFoundError(f"Genesis G1 asset not found: {self.config.asset_path}")
         if self.config.action_mode not in {"normalized_delta", "sonic_policy_raw"}:
             raise ValueError(f"Unknown Genesis action_mode: {self.config.action_mode}")
+        self.sonic_action_bridge: ScalarActionBridge | None = (
+            get_default_sonic_g1_action_bridge()
+            if self.config.action_mode == "sonic_policy_raw"
+            else None
+        )
 
         self.gs = genesis_module or import_genesis_module()
         self._init_genesis()
@@ -344,9 +349,9 @@ class GenesisG1SceneBackend:
             if self.config.default_motor_positions is not None:
                 raise ValueError(
                     "default_motor_positions must not be provided in sonic_policy_raw mode; "
-                    "official SONIC uses fixed default_angles"
+                    "SONIC uses profile control default_angles"
                 )
-            return SONIC_G1_DEFAULT_ANGLES
+            return self._require_sonic_action_bridge().default_angles_command
         if self.config.default_motor_positions is None:
             return self._read_motor_positions()
         if len(self.config.default_motor_positions) != self.contract.action_dim:
@@ -408,12 +413,17 @@ class GenesisG1SceneBackend:
 
     def _motor_targets_from_action(self, action: Sequence[float]) -> tuple[float, ...]:
         if self.config.action_mode == "sonic_policy_raw":
-            return sonic_policy_action_to_mujoco_targets(action)
+            return self._require_sonic_action_bridge().policy_action_to_command_targets(action)
         clipped_action = tuple(max(-1.0, min(1.0, float(value))) for value in action)
         return tuple(
             default + self.contract.action_scale_rad * delta
             for default, delta in zip(self.default_motor_positions, clipped_action)
         )
+
+    def _require_sonic_action_bridge(self) -> ScalarActionBridge:
+        if self.sonic_action_bridge is None:
+            raise RuntimeError("SONIC action bridge is only available in sonic_policy_raw mode")
+        return self.sonic_action_bridge
 
     def _observation_action(self, action: Sequence[float]) -> tuple[float, ...]:
         if self.config.action_mode == "sonic_policy_raw":

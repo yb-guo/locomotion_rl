@@ -12,13 +12,14 @@ import math
 from dataclasses import dataclass
 from typing import Any, Protocol, Sequence
 
+from h200_locomotion_lab.runtime import ScalarActionBridge
 from h200_locomotion_lab.sonic.g1_observation import (
     SONIC_ACTION_DIM,
     SonicG1HistoryFrame,
     mujoco_motor_state_to_sonic_body_state,
 )
 from h200_locomotion_lab.sonic.g1_planner_encoder import SONIC_PLANNER_QPOS_DIM
-from h200_locomotion_lab.sonic.g1_policy_bridge import sonic_policy_action_to_mujoco_targets
+from h200_locomotion_lab.sonic.g1_policy_bridge import get_default_sonic_g1_action_bridge
 
 
 @dataclass(frozen=True)
@@ -108,11 +109,16 @@ class G1MotorCommand:
         )
 
     @classmethod
-    def from_raw_sonic_action(cls, raw_action_isaaclab: Sequence[float]) -> "G1MotorCommand":
+    def from_raw_sonic_action(
+        cls,
+        raw_action_isaaclab: Sequence[float],
+        action_bridge: ScalarActionBridge | None = None,
+    ) -> "G1MotorCommand":
         raw_action = _coerce_vector(raw_action_isaaclab, SONIC_ACTION_DIM, "raw_action_isaaclab")
+        bridge = action_bridge or get_default_sonic_g1_action_bridge()
         return cls(
             raw_action_isaaclab=raw_action,
-            motor_position_targets_mujoco=sonic_policy_action_to_mujoco_targets(raw_action),
+            motor_position_targets_mujoco=bridge.policy_action_to_command_targets(raw_action),
         )
 
 

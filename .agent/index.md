@@ -8,6 +8,7 @@ H200 Locomotion Lab 的 agent 入口。
 - `doc/h200_strategy.md`
 - `doc/sonic.md`
 - `doc/locoformer.md`
+- `doc/runtime_architecture.md`
 - `../../README.md`
 
 ## Active Tasks
@@ -19,6 +20,8 @@ H200 Locomotion Lab 的 agent 入口。
 - `task/task005-locoformer-min-reproduction/task.md`
 - `task/task006-sonic-genesis-action-policy/task.md`
 - `task/task007-sonic-g1-deployment-bridge/task.md`
+- `task/task008-runtime-profile-foundation/task.md`
+- `task/task009-sonic-action-rollout-matrix/task.md`
 
 ## Consensus
 
