@@ -1,4 +1,5 @@
 import math
+from pathlib import Path
 
 import pytest
 
@@ -11,6 +12,7 @@ from h200_locomotion_lab.tools.genesis_sonic_policy_locomotion_probe import (
     count_single_support_frames,
     enforce_wall_time,
     heartbeat,
+    read_token_csv_rows,
     read_foot_sample,
     resolve_link_index,
     root_pose_from_qpos,
@@ -95,6 +97,14 @@ def test_heartbeat_writes_latest_progress() -> None:
 def test_enforce_wall_time_raises_after_budget() -> None:
     with pytest.raises(SystemExit, match="GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_TIMEOUT"):
         enforce_wall_time(started_at=0.0, max_wall_time_s=0.001)
+
+
+def test_read_token_csv_rows_reads_64d_rows() -> None:
+    path = Path(__file__).parent / "fixtures" / "token_state_sample.csv"
+
+    rows = read_token_csv_rows(path)
+
+    assert rows == [tuple(float(index) for index in range(64))]
 
 
 class _Args:

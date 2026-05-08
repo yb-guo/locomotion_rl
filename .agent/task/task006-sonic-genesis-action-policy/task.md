@@ -154,3 +154,28 @@ The 80-frame scale-up also passed with `HORIZONTAL_DISPLACEMENT
 `LOCOMOTION_OBSERVED True`, and `GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK`.
 Treat this as an L2 decoder-only walking replay pass through 80 frames; 100/200
 frame scale-up and full planner/encoder integration remain open.
+
+The 200-frame scale-up is now complete on H200. The corrected decoder-only
+walking replay reported `HORIZONTAL_DISPLACEMENT 0.3075475720314082`,
+`PATH_LENGTH_XY 0.5344631470862223`, `SINGLE_SUPPORT_FRAMES 39`,
+`TOTAL_CONTACT_SWITCHES 18`, `LOCOMOTION_OBSERVED True`, and
+`GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK`. A 200-frame GIF was rendered and
+copied locally to
+`.agent/task/task006-sonic-genesis-action-policy/artifacts/genesis_g1_sonic_walking_obs_200f_correct_root.gif`.
+Treat this as the L2 decoder/Genesis replay loop passing 200 frames. The active
+remaining blocker is replacing replayed official obs/token rows with the online
+SONIC encoder/planner path.
+
+Planner/encoder bridge start: H200 ONNX metadata inspection confirmed
+`model_encoder.onnx` is `1762 -> 64 token`, `model_decoder.onnx` is
+`994 -> 29 action`, and `planner_sonic.onnx` generates `64 x 36` MuJoCo qpos
+frames from a 4-frame context and locomotion command. Python ONNX Reference
+cannot execute the planner in practical time, so a small C++ ONNX Runtime runner
+now exports planner qpos via the system `/opt/onnxruntime` install. The first
+no-replay Genesis smoke passed 20 frames with planner+encoder generated tokens,
+Genesis-built decoder history, `OBS_SOURCE not_set`,
+`HORIZONTAL_DISPLACEMENT 0.10920919963428287`, `SINGLE_SUPPORT_FRAMES 10`,
+`TOTAL_CONTACT_SWITCHES 4`, `LOCOMOTION_OBSERVED True`, and
+`GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK`. Remaining work: move from
+precomputed planner qpos/token sequence to online replanning inside the Genesis
+rollout loop.

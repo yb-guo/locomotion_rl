@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import math
 import sys
 import time
@@ -49,7 +50,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--asset", required=True, help="Path to SONIC-compatible G1 29DoF MJCF.")
     parser.add_argument("--decoder", required=True, help="Path to SONIC model_decoder.onnx.")
-    parser.add_argument("--obs-csv", required=True, help="Official 994D obs CSV.")
+    parser.add_argument("--obs-csv", help="Official 994D obs CSV.")
+    parser.add_argument("--token-csv", help="64D token CSV from SONIC encoder/planner.")
     parser.add_argument("--token-mode", choices=("fixed", "replay"), default="replay")
     parser.add_argument("--history-init", choices=("genesis", "official_obs"), default="official_obs")
     parser.add_argument("--frames", type=int, default=100)
@@ -104,9 +106,21 @@ def main() -> None:
 
     progress_path = Path(args.progress_file) if args.progress_file else None
     started_at = time.monotonic()
-    obs_rows = tuple(read_obs_csv_rows(Path(args.obs_csv), SONIC_DECODER_OBS_DIM, args.frames))
-    token_states = tuple(tuple(obs[:SONIC_TOKEN_DIM]) for obs in obs_rows)
-    fixed_token_state = token_states[0]
+    obs_rows = (
+        tuple(read_obs_csv_rows(Path(args.obs_csv), SONIC_DECODER_OBS_DIM, args.frames))
+        if args.obs_csv
+        else ()
+    )
+    token_states = (
+        tuple(read_token_csv_rows(Path(args.token_csv), max_rows=args.frames))
+        if args.token_csv
+        else tuple(tuple(obs[:SONIC_TOKEN_DIM]) for obs in obs_rows)
+    )
+    if args.token_mode == "replay" and not token_states:
+        raise ValueError("--token-mode replay requires --obs-csv or --token-csv")
+    if args.history_init == "official_obs" and not obs_rows:
+        raise ValueError("--history-init official_obs requires --obs-csv")
+    fixed_token_state = token_states[0] if token_states else (0.0,) * SONIC_TOKEN_DIM
     initial_motor_positions = (
         read_default_joint_positions(
             Path(args.initial_joint_pos_csv),
@@ -163,7 +177,8 @@ def main() -> None:
     emit("GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_MODE decoder_only")
     emit("ASSET", Path(args.asset))
     emit("DECODER", Path(args.decoder))
-    emit("TOKEN_SOURCE", args.obs_csv)
+    emit("TOKEN_SOURCE", args.token_csv or args.obs_csv or "zero")
+    emit("OBS_SOURCE", args.obs_csv or "not_set")
     emit("TOKEN_MODE", args.token_mode)
     emit("TOKEN_ROWS", len(token_states))
     emit("HISTORY_INIT", args.history_init)
@@ -329,6 +344,36 @@ def read_root_pose(backend: GenesisG1SceneBackend) -> RootPose:
 
 def emit(*parts: object) -> None:
     print(*parts, flush=True)
+
+
+def read_token_csv_rows(
+    path: Path,
+    max_rows: int | None = None,
+) -> list[tuple[float, ...]]:
+    if max_rows is not None and max_rows <= 0:
+        raise ValueError("max rows must be positive")
+    rows: list[tuple[float, ...]] = []
+    with path.open(newline="") as stream:
+        reader = csv.reader(stream)
+        for row_index, row in enumerate(reader, start=1):
+            if not row or all(not value.strip() for value in row):
+                continue
+            try:
+                values = tuple(float(value) for value in row if value.strip())
+            except ValueError:
+                if row_index == 1:
+                    continue
+                raise
+            if len(values) != SONIC_TOKEN_DIM:
+                raise ValueError(
+                    f"{path}:{row_index} expected {SONIC_TOKEN_DIM} token values, got {len(values)}"
+                )
+            rows.append(values)
+            if max_rows is not None and len(rows) >= max_rows:
+                break
+    if not rows:
+        raise ValueError(f"{path} contains no token rows")
+    return rows
 
 
 def heartbeat(args: argparse.Namespace, progress_path: Path | None, frame: int, stage: str) -> None:

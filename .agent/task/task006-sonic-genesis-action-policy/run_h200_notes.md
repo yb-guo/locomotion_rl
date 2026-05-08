@@ -703,3 +703,208 @@ Review: the previous 80-frame hang did not reproduce with the guarded foreground
 runner. L2 decoder-only walking now has complete H200 pass evidence through 80
 frames. The remaining next step is 100/200-frame scale-up and then replacing
 replayed official obs/token rows with the full SONIC encoder/planner path.
+
+## L2 200-Frame Walking Scale-Up 2026-05-08
+
+H200 command class:
+
+```text
+FRAMES=200 LOG_EVERY=50 PROGRESS_FILE=/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/progress_l2_200f_metrics.txt MAX_WALL_TIME_S=2400 /root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/run_h200_walking_locomotion_probe.sh
+```
+
+Numeric log:
+
+```text
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_sonic_walking_obs_200f_metrics.log
+```
+
+Result:
+
+```text
+FRAME 0 root_x 0.0023871322628110647 root_y 0.011728079989552498 root_z 0.7877528071403503 disp_xy 1.8694489130984784e-06 path_xy 1.8694489130984784e-06
+FRAME 50 root_x 0.1955728381872177 root_y 0.057338517159223557 root_z 0.7777901887893677 disp_xy 0.198495124868869 path_xy 0.24467578403298504
+FRAME 100 root_x 0.25905516743659973 root_y 0.11122798919677734 root_z 0.7843438982963562 disp_xy 0.2752776222579749 path_xy 0.3470539645304823
+FRAME 150 root_x 0.3024607300758362 root_y 0.05134880542755127 root_z 0.8023837804794312 disp_xy 0.3026761493960159 path_xy 0.4232554565852338
+FRAME 199 root_x 0.3019540011882782 root_y 0.08134350925683975 root_z 0.7878252863883972 disp_xy 0.3075475720314082 path_xy 0.5344631470862223
+OBS_FINITE True
+ACTION_FINITE True
+ROOT_Z_MIN 0.7292487025260925
+ROOT_Z_MAX 0.8026557564735413
+HORIZONTAL_DISPLACEMENT 0.3075475720314082
+PATH_LENGTH_XY 0.5344631470862223
+AVERAGE_SPEED_XY 0.07688689300785205
+YAW_DELTA 0.03219214842257979
+ACTION_MAX_ABS 5.8859028816223145
+LEFT_CONTACT_FRAMES 183
+RIGHT_CONTACT_FRAMES 174
+LEFT_CONTACT_SWITCHES 7
+RIGHT_CONTACT_SWITCHES 11
+TOTAL_CONTACT_SWITCHES 18
+SINGLE_SUPPORT_FRAMES 39
+DOUBLE_SUPPORT_FRAMES 159
+NO_SUPPORT_FRAMES 2
+TRANSLATION_OBSERVED True
+FOOT_ALTERNATION_OBSERVED True
+LOCOMOTION_OBSERVED True
+HEIGHT_OK_RANGE 0.3 1.2 True
+GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK
+```
+
+200-frame GIF:
+
+```text
+Remote:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/videos/genesis_g1_sonic_walking_obs_200f_correct_root.gif
+
+Local:
+.agent/task/task006-sonic-genesis-action-policy/artifacts/genesis_g1_sonic_walking_obs_200f_correct_root.gif
+
+Rendered frames: 200
+Resolution: 420 x 320
+GIF bytes: 460316
+BASE_HEIGHT_MIN 0.7292487025260925
+BASE_HEIGHT_FINAL 0.7877992391586304
+ACTION_MAX_ABS 5.885979652404785
+GENESIS_SONIC_POLICY_ROLLOUT_GIF_OK
+```
+
+Review: L2 decoder-only SONIC walking replay now has complete 200-frame H200
+evidence with corrected walking root pose, official q0 reset, SONIC motor
+config, official walking obs replay, and replayed SONIC token. This validates
+the Genesis action/decoder loop for a replayed walking clip. It is still not a
+full SONIC rollout because the online encoder/planner path is not yet replacing
+the replayed obs/token source.
+
+## SONIC Planner/Encoder Bridge Start 2026-05-08
+
+ONNX metadata inspection on H200:
+
+```text
+model_encoder.onnx:
+INPUT obs_dict (1, 1762)
+OUTPUT encoded_tokens (1, 64)
+
+model_decoder.onnx:
+INPUT obs_dict (1, 994)
+OUTPUT action (1, 29)
+
+planner_sonic.onnx:
+INPUT context_mujoco_qpos (1, 4, 36)
+INPUT target_vel (1,)
+INPUT mode (1,)
+INPUT movement_direction (1, 3)
+INPUT facing_direction (1, 3)
+INPUT random_seed (1,)
+INPUT has_specific_target (1, 1)
+INPUT specific_target_positions (1, 4, 3)
+INPUT specific_target_headings (1, 4)
+INPUT allowed_pred_num_tokens (1, 11)
+INPUT height (1,)
+OUTPUT mujoco_qpos (1, 64, 36)
+OUTPUT num_pred_frames (1,)
+```
+
+Official C++ route confirmed:
+
+- planner output is 30 Hz `mujoco_qpos`;
+- official deploy resamples it to 50 Hz before encoder observations;
+- encoder G1 mode 0 fills only `encoder_mode_4`,
+  `motion_joint_positions_10frame_step5`,
+  `motion_joint_velocities_10frame_step5`, and
+  `motion_anchor_orientation_10frame_step5` inside the full 1762D encoder
+  input; other enabled encoder fields are left zero by mode filtering.
+
+Python `onnx.reference.ReferenceEvaluator` is not usable for the planner model:
+the direct planner->encoder->decoder forward command stayed at about 103% CPU
+for 10 minutes with an empty log and had to be killed. The fix was to use the
+H200 system ONNX Runtime C++ install at `/opt/onnxruntime` for the planner and
+keep Python ONNX ReferenceEvaluator for the smaller encoder/decoder models.
+
+C++ planner runner evidence:
+
+```text
+Source:
+.agent/task/task006-sonic-genesis-action-policy/sonic_planner_ort_runner.cpp
+
+Remote binary:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/sonic_planner_ort_runner
+
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/sonic_planner_ort_runner_walk.log
+
+OUTPUT_QPOS_CSV /root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/actions/planner_ort_walk_qpos.csv
+PLANNER_MODE 2
+TARGET_VEL -1
+PLANNER_QPOS_ROWS 64
+PLANNER_QPOS_COLS 36
+PLANNER_NUM_PRED_FRAMES 44
+PLANNER_QPOS_FINITE 1
+PLANNER_ROOT_Z_MIN_MAX 0.750778 0.787849
+SONIC_PLANNER_ORT_RUNNER_OK
+```
+
+Planner->encoder->decoder forward without replayed obs/token:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/sonic_planner_encoder_decoder_forward_walk_20tokens.log
+
+PLANNER_SOURCE csv
+PLANNER_QPOS_CSV /root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/actions/planner_ort_walk_qpos.csv
+REPLAY_OBS_USED False
+REPLAY_TOKEN_USED False
+PLANNER_NUM_PRED_FRAMES 44
+MOTION_50HZ_TIMESTEPS 73
+ENCODER_OBS_DIM 1762
+ENCODER_OBS_ROWS 20
+ENCODER_OBS_FINITE True
+TOKEN_ROWS_GENERATED 20
+TOKEN_DIM 64
+TOKEN_FINITE True
+DECODER_OBS_DIM 994
+DECODER_OBS_FINITE True
+ACTION_DIM 29
+ACTION_FINITE True
+ACTION_MAX_ABS 1.9110764265060425
+OUTPUT_TOKEN_CSV /root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/actions/planner_encoder_token_walk_20f.csv
+SONIC_PLANNER_ENCODER_DECODER_FORWARD_OK
+```
+
+Genesis smoke using planner+encoder generated token sequence, not official obs:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_sonic_planner_encoder_token_20f.log
+
+TOKEN_SOURCE /root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/actions/planner_encoder_token_walk_20f.csv
+OBS_SOURCE not_set
+TOKEN_MODE replay
+TOKEN_ROWS 20
+HISTORY_INIT genesis
+MOTOR_CONFIG sonic_g1_kp_kv_force_range
+FRAMES 20
+OBS_FINITE True
+ACTION_FINITE True
+ROOT_Z_MIN 0.7579326629638672
+ROOT_Z_FINAL 0.759788453578949
+HORIZONTAL_DISPLACEMENT 0.10920919963428287
+PATH_LENGTH_XY 0.11964258357025515
+AVERAGE_SPEED_XY 0.27302299908570715
+ACTION_MAX_ABS 2.9726450443267822
+SINGLE_SUPPORT_FRAMES 10
+DOUBLE_SUPPORT_FRAMES 8
+NO_SUPPORT_FRAMES 2
+TOTAL_CONTACT_SWITCHES 4
+TRANSLATION_OBSERVED True
+FOOT_ALTERNATION_OBSERVED True
+LOCOMOTION_OBSERVED True
+HEIGHT_OK_RANGE 0.3 1.2 True
+GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK
+```
+
+Review: the replayed official obs/token source has now been removed for a
+short 20-frame Genesis smoke. The remaining gap is true online replanning:
+planner qpos is still generated once up front, then encoded into a 20-token
+sequence. The next step is to wrap planner+encoder as a runtime token provider
+inside the Genesis rollout loop and refresh planner context from the simulated
+motion/state instead of using a precomputed planner qpos CSV.
