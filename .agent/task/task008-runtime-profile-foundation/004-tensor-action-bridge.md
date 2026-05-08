@@ -22,8 +22,25 @@ Fail condition:
 # Log
 
 - 2026-05-08: Pending scalar bridge.
+- 2026-05-08: Implemented `NumpyTensorActionBridge` under runtime with
+  initialization-time NumPy array compilation for command-to-policy indices,
+  default command angles, and action scales. Hot path validates rank, `[N, 29]`
+  width, and finite values, then computes batched command targets without
+  per-frame dataclass allocation or joint-name lookup.
+- 2026-05-08: Verification passed:
+  `PYTHONPATH=src python -m pytest -q -p no:cacheprovider
+  tests\test_numpy_tensor_action_bridge.py tests\test_scalar_action_bridge.py
+  tests\test_robot_profile_loader.py` -> `30 passed in 1.28s`.
+- 2026-05-08: Full suite passed:
+  `PYTHONPATH=src python -m pytest -q -p no:cacheprovider` ->
+  `107 passed in 1.08s`.
 
 # Review
 
-Status: pending.
+Status: passed.
+
+- 2026-05-08: Read-only reviewer reported no blocking findings and no
+  suggestions. Reviewer verified scoped changes, no SONIC bridge migration, and
+  `PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 python -m pytest -q -p no:cacheprovider tests/test_numpy_tensor_action_bridge.py tests/test_scalar_action_bridge.py`:
+  `19 passed in 0.56s`.
 
