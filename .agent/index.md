@@ -18,6 +18,7 @@ H200 Locomotion Lab 的 agent 入口。
 - `task/task004-genesis-g1-baseline/task.md`
 - `task/task005-locoformer-min-reproduction/task.md`
 - `task/task006-sonic-genesis-action-policy/task.md`
+- `task/task007-sonic-g1-deployment-bridge/task.md`
 
 ## Consensus
 

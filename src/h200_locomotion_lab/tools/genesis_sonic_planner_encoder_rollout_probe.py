@@ -16,6 +16,10 @@ from h200_locomotion_lab.envs.genesis_adapter import (
     GenesisG1SceneBackend,
     GenesisSceneConfig,
 )
+from h200_locomotion_lab.envs.robot_backend import (
+    read_genesis_g1_robot_state,
+    robot_state_to_planner_qpos,
+)
 from h200_locomotion_lab.sonic.g1_observation import SONIC_TOKEN_DIM
 from h200_locomotion_lab.sonic.g1_planner_encoder import (
     SONIC_ENCODER_OBS_DIM,
@@ -518,16 +522,7 @@ def write_video_outputs(args: argparse.Namespace, rendered_frames: Sequence[Any]
 
 
 def read_planner_qpos_from_genesis(backend: GenesisG1SceneBackend) -> tuple[float, ...]:
-    root_qpos = tuple(float(value) for value in backend._read_root_qpos()[:7])
-    motor_positions = tuple(float(value) for value in backend._read_motor_positions())
-    if len(root_qpos) != 7:
-        raise ValueError(f"Genesis root qpos expected 7 values, got {len(root_qpos)}")
-    if len(motor_positions) != SONIC_PLANNER_QPOS_DIM - 7:
-        raise ValueError(
-            f"Genesis motor qpos expected {SONIC_PLANNER_QPOS_DIM - 7} values, "
-            f"got {len(motor_positions)}"
-        )
-    return root_qpos + motor_positions
+    return robot_state_to_planner_qpos(read_genesis_g1_robot_state(backend))
 
 
 def parse_num_pred_frames(output: str) -> int:

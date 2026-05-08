@@ -73,8 +73,16 @@ class _RecordingStringIO(io.StringIO):
 
 
 class _FakeGenesisBackend:
+    previous_action = (0.0,) * 29
+
     def _read_root_qpos(self) -> tuple[float, ...]:
         return (1.0, 2.0, 0.8, 1.0, 0.0, 0.0, 0.0)
 
     def _read_motor_positions(self) -> tuple[float, ...]:
         return tuple(float(joint) for joint in range(29))
+
+    def _read_motor_velocities(self) -> tuple[float, ...]:
+        return tuple(float(joint) * 0.1 for joint in range(29))
+
+    def _read_base_angular_velocity(self) -> tuple[float, float, float]:
+        return (0.0, 0.0, 0.0)
