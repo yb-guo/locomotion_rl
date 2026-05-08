@@ -3,6 +3,7 @@ import io
 from h200_locomotion_lab.sonic.g1_planner_encoder import SONIC_PLANNER_QPOS_DIM
 from h200_locomotion_lab.tools.genesis_sonic_planner_encoder_rollout_probe import (
     parse_num_pred_frames,
+    read_planner_qpos_from_genesis,
     write_planner_context_csv,
 )
 
@@ -34,6 +35,16 @@ def test_write_planner_context_csv_writes_four_36d_rows() -> None:
     assert lines[-1].split(",")[-1] == "335"
 
 
+def test_read_planner_qpos_from_genesis_combines_root_and_motor_state() -> None:
+    backend = _FakeGenesisBackend()
+
+    qpos = read_planner_qpos_from_genesis(backend)  # type: ignore[arg-type]
+
+    assert len(qpos) == SONIC_PLANNER_QPOS_DIM
+    assert qpos[:7] == (1.0, 2.0, 0.8, 1.0, 0.0, 0.0, 0.0)
+    assert qpos[7:] == tuple(float(joint) for joint in range(29))
+
+
 class _FakeCsvPath:
     content = ""
 
@@ -59,3 +70,11 @@ class _RecordingStringIO(io.StringIO):
     def __exit__(self, exc_type, exc_value, traceback) -> None:  # type: ignore[no-untyped-def]
         self._owner.content = self.getvalue()
         super().__exit__(exc_type, exc_value, traceback)
+
+
+class _FakeGenesisBackend:
+    def _read_root_qpos(self) -> tuple[float, ...]:
+        return (1.0, 2.0, 0.8, 1.0, 0.0, 0.0, 0.0)
+
+    def _read_motor_positions(self) -> tuple[float, ...]:
+        return tuple(float(joint) for joint in range(29))

@@ -12,6 +12,7 @@ from h200_locomotion_lab.sonic.g1_planner_encoder import (
     build_g1_encoder_observation_from_planner_motion,
     build_initial_planner_context,
     build_planner_context_from_motion,
+    build_planner_context_from_mujoco_qpos_history,
     build_planner_inputs,
     encoder_field_by_name,
     resample_planner_mujoco_qpos_to_50hz,
@@ -101,6 +102,30 @@ def test_build_planner_context_from_motion_samples_50hz_motion_in_mujoco_order()
     assert context[1][0] == pytest.approx(1.0 / 30.0)
     for policy_index, mujoco_index in enumerate(SONIC_G1_POLICY_INDEX_TO_MUJOCO_INDEX):
         assert context[0][7 + mujoco_index] == pytest.approx(float(policy_index))
+
+
+def test_build_planner_context_from_mujoco_qpos_history_uses_recent_live_state() -> None:
+    frames = []
+    for frame_index in range(8):
+        root = (frame_index / 50.0, 0.0, 0.8, 1.0, 0.0, 0.0, 0.0)
+        joints = tuple(10.0 * frame_index + joint for joint in range(29))
+        frames.append((*root, *joints))
+
+    context = build_planner_context_from_mujoco_qpos_history(frames)
+
+    assert len(context) == 4
+    assert all(len(row) == SONIC_PLANNER_QPOS_DIM for row in context)
+    assert context[0][0] == pytest.approx((7 / 50.0) - (3 / 30.0))
+    assert context[-1][0] == pytest.approx(7 / 50.0)
+    assert context[-1][7:] == pytest.approx(tuple(70.0 + joint for joint in range(29)))
+
+
+def test_build_planner_context_from_mujoco_qpos_history_repeats_single_frame() -> None:
+    frame = (0.1, 0.2, 0.8, 1.0, 0.0, 0.0, 0.0, *tuple(float(joint) for joint in range(29)))
+
+    context = build_planner_context_from_mujoco_qpos_history((frame,))
+
+    assert context == (frame, frame, frame, frame)
 
 
 def test_read_planner_qpos_csv_reads_36d_rows() -> None:

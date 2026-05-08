@@ -271,6 +271,29 @@ def build_planner_context_from_motion(
     return tuple(context_rows)
 
 
+def build_planner_context_from_mujoco_qpos_history(
+    qpos_frames_50hz: Sequence[Sequence[float]],
+    *,
+    current_frame: int | None = None,
+) -> tuple[tuple[float, ...], ...]:
+    """Build planner context from live MuJoCo-order qpos frames sampled at 50 Hz."""
+
+    frames = tuple(
+        _coerce_vector(frame, SONIC_PLANNER_QPOS_DIM, "qpos_frame")
+        for frame in qpos_frames_50hz
+    )
+    if not frames:
+        raise ValueError("qpos_frames_50hz must not be empty")
+    last_frame = len(frames) - 1 if current_frame is None else int(current_frame)
+    last_frame = _clamp_frame(last_frame, len(frames))
+    end_time = last_frame / 50.0
+    start_time = end_time - (SONIC_PLANNER_CONTEXT_FRAMES - 1) / 30.0
+    return tuple(
+        _sample_mujoco_qpos_history_at_time(frames, start_time + context_index / 30.0)
+        for context_index in range(SONIC_PLANNER_CONTEXT_FRAMES)
+    )
+
+
 def encoder_field_by_name(name: str) -> SonicEncoderField:
     for field in SONIC_G1_ENCODER_FIELDS:
         if field.name == name:
@@ -303,6 +326,27 @@ def _sample_motion_at_time(
         for joint in range(SONIC_ACTION_DIM)
     )
     return root_pos, root_quat, joint_positions
+
+
+def _sample_mujoco_qpos_history_at_time(
+    qpos_frames_50hz: Sequence[tuple[float, ...]],
+    sample_time_s: float,
+) -> tuple[float, ...]:
+    frame_50hz = max(0.0, sample_time_s * 50.0)
+    f0 = _clamp_frame(int(math.floor(frame_50hz)), len(qpos_frames_50hz))
+    f1 = _clamp_frame(f0 + 1, len(qpos_frames_50hz))
+    alpha = max(0.0, min(1.0, frame_50hz - f0))
+    w0 = 1.0 - alpha
+    w1 = alpha
+    q0 = qpos_frames_50hz[f0]
+    q1 = qpos_frames_50hz[f1]
+    root_position = tuple(w0 * q0[index] + w1 * q1[index] for index in range(3))
+    root_quat = _quat_slerp(q0[3:7], q1[3:7], alpha)
+    joints = tuple(
+        w0 * q0[7 + joint_index] + w1 * q1[7 + joint_index]
+        for joint_index in range(SONIC_ACTION_DIM)
+    )
+    return (*root_position, *root_quat, *joints)
 
 
 def _future_joint_window(

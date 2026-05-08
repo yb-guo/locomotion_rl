@@ -194,3 +194,16 @@ with `--replan-interval 10` (`PLANNER_CALLS 3`, `HORIZONTAL_DISPLACEMENT
 `run_h200_notes.md`. The remaining blocker is scale-up/correctness hardening:
 the replan context is sampled from tracked planner motion, not yet reconciled
 against live simulated root/motor state.
+
+Genesis-feedback planner context is now connected. The probe can run with
+`--initial-context-source genesis --replan-context-source genesis`, which builds
+the planner's 4x36 context from live Genesis root qpos plus the 29 motor qpos
+history. H200 completed 30/80/120-frame closed-loop runs with replan every 10
+frames. The 120-frame run reported `PLANNER_CALLS 12`,
+`GENESIS_QPOS_HISTORY_FRAMES 121`, `ROOT_Z_MIN 0.7064440250396729`,
+`HORIZONTAL_DISPLACEMENT 1.2903014294589257`, `SINGLE_SUPPORT_FRAMES 76`,
+`TOTAL_CONTACT_SWITCHES 12`, `LOCOMOTION_OBSERVED True`, and
+`GENESIS_SONIC_PLANNER_ENCODER_ROLLOUT_PROBE_OK`. Treat this as the first
+Genesis-feedback planner/encoder/decoder closed-loop stability pass. Remaining
+work: online-path GIF/video, 200-frame scale-up, and parity checks against the
+official planner context convention.

@@ -993,3 +993,101 @@ walking under Genesis. Remaining work is scale-up and correctness hardening:
 the replan context is sampled from the planner motion currently being tracked,
 not yet reconciled against the simulated robot root/motor state in the same way
 the official deployment stack may do.
+
+## Genesis Feedback Planner Context 2026-05-08
+
+Updated the online rollout probe so planner context can come from the live
+Genesis state:
+
+```text
+Genesis root qpos + Genesis 29 motor qpos
+-> 50 Hz qpos history
+-> resampled 4 x 36 MuJoCo qpos context at 30 Hz
+-> C++ ONNX Runtime planner
+```
+
+New probe controls:
+
+```text
+--initial-context-source genesis
+--replan-context-source genesis
+```
+
+Verification:
+
+```text
+Local full pytest: 69 passed
+H200 targeted pytest from /tmp with absolute PYTHONPATH: 11 passed
+```
+
+H200 30-frame Genesis-feedback closed-loop, replan every 10 frames:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_sonic_planner_encoder_runtime_genesisctx_replan10_30f.log
+
+INITIAL_CONTEXT_SOURCE genesis
+REPLAN_CONTEXT_SOURCE genesis
+PLANNER_CALLS 3
+GENESIS_QPOS_HISTORY_FRAMES 31
+FINITE_OK True
+ROOT_Z_MIN 0.7393287420272827
+ROOT_Z_MAX 0.7911660075187683
+HORIZONTAL_DISPLACEMENT 0.19177099548522342
+PATH_LENGTH_XY 0.20562466234576518
+SINGLE_SUPPORT_FRAMES 20
+TOTAL_CONTACT_SWITCHES 5
+LOCOMOTION_OBSERVED True
+HEIGHT_OK_RANGE 0.3 1.2 True
+GENESIS_SONIC_PLANNER_ENCODER_ROLLOUT_PROBE_OK
+```
+
+H200 80-frame Genesis-feedback closed-loop, replan every 10 frames:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_sonic_planner_encoder_runtime_genesisctx_replan10_80f.log
+
+INITIAL_CONTEXT_SOURCE genesis
+REPLAN_CONTEXT_SOURCE genesis
+PLANNER_CALLS 8
+GENESIS_QPOS_HISTORY_FRAMES 81
+FINITE_OK True
+ROOT_Z_MIN 0.7064436078071594
+ROOT_Z_MAX 0.7911660075187683
+HORIZONTAL_DISPLACEMENT 0.8308150532633347
+PATH_LENGTH_XY 0.8759600709577173
+SINGLE_SUPPORT_FRAMES 51
+TOTAL_CONTACT_SWITCHES 10
+LOCOMOTION_OBSERVED True
+HEIGHT_OK_RANGE 0.3 1.2 True
+GENESIS_SONIC_PLANNER_ENCODER_ROLLOUT_PROBE_OK
+```
+
+H200 120-frame Genesis-feedback closed-loop, replan every 10 frames:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_sonic_planner_encoder_runtime_genesisctx_replan10_120f.log
+
+INITIAL_CONTEXT_SOURCE genesis
+REPLAN_CONTEXT_SOURCE genesis
+PLANNER_CALLS 12
+GENESIS_QPOS_HISTORY_FRAMES 121
+FINITE_OK True
+ROOT_Z_MIN 0.7064440250396729
+ROOT_Z_MAX 0.7911660075187683
+HORIZONTAL_DISPLACEMENT 1.2903014294589257
+PATH_LENGTH_XY 1.3514448254283475
+SINGLE_SUPPORT_FRAMES 76
+TOTAL_CONTACT_SWITCHES 12
+LOCOMOTION_OBSERVED True
+HEIGHT_OK_RANGE 0.3 1.2 True
+GENESIS_SONIC_PLANNER_ENCODER_ROLLOUT_PROBE_OK
+```
+
+Review: this is now a Genesis-feedback planner context loop, not just planner
+motion self-sampling. The 120-frame result is stable under the current height
+and locomotion gates. Remaining work is visual evidence for the online path,
+200-frame scale-up, and closer parity checks against the official deployment
+context convention.

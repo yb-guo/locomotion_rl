@@ -20,6 +20,7 @@ from h200_locomotion_lab.sonic.g1_planner_encoder import (
     SonicPlannerMotion50Hz,
     build_g1_encoder_observation_from_planner_motion,
     build_planner_context_from_motion,
+    build_planner_context_from_mujoco_qpos_history,
     resample_planner_mujoco_qpos_to_50hz,
 )
 from h200_locomotion_lab.tools.genesis_action_replay_smoke import read_default_joint_positions
@@ -63,6 +64,16 @@ def main() -> None:
     parser.add_argument("--work-dir", required=True, help="Directory for planner context/qpos/log files.")
     parser.add_argument("--frames", type=int, default=20)
     parser.add_argument("--replan-interval", type=int, default=0)
+    parser.add_argument(
+        "--initial-context-source",
+        choices=("initial_joint_csv", "genesis"),
+        default="initial_joint_csv",
+    )
+    parser.add_argument(
+        "--replan-context-source",
+        choices=("motion", "genesis"),
+        default="motion",
+    )
     parser.add_argument("--planner-timeout-s", type=float, default=300.0)
     parser.add_argument("--backend", default="cuda")
     parser.add_argument("--base-pos", nargs=3, type=float, default=(0.0, 0.0, 0.0))
@@ -139,7 +150,18 @@ def main() -> None:
         motor_config = "genesis_default"
 
     backend.reset()
-    motion, planner_num_pred_frames = run_planner_runner(args, work_dir, tag="initial")
+    genesis_qpos_history = [read_planner_qpos_from_genesis(backend)]
+    initial_context_rows = (
+        build_planner_context_from_mujoco_qpos_history(genesis_qpos_history)
+        if args.initial_context_source == "genesis"
+        else None
+    )
+    motion, planner_num_pred_frames = run_planner_runner(
+        args,
+        work_dir,
+        tag="initial",
+        context_rows=initial_context_rows,
+    )
     motion_start_frame = 0
     planner_calls = 1
 
@@ -174,6 +196,8 @@ def main() -> None:
     emit("MOTOR_CONFIG", motor_config)
     emit("FRAMES", args.frames)
     emit("REPLAN_INTERVAL", args.replan_interval)
+    emit("INITIAL_CONTEXT_SOURCE", args.initial_context_source)
+    emit("REPLAN_CONTEXT_SOURCE", args.replan_context_source)
     emit("INITIAL_PLANNER_NUM_PRED_FRAMES", planner_num_pred_frames)
     emit("ROOT_QPOS", tuple(args.root_qpos) if args.root_qpos else None)
     emit("INITIAL_JOINT_POS_SOURCE", args.initial_joint_pos_csv or "default_motor_positions")
@@ -188,10 +212,15 @@ def main() -> None:
         heartbeat(args, progress_path, frame_index, "begin")
 
         if args.replan_interval and frame_index > 0 and frame_index % args.replan_interval == 0:
-            context_rows = build_planner_context_from_motion(
-                motion,
-                gen_frame=frame_index - motion_start_frame,
-            )
+            if args.replan_context_source == "genesis":
+                context_rows = build_planner_context_from_mujoco_qpos_history(
+                    genesis_qpos_history,
+                )
+            else:
+                context_rows = build_planner_context_from_motion(
+                    motion,
+                    gen_frame=frame_index - motion_start_frame,
+                )
             motion, planner_num_pred_frames = run_planner_runner(
                 args,
                 work_dir,
@@ -241,6 +270,7 @@ def main() -> None:
 
         backend.step(action)
         heartbeat(args, progress_path, frame_index, "step")
+        genesis_qpos_history.append(read_planner_qpos_from_genesis(backend))
 
         root_pose = read_root_pose(backend)
         contact_count, max_contact_force = (
@@ -316,6 +346,7 @@ def main() -> None:
     locomotion_observed = translation_observed and foot_alternation_observed
 
     emit("PLANNER_CALLS", planner_calls)
+    emit("GENESIS_QPOS_HISTORY_FRAMES", len(genesis_qpos_history))
     emit("ENCODER_OBS_FINITE", encoder_observation_finite)
     emit("TOKEN_FINITE", token_finite)
     emit("DECODER_OBS_FINITE", decoder_observation_finite)
@@ -417,6 +448,19 @@ def run_planner_runner(
         num_pred_frames=num_pred_frames,
     )
     return motion, num_pred_frames
+
+
+def read_planner_qpos_from_genesis(backend: GenesisG1SceneBackend) -> tuple[float, ...]:
+    root_qpos = tuple(float(value) for value in backend._read_root_qpos()[:7])
+    motor_positions = tuple(float(value) for value in backend._read_motor_positions())
+    if len(root_qpos) != 7:
+        raise ValueError(f"Genesis root qpos expected 7 values, got {len(root_qpos)}")
+    if len(motor_positions) != SONIC_PLANNER_QPOS_DIM - 7:
+        raise ValueError(
+            f"Genesis motor qpos expected {SONIC_PLANNER_QPOS_DIM - 7} values, "
+            f"got {len(motor_positions)}"
+        )
+    return root_qpos + motor_positions
 
 
 def parse_num_pred_frames(output: str) -> int:
