@@ -65,6 +65,45 @@ Every subtask must be a minimum closed loop:
 - keep `Review` at pending/in progress until verification exists;
 - do not merge pure scaffolding without an exercised path.
 
+## Result
+
+Status: passed.
+
+Closed scope:
+
+- YAML robot/control profile for the Unitree G1 29DoF SONIC body profile.
+- Initialization-time profile loader, validation, and compiled profile object.
+- Profile-backed scalar action bridge.
+- Profile-backed NumPy tensor action bridge for batched action mapping.
+- Existing SONIC G1 action bridge migrated to the compiled profile authority.
+- Existing task006/task007 routes kept compatible.
+
+Verification evidence:
+
+- Local full suite passed: `PYTHONPATH=src python -m pytest` reported
+  `109 passed`.
+- H200 targeted full suite passed from `/tmp` against extracted task008 code
+  with explicit `PYTHONPATH`: `109 passed in 0.87s`, `PYTEST_STATUS 0`.
+- H200 task007 representative dry-run passed:
+  `SONIC_G1_DEPLOYMENT_DRY_RUN_OK`, `OBS_DIM 994`, `OBS_FINITE True`,
+  `RAW_ACTION_FINITE True`, `TARGET_FINITE True`.
+- Read-only review found no blocking issues after the dry-run command was
+  recorded.
+
+Remaining non-goals:
+
+- Full `SonicG1ScalarRuntime` extraction is not implemented in task008.
+- Vectorized Genesis training backend is not implemented in task008.
+- PPO reward, termination, reset curriculum, and large-scale RL throughput are
+  not implemented in task008.
+- LocoFormer multi-embodiment training is not implemented in task008.
+- Real Unitree G1 low-state/low-command publishing is not implemented in
+  task008.
+
 ## Review
 
-Status: opened.
+Status: passed.
+
+- 2026-05-08: Top-level task closure reconciled the passed subtask evidence
+  with the explicit non-goals. Task008 is complete as a runtime profile/action
+  bridge foundation, not as a full backend/runtime or RL training task.
