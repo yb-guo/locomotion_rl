@@ -229,3 +229,15 @@ closest current official-convention path. The passing
 `initial_context_source=genesis + replan_context_source=genesis` path is a
 valid Genesis-feedback closed-loop stability experiment, but it is not exactly
 the official planner context convention.
+
+The official-context path now also passes a rendered 200-frame H200 run:
+`--initial-context-source initial_joint_csv --replan-context-source motion`.
+The run reported `PLANNER_CALLS 20`, `ROOT_Z_MIN 0.7183108925819397`,
+`HORIZONTAL_DISPLACEMENT 3.6676499479337363`, `SINGLE_SUPPORT_FRAMES 151`,
+`TOTAL_CONTACT_SWITCHES 31`, `LOCOMOTION_OBSERVED True`, and
+`GENESIS_SONIC_PLANNER_ENCODER_ROLLOUT_PROBE_OK`. Visual outputs are available
+locally at
+`.agent/task/task006-sonic-genesis-action-policy/artifacts/genesis_g1_sonic_planner_encoder_officialctx_replan10_200f.gif`
+and
+`.agent/task/task006-sonic-genesis-action-policy/artifacts/genesis_g1_sonic_planner_encoder_officialctx_replan10_200f.mp4`.
+Treat official-context as the primary transfer-oriented route.

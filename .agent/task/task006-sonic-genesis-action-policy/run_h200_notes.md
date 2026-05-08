@@ -1221,3 +1221,70 @@ stability result for this repo's Genesis integration, but it should not be
 described as bit-for-bit or convention-exact official SONIC planner context.
 For official parity, keep the motion-context route as the reference path and use
 the Genesis-context route as a feedback robustness experiment.
+
+## Official-Context Online 200-Frame Run 2026-05-08
+
+Ran the closest current path to official SONIC planner context convention:
+
+```text
+--initial-context-source initial_joint_csv
+--replan-context-source motion
+--replan-interval 10
+--frames 200
+```
+
+This path keeps planner replanning context sourced from the planner motion
+buffer, matching the official deployment direction more closely than the
+Genesis-feedback context experiment.
+
+H200 200-frame official-context run with GIF/MP4 rendering:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_sonic_planner_encoder_runtime_officialctx_replan10_200f_render.log
+
+INITIAL_CONTEXT_SOURCE initial_joint_csv
+REPLAN_CONTEXT_SOURCE motion
+PLANNER_CALLS 20
+GENESIS_QPOS_HISTORY_FRAMES 201
+FINITE_OK True
+TOKEN_MAX_ABS 0.625
+ACTION_MAX_ABS 5.80940055847168
+ROOT_Z_MIN 0.7183108925819397
+ROOT_Z_MAX 0.7911660075187683
+HORIZONTAL_DISPLACEMENT 3.6676499479337363
+PATH_LENGTH_XY 3.7301093757850285
+AVERAGE_SPEED_XY 0.9169124869834341
+SINGLE_SUPPORT_FRAMES 151
+DOUBLE_SUPPORT_FRAMES 35
+NO_SUPPORT_FRAMES 14
+TOTAL_CONTACT_SWITCHES 31
+LOCOMOTION_OBSERVED True
+HEIGHT_OK_RANGE 0.3 1.2 True
+RENDERED_FRAMES 200
+GENESIS_SONIC_PLANNER_ENCODER_ROLLOUT_PROBE_OK
+```
+
+Visual artifacts:
+
+```text
+Remote GIF:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/videos/genesis_g1_sonic_planner_encoder_officialctx_replan10_200f.gif
+
+Remote MP4:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/videos/genesis_g1_sonic_planner_encoder_officialctx_replan10_200f.mp4
+
+Local GIF:
+.agent/task/task006-sonic-genesis-action-policy/artifacts/genesis_g1_sonic_planner_encoder_officialctx_replan10_200f.gif
+
+Local MP4:
+.agent/task/task006-sonic-genesis-action-policy/artifacts/genesis_g1_sonic_planner_encoder_officialctx_replan10_200f.mp4
+
+GIF_BYTES 456551
+MP4_BYTES 67771
+```
+
+Review: the official-context path now passes the same 200-frame rendered H200
+scale-up gate. This should be treated as the primary transfer-oriented route.
+The Genesis-feedback context route remains useful as a robustness/diagnostic
+ablation, but official-context is the closer deployment convention.
