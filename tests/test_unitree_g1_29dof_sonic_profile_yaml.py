@@ -16,7 +16,8 @@ from h200_locomotion_lab.tools.sonic_reference_replay_smoke import (
 )
 
 
-PROFILE_PATH = Path("configs/robots/unitree_g1_29dof_sonic.yaml")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+PROFILE_PATH = REPO_ROOT / "configs/robots/unitree_g1_29dof_sonic.yaml"
 
 
 def test_unitree_g1_29dof_sonic_profile_yaml_matches_runtime_constants() -> None:
