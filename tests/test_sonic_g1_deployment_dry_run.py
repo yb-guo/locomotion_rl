@@ -1,7 +1,10 @@
 import csv
 import io
 
+import pytest
+
 from h200_locomotion_lab.sonic.g1_observation import SONIC_ACTION_DIM, SONIC_DECODER_OBS_DIM
+from h200_locomotion_lab.sonic.g1_policy_bridge import get_default_sonic_g1_action_bridge
 from h200_locomotion_lab.tools.sonic_g1_deployment_dry_run import (
     read_numeric_csv,
     run_dry_run,
@@ -26,6 +29,11 @@ def test_run_dry_run_builds_obs_and_motor_target_summary() -> None:
     assert rows[0]["raw_action_max_abs"] == "0.25"
     assert rows[1]["root_z"] == "0.78"
     assert "target_mujoco_28" in rows[0]
+    expected_target = get_default_sonic_g1_action_bridge().policy_action_to_command_targets(
+        (0.25,) * SONIC_ACTION_DIM
+    )
+    assert float(rows[0]["target_mujoco_00"]) == pytest.approx(expected_target[0])
+    assert float(rows[0]["target_mujoco_28"]) == pytest.approx(expected_target[28])
 
 
 def test_write_summary_csv_round_trips_header() -> None:

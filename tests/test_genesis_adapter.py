@@ -14,6 +14,7 @@ from h200_locomotion_lab.sonic.g1_policy_bridge import (
     SONIC_G1_ACTION_SCALES,
     SONIC_G1_DEFAULT_ANGLES,
     SONIC_G1_POLICY_INDEX_TO_MUJOCO_INDEX,
+    get_default_sonic_g1_action_bridge,
 )
 from h200_locomotion_lab.sonic.g1_observation import field_by_name
 
@@ -120,9 +121,16 @@ def test_genesis_scene_backend_maps_raw_sonic_policy_action() -> None:
     result = backend.step(raw_action)
 
     assert result.info["action_mode"] == "sonic_policy_raw"
+    assert backend.sonic_action_bridge is get_default_sonic_g1_action_bridge()
     assert backend.default_motor_positions == SONIC_G1_DEFAULT_ANGLES
+    assert backend.default_motor_positions == (
+        get_default_sonic_g1_action_bridge().default_angles_command
+    )
     assert backend.previous_action == raw_action
     assert backend.robot.last_position_target is not None
+    assert backend.robot.last_position_target == pytest.approx(
+        get_default_sonic_g1_action_bridge().policy_action_to_command_targets(raw_action)
+    )
     assert backend.robot.last_position_target[0] == pytest.approx(
         SONIC_G1_DEFAULT_ANGLES[0] + 0.0 * SONIC_G1_ACTION_SCALES[0]
     )

@@ -10,76 +10,9 @@ from __future__ import annotations
 import math
 from typing import Sequence
 
+from h200_locomotion_lab.robots import CompiledRobotProfile, load_robot_profile
+from h200_locomotion_lab.runtime import ScalarActionBridge
 
-SONIC_G1_ISAACLAB_TO_MUJOCO: tuple[int, ...] = (
-    0,
-    3,
-    6,
-    9,
-    13,
-    17,
-    1,
-    4,
-    7,
-    10,
-    14,
-    18,
-    2,
-    5,
-    8,
-    11,
-    15,
-    19,
-    21,
-    23,
-    25,
-    27,
-    12,
-    16,
-    20,
-    22,
-    24,
-    26,
-    28,
-)
-
-SONIC_G1_MUJOCO_INDEX_TO_POLICY_INDEX = SONIC_G1_ISAACLAB_TO_MUJOCO
-SONIC_G1_POLICY_INDEX_TO_MUJOCO_INDEX: tuple[int, ...] = tuple(
-    SONIC_G1_MUJOCO_INDEX_TO_POLICY_INDEX.index(policy_index)
-    for policy_index in range(len(SONIC_G1_MUJOCO_INDEX_TO_POLICY_INDEX))
-)
-
-SONIC_G1_DEFAULT_ANGLES: tuple[float, ...] = (
-    -0.312,
-    0.0,
-    0.0,
-    0.669,
-    -0.363,
-    0.0,
-    -0.312,
-    0.0,
-    0.0,
-    0.669,
-    -0.363,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.2,
-    0.2,
-    0.0,
-    0.6,
-    0.0,
-    0.0,
-    0.0,
-    0.2,
-    -0.2,
-    0.0,
-    0.6,
-    0.0,
-    0.0,
-    0.0,
-)
 
 ARMATURE_5020 = 0.003609725
 ARMATURE_7520_14 = 0.010177520
@@ -97,53 +30,46 @@ EFFORT_LIMIT_7520_14 = 88.0
 EFFORT_LIMIT_7520_22 = 139.0
 EFFORT_LIMIT_4010 = 5.0
 
-SONIC_G1_ACTION_SCALES: tuple[float, ...] = (
-    0.25 * EFFORT_LIMIT_7520_22 / STIFFNESS_7520_22,
-    0.25 * EFFORT_LIMIT_7520_22 / STIFFNESS_7520_22,
-    0.25 * EFFORT_LIMIT_7520_14 / STIFFNESS_7520_14,
-    0.25 * EFFORT_LIMIT_7520_22 / STIFFNESS_7520_22,
-    0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020,
-    0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020,
-    0.25 * EFFORT_LIMIT_7520_22 / STIFFNESS_7520_22,
-    0.25 * EFFORT_LIMIT_7520_22 / STIFFNESS_7520_22,
-    0.25 * EFFORT_LIMIT_7520_14 / STIFFNESS_7520_14,
-    0.25 * EFFORT_LIMIT_7520_22 / STIFFNESS_7520_22,
-    0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020,
-    0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020,
-    0.25 * EFFORT_LIMIT_7520_14 / STIFFNESS_7520_14,
-    0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020,
-    0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020,
-    0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020,
-    0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020,
-    0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020,
-    0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020,
-    0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020,
-    0.25 * EFFORT_LIMIT_4010 / STIFFNESS_4010,
-    0.25 * EFFORT_LIMIT_4010 / STIFFNESS_4010,
-    0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020,
-    0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020,
-    0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020,
-    0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020,
-    0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020,
-    0.25 * EFFORT_LIMIT_4010 / STIFFNESS_4010,
-    0.25 * EFFORT_LIMIT_4010 / STIFFNESS_4010,
-)
+_DEFAULT_SONIC_G1_PROFILE = load_robot_profile()
+_DEFAULT_SONIC_G1_ACTION_BRIDGE = ScalarActionBridge.from_profile(_DEFAULT_SONIC_G1_PROFILE)
 
-SONIC_ACTION_DIM = 29
+SONIC_G1_ISAACLAB_TO_MUJOCO: tuple[int, ...] = (
+    _DEFAULT_SONIC_G1_PROFILE.mapping.command_mujoco_index_to_policy_isaaclab_index
+)
+SONIC_G1_MUJOCO_INDEX_TO_POLICY_INDEX = SONIC_G1_ISAACLAB_TO_MUJOCO
+SONIC_G1_POLICY_INDEX_TO_MUJOCO_INDEX: tuple[int, ...] = (
+    _DEFAULT_SONIC_G1_PROFILE.mapping.policy_isaaclab_index_to_command_mujoco_index
+)
+SONIC_G1_DEFAULT_ANGLES: tuple[float, ...] = (
+    _DEFAULT_SONIC_G1_ACTION_BRIDGE.default_angles_command
+)
+SONIC_G1_ACTION_SCALES: tuple[float, ...] = _DEFAULT_SONIC_G1_ACTION_BRIDGE.action_scale_command
+SONIC_ACTION_DIM = _DEFAULT_SONIC_G1_ACTION_BRIDGE.action_dim
+
+
+def get_default_sonic_g1_profile() -> CompiledRobotProfile:
+    """Return the cached default Unitree G1 SONIC runtime profile."""
+
+    return _DEFAULT_SONIC_G1_PROFILE
+
+
+def get_default_sonic_g1_action_bridge() -> ScalarActionBridge:
+    """Return the cached profile-backed scalar bridge for SONIC G1 actions."""
+
+    return _DEFAULT_SONIC_G1_ACTION_BRIDGE
 
 
 def sonic_policy_action_to_mujoco_targets(
     raw_action_isaaclab: Sequence[float],
 ) -> tuple[float, ...]:
-    """Map raw SONIC policy action to MuJoCo-order motor position targets."""
+    """Map raw SONIC policy action to MuJoCo-order motor position targets.
+
+    Compatibility facade for older imports. Runtime authority lives in the
+    compiled robot profile and cached ``ScalarActionBridge`` above.
+    """
 
     if len(raw_action_isaaclab) != SONIC_ACTION_DIM:
         raise ValueError(
             f"Expected SONIC raw action_dim={SONIC_ACTION_DIM}, got {len(raw_action_isaaclab)}"
         )
-    action = tuple(float(value) for value in raw_action_isaaclab)
-    return tuple(
-        SONIC_G1_DEFAULT_ANGLES[mujoco_index]
-        + action[isaaclab_index] * SONIC_G1_ACTION_SCALES[mujoco_index]
-        for mujoco_index, isaaclab_index in enumerate(SONIC_G1_ISAACLAB_TO_MUJOCO)
-    )
+    return _DEFAULT_SONIC_G1_ACTION_BRIDGE.policy_action_to_command_targets(raw_action_isaaclab)

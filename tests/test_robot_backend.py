@@ -7,6 +7,7 @@ from h200_locomotion_lab.envs.robot_backend import (
 )
 from h200_locomotion_lab.sonic.g1_observation import SONIC_ACTION_DIM
 from h200_locomotion_lab.sonic.g1_planner_encoder import SONIC_PLANNER_QPOS_DIM
+from h200_locomotion_lab.sonic.g1_policy_bridge import get_default_sonic_g1_action_bridge
 
 
 def test_robot_state_to_planner_qpos_returns_36d_root_plus_motors() -> None:
@@ -58,6 +59,19 @@ def test_log_replay_backend_records_commands_and_advances_state() -> None:
     assert second.last_action_isaaclab == (0.5,) * SONIC_ACTION_DIM
     assert second.motor_velocities_mujoco == (0.5,) * SONIC_ACTION_DIM
     assert backend.commands == [command]
+
+
+def test_motor_command_from_raw_sonic_action_uses_profile_bridge() -> None:
+    bridge = get_default_sonic_g1_action_bridge()
+    raw_action = tuple(0.01 * index for index in range(SONIC_ACTION_DIM))
+
+    command = G1MotorCommand.from_raw_sonic_action(raw_action)
+    explicit_command = G1MotorCommand.from_raw_sonic_action(raw_action, action_bridge=bridge)
+
+    assert command == explicit_command
+    assert command.motor_position_targets_mujoco == bridge.policy_action_to_command_targets(
+        raw_action
+    )
 
 
 def test_log_replay_backend_rejects_wrong_qpos_width() -> None:
