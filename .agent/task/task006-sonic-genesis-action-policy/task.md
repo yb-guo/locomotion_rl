@@ -179,3 +179,18 @@ Genesis-built decoder history, `OBS_SOURCE not_set`,
 `GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK`. Remaining work: move from
 precomputed planner qpos/token sequence to online replanning inside the Genesis
 rollout loop.
+
+Online planner/encoder rollout: the runtime loop now calls the C++ planner
+runner from inside Genesis, builds 1762D encoder observations from the current
+planner motion, runs the encoder for a live 64D token, runs the decoder, and
+steps Genesis. The C++ runner accepts `--context-qpos-csv` for 4-frame replan
+contexts. H200 verified a 20-frame online rollout with no replayed obs/token
+rows (`PLANNER_CALLS 1`, `HORIZONTAL_DISPLACEMENT 0.09537745650207112`,
+`SINGLE_SUPPORT_FRAMES 13`, `TOTAL_CONTACT_SWITCHES 4`,
+`GENESIS_SONIC_PLANNER_ENCODER_ROLLOUT_PROBE_OK`) and a 30-frame replan smoke
+with `--replan-interval 10` (`PLANNER_CALLS 3`, `HORIZONTAL_DISPLACEMENT
+0.22500730455222778`, `SINGLE_SUPPORT_FRAMES 22`, `TOTAL_CONTACT_SWITCHES 5`,
+`GENESIS_SONIC_PLANNER_ENCODER_ROLLOUT_PROBE_OK`). Logs are recorded in
+`run_h200_notes.md`. The remaining blocker is scale-up/correctness hardening:
+the replan context is sampled from tracked planner motion, not yet reconciled
+against live simulated root/motor state.

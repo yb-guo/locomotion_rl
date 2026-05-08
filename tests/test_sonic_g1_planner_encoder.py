@@ -7,8 +7,11 @@ from h200_locomotion_lab.sonic.g1_planner_encoder import (
     SONIC_G1_ENCODER_FIELDS,
     SONIC_PLANNER_ALLOWED_PRED_NUM_TOKENS,
     SONIC_PLANNER_DEFAULT_HEIGHT,
+    SONIC_PLANNER_QPOS_DIM,
+    SonicPlannerMotion50Hz,
     build_g1_encoder_observation_from_planner_motion,
     build_initial_planner_context,
+    build_planner_context_from_motion,
     build_planner_inputs,
     encoder_field_by_name,
     resample_planner_mujoco_qpos_to_50hz,
@@ -73,6 +76,31 @@ def test_build_g1_encoder_observation_fills_only_mode0_required_fields() -> None
             assert any(abs(value) > 0.0 for value in values)
         elif not field.required_for_g1:
             assert all(value == 0.0 for value in values)
+
+
+def test_build_planner_context_from_motion_samples_50hz_motion_in_mujoco_order() -> None:
+    motion = SonicPlannerMotion50Hz(
+        root_positions=tuple((frame / 50.0, 0.0, 0.8) for frame in range(12)),
+        root_quats=((1.0, 0.0, 0.0, 0.0),) * 12,
+        joint_positions_policy_order=tuple(
+            tuple(100.0 * frame + policy_index for policy_index in range(29))
+            for frame in range(12)
+        ),
+        joint_velocities_policy_order=((0.0,) * 29,) * 12,
+    )
+
+    context = build_planner_context_from_motion(
+        motion,
+        gen_frame=0,
+        motion_look_ahead_steps=0,
+    )
+
+    assert len(context) == 4
+    assert all(len(row) == SONIC_PLANNER_QPOS_DIM for row in context)
+    assert context[0][:7] == (0.0, 0.0, 0.8, 1.0, 0.0, 0.0, 0.0)
+    assert context[1][0] == pytest.approx(1.0 / 30.0)
+    for policy_index, mujoco_index in enumerate(SONIC_G1_POLICY_INDEX_TO_MUJOCO_INDEX):
+        assert context[0][7 + mujoco_index] == pytest.approx(float(policy_index))
 
 
 def test_read_planner_qpos_csv_reads_36d_rows() -> None:

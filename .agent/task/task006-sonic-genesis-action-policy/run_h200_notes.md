@@ -908,3 +908,88 @@ planner qpos is still generated once up front, then encoded into a 20-token
 sequence. The next step is to wrap planner+encoder as a runtime token provider
 inside the Genesis rollout loop and refresh planner context from the simulated
 motion/state instead of using a precomputed planner qpos CSV.
+
+## Online Planner/Encoder Rollout 2026-05-08
+
+Implemented the runtime path:
+
+```text
+Genesis state/history -> planner motion context -> C++ ONNX Runtime planner
+-> 50 Hz planner motion -> Python encoder -> token -> decoder -> Genesis action
+```
+
+The C++ planner runner now accepts:
+
+```text
+--context-qpos-csv <4 x 36 MuJoCo qpos rows>
+```
+
+This enables replan calls from the live rollout loop instead of only using an
+initial standing/walking q0 context.
+
+Verification:
+
+```text
+Local full pytest: 66 passed
+H200 targeted pytest from /tmp with absolute PYTHONPATH: 8 passed
+H200 C++ runner compile: passed
+```
+
+H200 20-frame online rollout, one planner call:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_sonic_planner_encoder_runtime_20f.log
+
+GENESIS_SONIC_PLANNER_ENCODER_ROLLOUT_PROBE_MODE online_planner_encoder
+REPLAY_OBS_USED False
+REPLAY_TOKEN_USED False
+PLANNER_CALLS 1
+ENCODER_OBS_FINITE True
+TOKEN_FINITE True
+DECODER_OBS_FINITE True
+ACTION_FINITE True
+FINITE_OK True
+ROOT_Z_MIN 0.7505621910095215
+ROOT_Z_MAX 0.7911660075187683
+HORIZONTAL_DISPLACEMENT 0.09537745650207112
+PATH_LENGTH_XY 0.11395758913489372
+SINGLE_SUPPORT_FRAMES 13
+TOTAL_CONTACT_SWITCHES 4
+LOCOMOTION_OBSERVED True
+HEIGHT_OK_RANGE 0.3 1.2 True
+GENESIS_SONIC_PLANNER_ENCODER_ROLLOUT_PROBE_OK
+```
+
+H200 30-frame online rollout with replan every 10 frames:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_sonic_planner_encoder_runtime_replan10_30f.log
+
+REPLAN 10 planner_calls 2 num_pred_frames 44 motion_timesteps 73
+REPLAN 20 planner_calls 3 num_pred_frames 44 motion_timesteps 73
+PLANNER_CALLS 3
+ENCODER_OBS_FINITE True
+TOKEN_FINITE True
+DECODER_OBS_FINITE True
+ACTION_FINITE True
+FINITE_OK True
+ROOT_Z_MIN 0.7509679198265076
+ROOT_Z_MAX 0.7911660075187683
+HORIZONTAL_DISPLACEMENT 0.22500730455222778
+PATH_LENGTH_XY 0.24270576243687916
+SINGLE_SUPPORT_FRAMES 22
+TOTAL_CONTACT_SWITCHES 5
+LOCOMOTION_OBSERVED True
+HEIGHT_OK_RANGE 0.3 1.2 True
+GENESIS_SONIC_PLANNER_ENCODER_ROLLOUT_PROBE_OK
+```
+
+Review: the SONIC planner/encoder path is now connected inside the Genesis
+rollout loop, and replayed official obs/token rows are no longer used. The
+30-frame replan smoke proves the loop can refresh planner context and continue
+walking under Genesis. Remaining work is scale-up and correctness hardening:
+the replan context is sampled from the planner motion currently being tracked,
+not yet reconciled against the simulated robot root/motor state in the same way
+the official deployment stack may do.

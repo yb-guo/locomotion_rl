@@ -21,6 +21,7 @@ constexpr float kDefaultHeight = 0.788740f;
 
 struct Args {
   std::string planner;
+  std::string context_qpos_csv;
   std::string initial_joint_pos_csv;
   int initial_joint_pos_row = 0;
   std::string output_qpos_csv;
@@ -89,6 +90,46 @@ std::vector<float> ReadJointRow(const std::string& path, int row_index) {
   throw std::runtime_error("initial joint CSV row not found: " + std::to_string(row_index));
 }
 
+std::vector<float> ReadContextQposCsv(const std::string& path) {
+  std::ifstream file(path);
+  if (!file) {
+    throw std::runtime_error("failed to open context qpos CSV: " + path);
+  }
+  std::vector<float> context;
+  std::string line;
+  int numeric_row = 0;
+  while (std::getline(file, line)) {
+    if (line.empty()) {
+      continue;
+    }
+    auto fields = SplitCsvLine(line);
+    if (fields.empty()) {
+      continue;
+    }
+    std::vector<float> row;
+    try {
+      for (const auto& field : fields) {
+        row.push_back(std::stof(field));
+      }
+    } catch (const std::exception&) {
+      if (numeric_row == 0) {
+        continue;
+      }
+      throw;
+    }
+    if (row.size() != kQposDim) {
+      throw std::runtime_error("expected 36 context qpos values, got " + std::to_string(row.size()));
+    }
+    context.insert(context.end(), row.begin(), row.end());
+    numeric_row += 1;
+  }
+  if (numeric_row != kContextFrames) {
+    throw std::runtime_error(
+        "expected 4 context qpos rows, got " + std::to_string(numeric_row));
+  }
+  return context;
+}
+
 Args ParseArgs(int argc, char** argv) {
   Args args;
   for (int i = 1; i < argc; ++i) {
@@ -101,6 +142,8 @@ Args ParseArgs(int argc, char** argv) {
     };
     if (key == "--planner") {
       args.planner = require_value(key);
+    } else if (key == "--context-qpos-csv") {
+      args.context_qpos_csv = require_value(key);
     } else if (key == "--initial-joint-pos-csv") {
       args.initial_joint_pos_csv = require_value(key);
     } else if (key == "--initial-joint-pos-row") {
@@ -200,8 +243,16 @@ void WriteQposCsv(const std::string& path, const float* values, int rows) {
 int main(int argc, char** argv) {
   try {
     Args args = ParseArgs(argc, argv);
-    auto joints = ReadJointRow(args.initial_joint_pos_csv, args.initial_joint_pos_row);
-    auto context = BuildContext(joints);
+    std::string context_source;
+    std::vector<float> context;
+    if (!args.context_qpos_csv.empty()) {
+      context = ReadContextQposCsv(args.context_qpos_csv);
+      context_source = args.context_qpos_csv;
+    } else {
+      auto joints = ReadJointRow(args.initial_joint_pos_csv, args.initial_joint_pos_row);
+      context = BuildContext(joints);
+      context_source = args.initial_joint_pos_csv.empty() ? "default_standing" : args.initial_joint_pos_csv;
+    }
 
     std::vector<float> target_vel{args.target_vel};
     std::vector<int64_t> mode{args.mode};
@@ -280,6 +331,7 @@ int main(int argc, char** argv) {
 
     std::cout << "SONIC_PLANNER_ORT_RUNNER_MODE onnxruntime_cpp\n";
     std::cout << "PLANNER " << args.planner << "\n";
+    std::cout << "CONTEXT_SOURCE " << context_source << "\n";
     std::cout << "OUTPUT_QPOS_CSV " << args.output_qpos_csv << "\n";
     std::cout << "PLANNER_MODE " << args.mode << "\n";
     std::cout << "TARGET_VEL " << args.target_vel << "\n";

@@ -244,11 +244,65 @@ def build_g1_encoder_observation_from_planner_motion(
     return tuple(obs)
 
 
+def build_planner_context_from_motion(
+    motion: SonicPlannerMotion50Hz,
+    *,
+    gen_frame: int,
+    motion_look_ahead_steps: int = 2,
+) -> tuple[tuple[float, ...], ...]:
+    """Build official-style planner context from the current 50 Hz planner motion."""
+
+    if motion.timesteps <= 0:
+        raise ValueError("motion must contain at least one timestep")
+    if motion_look_ahead_steps < 0:
+        raise ValueError("motion_look_ahead_steps must be non-negative")
+
+    context_rows: list[tuple[float, ...]] = []
+    gen_time = (int(gen_frame) + int(motion_look_ahead_steps)) / 50.0
+    for context_index in range(SONIC_PLANNER_CONTEXT_FRAMES):
+        sample_time = gen_time + context_index / 30.0
+        sample = _sample_motion_at_time(motion, sample_time)
+        row = [0.0] * SONIC_PLANNER_QPOS_DIM
+        row[0:3] = sample[0]
+        row[3:7] = sample[1]
+        for policy_index, mujoco_index in enumerate(SONIC_G1_POLICY_INDEX_TO_MUJOCO_INDEX):
+            row[7 + mujoco_index] = sample[2][policy_index]
+        context_rows.append(tuple(row))
+    return tuple(context_rows)
+
+
 def encoder_field_by_name(name: str) -> SonicEncoderField:
     for field in SONIC_G1_ENCODER_FIELDS:
         if field.name == name:
             return field
     raise KeyError(name)
+
+
+def _sample_motion_at_time(
+    motion: SonicPlannerMotion50Hz,
+    sample_time_s: float,
+) -> tuple[
+    tuple[float, float, float],
+    tuple[float, float, float, float],
+    tuple[float, ...],
+]:
+    frame_50hz = max(0.0, sample_time_s * 50.0)
+    f0 = _clamp_frame(int(math.floor(frame_50hz)), motion.timesteps)
+    f1 = _clamp_frame(f0 + 1, motion.timesteps)
+    alpha = max(0.0, min(1.0, frame_50hz - f0))
+    w0 = 1.0 - alpha
+    w1 = alpha
+    root_pos = tuple(
+        w0 * motion.root_positions[f0][axis] + w1 * motion.root_positions[f1][axis]
+        for axis in range(3)
+    )
+    root_quat = _quat_slerp(motion.root_quats[f0], motion.root_quats[f1], alpha)
+    joint_positions = tuple(
+        w0 * motion.joint_positions_policy_order[f0][joint]
+        + w1 * motion.joint_positions_policy_order[f1][joint]
+        for joint in range(SONIC_ACTION_DIM)
+    )
+    return root_pos, root_quat, joint_positions
 
 
 def _future_joint_window(
