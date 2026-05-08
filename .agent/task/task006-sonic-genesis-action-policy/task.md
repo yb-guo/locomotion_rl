@@ -149,5 +149,8 @@ config. The 40-frame run reported `HORIZONTAL_DISPLACEMENT 0.1781279369041812`,
 `LOCOMOTION_OBSERVED True`, and `GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK`.
 A 40-frame GIF was rendered at
 `.agent/task/task006-sonic-genesis-action-policy/artifacts/genesis_g1_sonic_walking_obs_40f_correct_root.gif`.
-Treat this as a short L2 decoder-only walking pass; 80/100-frame scale-up and
-full planner/encoder integration remain open.
+The 80-frame scale-up also passed with `HORIZONTAL_DISPLACEMENT
+0.24235538459989664`, `SINGLE_SUPPORT_FRAMES 28`, `TOTAL_CONTACT_SWITCHES 13`,
+`LOCOMOTION_OBSERVED True`, and `GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK`.
+Treat this as an L2 decoder-only walking replay pass through 80 frames; 100/200
+frame scale-up and full planner/encoder integration remain open.

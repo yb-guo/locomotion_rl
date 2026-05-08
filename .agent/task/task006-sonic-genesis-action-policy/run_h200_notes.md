@@ -676,3 +676,30 @@ SONIC motor config, and official walking obs/token replay. This is a short
 walking pass, not yet a long-horizon policy rollout. The next scale-up should
 target 80/100 frames with the same heartbeat/progress controls and should keep
 the corrected walking root quaternion.
+
+80-frame scale-up completed with the same corrected configuration:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_sonic_walking_obs_80f_metrics.log
+
+HORIZONTAL_DISPLACEMENT 0.24235538459989664
+PATH_LENGTH_XY 0.3029986364942937
+AVERAGE_SPEED_XY 0.15147211537493538
+ROOT_Z_MIN 0.7292487621307373
+ROOT_Z_FINAL 0.7751022577285767
+SINGLE_SUPPORT_FRAMES 28
+DOUBLE_SUPPORT_FRAMES 50
+NO_SUPPORT_FRAMES 2
+TOTAL_CONTACT_SWITCHES 13
+TRANSLATION_OBSERVED True
+FOOT_ALTERNATION_OBSERVED True
+LOCOMOTION_OBSERVED True
+HEIGHT_OK_RANGE 0.3 1.2 True
+GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK
+```
+
+Review: the previous 80-frame hang did not reproduce with the guarded foreground
+runner. L2 decoder-only walking now has complete H200 pass evidence through 80
+frames. The remaining next step is 100/200-frame scale-up and then replacing
+replayed official obs/token rows with the full SONIC encoder/planner path.
