@@ -6,7 +6,7 @@ TASK=/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy
 UPSTREAM=/root/h200-locomotion-lab-runs/task002-sonic-mujoco-smoke/GR00T-WholeBodyControl
 
 cd /tmp
-PYTHONPATH="$REPO/src" python3 -u -m h200_locomotion_lab.tools.genesis_sonic_policy_locomotion_probe \
+args=(
   --asset "$UPSTREAM/gear_sonic/data/robots/g1/g1_29dof.xml" \
   --decoder "$UPSTREAM/gear_sonic_deploy/policy/release/model_decoder.onnx" \
   --obs-csv "$TASK/actions/official_policy_input_walking_capture.csv" \
@@ -20,3 +20,22 @@ PYTHONPATH="$REPO/src" python3 -u -m h200_locomotion_lab.tools.genesis_sonic_pol
   --min-horizontal-displacement "${MIN_HORIZONTAL_DISPLACEMENT:-0.05}" \
   --height-ok-min 0.3 \
   --height-ok-max 1.2
+)
+
+if [[ "${HEARTBEAT_EVERY_FRAME:-0}" == "1" ]]; then
+  args+=(--heartbeat-every-frame)
+fi
+
+if [[ -n "${PROGRESS_FILE:-}" ]]; then
+  args+=(--progress-file "$PROGRESS_FILE")
+fi
+
+if [[ "${SKIP_FOOT_METRICS:-0}" == "1" ]]; then
+  args+=(--skip-foot-metrics)
+fi
+
+if [[ -n "${MAX_WALL_TIME_S:-}" ]]; then
+  args+=(--max-wall-time-s "$MAX_WALL_TIME_S")
+fi
+
+PYTHONPATH="$REPO/src" python3 -u -m h200_locomotion_lab.tools.genesis_sonic_policy_locomotion_probe "${args[@]}"

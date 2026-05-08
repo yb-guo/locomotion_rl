@@ -140,3 +140,14 @@ passes height smoke with `BASE_HEIGHT_MIN 0.3062208294868469` and
 root pose and produced partial 100-frame locomotion evidence up to frame 80
 (`disp_xy 0.243m`, single-support observed at frame 60), but SSH closed before
 the final summary, so L2 remains unpassed until a complete run finishes.
+
+L2 short walking pass: after adding heartbeat/progress controls, H200 completed
+10/20/40-frame decoder-only SONIC walking probes with official walking obs,
+corrected walking root quaternion, official q0 initialization, and SONIC motor
+config. The 40-frame run reported `HORIZONTAL_DISPLACEMENT 0.1781279369041812`,
+`SINGLE_SUPPORT_FRAMES 15`, `TOTAL_CONTACT_SWITCHES 6`,
+`LOCOMOTION_OBSERVED True`, and `GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK`.
+A 40-frame GIF was rendered at
+`.agent/task/task006-sonic-genesis-action-policy/artifacts/genesis_g1_sonic_walking_obs_40f_correct_root.gif`.
+Treat this as a short L2 decoder-only walking pass; 80/100-frame scale-up and
+full planner/encoder integration remain open.

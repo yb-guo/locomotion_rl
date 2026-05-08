@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import math
+import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
@@ -69,15 +71,39 @@ def main() -> None:
     parser.add_argument("--height-ok-min", type=float, default=0.3)
     parser.add_argument("--height-ok-max", type=float, default=1.2)
     parser.add_argument("--no-sonic-motor-config", action="store_true")
+    parser.add_argument(
+        "--heartbeat-every-frame",
+        action="store_true",
+        help="Print stage markers before/after each frame operation for hang diagnosis.",
+    )
+    parser.add_argument(
+        "--progress-file",
+        help="Optional path that receives the latest frame/stage marker.",
+    )
+    parser.add_argument(
+        "--skip-foot-metrics",
+        action="store_true",
+        help="Skip foot link/contact-force reads to isolate Genesis stepping hangs.",
+    )
+    parser.add_argument(
+        "--max-wall-time-s",
+        type=float,
+        help="Abort between frames after this many seconds of wall time.",
+    )
     args = parser.parse_args()
 
+    sys.stdout.reconfigure(line_buffering=True)
     if args.frames <= 0:
         raise ValueError("--frames must be positive")
     if args.log_every <= 0:
         raise ValueError("--log-every must be positive")
     if args.foot_contact_force_threshold < 0:
         raise ValueError("--foot-contact-force-threshold must be non-negative")
+    if args.max_wall_time_s is not None and args.max_wall_time_s <= 0:
+        raise ValueError("--max-wall-time-s must be positive")
 
+    progress_path = Path(args.progress_file) if args.progress_file else None
+    started_at = time.monotonic()
     obs_rows = tuple(read_obs_csv_rows(Path(args.obs_csv), SONIC_DECODER_OBS_DIM, args.frames))
     token_states = tuple(tuple(obs[:SONIC_TOKEN_DIM]) for obs in obs_rows)
     fixed_token_state = token_states[0]
@@ -118,8 +144,12 @@ def main() -> None:
         for initial_frame in initial_frames:
             backend.sonic_history.append(initial_frame)
 
-    left_link_idx = resolve_link_index(backend.robot, args.left_foot_link)
-    right_link_idx = resolve_link_index(backend.robot, args.right_foot_link)
+    left_link_idx = (
+        None if args.skip_foot_metrics else resolve_link_index(backend.robot, args.left_foot_link)
+    )
+    right_link_idx = (
+        None if args.skip_foot_metrics else resolve_link_index(backend.robot, args.right_foot_link)
+    )
 
     root_poses: list[RootPose] = [read_root_pose(backend)]
     action_max_abs_values: list[float] = []
@@ -130,25 +160,31 @@ def main() -> None:
     observation_finite = True
     action_finite = True
 
-    print("GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_MODE decoder_only")
-    print("ASSET", Path(args.asset))
-    print("DECODER", Path(args.decoder))
-    print("TOKEN_SOURCE", args.obs_csv)
-    print("TOKEN_MODE", args.token_mode)
-    print("TOKEN_ROWS", len(token_states))
-    print("HISTORY_INIT", args.history_init)
-    print("MOTOR_CONFIG", motor_config)
-    print("FRAMES", args.frames)
-    print("ROOT_QPOS", tuple(args.root_qpos) if args.root_qpos else None)
-    print("INITIAL_JOINT_POS_SOURCE", args.initial_joint_pos_csv or "default_motor_positions")
+    emit("GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_MODE decoder_only")
+    emit("ASSET", Path(args.asset))
+    emit("DECODER", Path(args.decoder))
+    emit("TOKEN_SOURCE", args.obs_csv)
+    emit("TOKEN_MODE", args.token_mode)
+    emit("TOKEN_ROWS", len(token_states))
+    emit("HISTORY_INIT", args.history_init)
+    emit("MOTOR_CONFIG", motor_config)
+    emit("FRAMES", args.frames)
+    emit("ROOT_QPOS", tuple(args.root_qpos) if args.root_qpos else None)
+    emit("INITIAL_JOINT_POS_SOURCE", args.initial_joint_pos_csv or "default_motor_positions")
     if initial_motor_positions is not None:
-        print("INITIAL_JOINT_POS_ROW", args.initial_joint_pos_row)
-        print("INITIAL_JOINT_POS_MIN_MAX", min(initial_motor_positions), max(initial_motor_positions))
-    print("LEFT_FOOT_LINK", args.left_foot_link, "INDEX", left_link_idx)
-    print("RIGHT_FOOT_LINK", args.right_foot_link, "INDEX", right_link_idx)
-    print("FOOT_CONTACT_FORCE_THRESHOLD", args.foot_contact_force_threshold)
+        emit("INITIAL_JOINT_POS_ROW", args.initial_joint_pos_row)
+        emit("INITIAL_JOINT_POS_MIN_MAX", min(initial_motor_positions), max(initial_motor_positions))
+    emit("LEFT_FOOT_LINK", args.left_foot_link, "INDEX", left_link_idx)
+    emit("RIGHT_FOOT_LINK", args.right_foot_link, "INDEX", right_link_idx)
+    emit("FOOT_CONTACT_FORCE_THRESHOLD", args.foot_contact_force_threshold)
+    emit("SKIP_FOOT_METRICS", args.skip_foot_metrics)
+    emit("HEARTBEAT_EVERY_FRAME", args.heartbeat_every_frame)
+    emit("PROGRESS_FILE", progress_path or "not_set")
+    emit("MAX_WALL_TIME_S", args.max_wall_time_s or "not_set")
 
     for frame_index in range(args.frames):
+        enforce_wall_time(started_at, args.max_wall_time_s)
+        heartbeat(args, progress_path, frame_index, "begin")
         token_state = (
             token_states[min(frame_index, len(token_states) - 1)]
             if args.token_mode == "replay"
@@ -156,12 +192,17 @@ def main() -> None:
         )
         observation = backend.sonic_decoder_observation(token_state)
         observation_finite = observation_finite and _is_finite(observation)
+        heartbeat(args, progress_path, frame_index, "observation")
         action = decoder.run(observation)
         action_finite = action_finite and _is_finite(action)
+        heartbeat(args, progress_path, frame_index, "action")
         backend.step(action)
+        heartbeat(args, progress_path, frame_index, "step")
 
         root_pose = read_root_pose(backend)
-        contact_count, max_contact_force = _read_contact_metrics(backend.robot)
+        contact_count, max_contact_force = (
+            (None, None) if args.skip_foot_metrics else _read_contact_metrics(backend.robot)
+        )
         left_sample = read_foot_sample(
             backend.robot,
             left_link_idx,
@@ -173,6 +214,7 @@ def main() -> None:
             contact_threshold=args.foot_contact_force_threshold,
         )
         _, _, action_max_abs = vector_range(action)
+        heartbeat(args, progress_path, frame_index, "metrics")
 
         root_poses.append(root_pose)
         action_max_abs_values.append(action_max_abs)
@@ -185,7 +227,7 @@ def main() -> None:
 
         if frame_index % args.log_every == 0 or frame_index == args.frames - 1:
             displacement = horizontal_distance(root_poses[0], root_pose)
-            print(
+            emit(
                 "FRAME",
                 frame_index,
                 "root_x",
@@ -239,49 +281,71 @@ def main() -> None:
         foot_alternation_observed or not foot_available
     )
 
-    print("OBS_FINITE", observation_finite)
-    print("ACTION_FINITE", action_finite)
-    print("ROOT_X_START", root_poses[0].x)
-    print("ROOT_Y_START", root_poses[0].y)
-    print("ROOT_Z_START", root_poses[0].z)
-    print("ROOT_X_FINAL", root_poses[-1].x)
-    print("ROOT_Y_FINAL", root_poses[-1].y)
-    print("ROOT_Z_FINAL", root_poses[-1].z)
-    print("ROOT_Z_MIN", root_summary["root_z_min"])
-    print("ROOT_Z_MAX", root_summary["root_z_max"])
-    print("HORIZONTAL_DISPLACEMENT", root_summary["horizontal_displacement"])
-    print("PATH_LENGTH_XY", root_summary["path_length_xy"])
-    print("AVERAGE_SPEED_XY", root_summary["average_speed_xy"])
-    print("YAW_DELTA", root_summary["yaw_delta"])
-    print("ACTION_MAX_ABS", max(action_max_abs_values))
+    emit("OBS_FINITE", observation_finite)
+    emit("ACTION_FINITE", action_finite)
+    emit("ROOT_X_START", root_poses[0].x)
+    emit("ROOT_Y_START", root_poses[0].y)
+    emit("ROOT_Z_START", root_poses[0].z)
+    emit("ROOT_X_FINAL", root_poses[-1].x)
+    emit("ROOT_Y_FINAL", root_poses[-1].y)
+    emit("ROOT_Z_FINAL", root_poses[-1].z)
+    emit("ROOT_Z_MIN", root_summary["root_z_min"])
+    emit("ROOT_Z_MAX", root_summary["root_z_max"])
+    emit("HORIZONTAL_DISPLACEMENT", root_summary["horizontal_displacement"])
+    emit("PATH_LENGTH_XY", root_summary["path_length_xy"])
+    emit("AVERAGE_SPEED_XY", root_summary["average_speed_xy"])
+    emit("YAW_DELTA", root_summary["yaw_delta"])
+    emit("ACTION_MAX_ABS", max(action_max_abs_values))
     if contact_counts:
-        print("CONTACT_COUNT_MAX", max(contact_counts))
-        print("CONTACT_COUNT_FINAL", contact_counts[-1])
+        emit("CONTACT_COUNT_MAX", max(contact_counts))
+        emit("CONTACT_COUNT_FINAL", contact_counts[-1])
     if max_contact_forces:
-        print("MAX_LINK_CONTACT_FORCE_MAX", max(max_contact_forces))
-        print("MAX_LINK_CONTACT_FORCE_FINAL", max_contact_forces[-1])
+        emit("MAX_LINK_CONTACT_FORCE_MAX", max(max_contact_forces))
+        emit("MAX_LINK_CONTACT_FORCE_FINAL", max_contact_forces[-1])
     print_foot_summary("LEFT", left_samples)
     print_foot_summary("RIGHT", right_samples)
-    print("LEFT_CONTACT_SWITCHES", left_contact_switches)
-    print("RIGHT_CONTACT_SWITCHES", right_contact_switches)
-    print("TOTAL_CONTACT_SWITCHES", total_contact_switches)
-    print("SINGLE_SUPPORT_FRAMES", single_support_frames)
-    print("DOUBLE_SUPPORT_FRAMES", double_support_frames)
-    print("NO_SUPPORT_FRAMES", no_support_frames)
-    print("TRANSLATION_THRESHOLD", args.min_horizontal_displacement)
-    print("CONTACT_SWITCH_THRESHOLD", args.min_contact_switches)
-    print("TRANSLATION_OBSERVED", translation_observed)
-    print("FOOT_ALTERNATION_OBSERVED", foot_alternation_observed)
-    print("LOCOMOTION_OBSERVED", locomotion_observed)
-    print("HEIGHT_OK_RANGE", args.height_ok_min, args.height_ok_max, height_ok)
+    emit("LEFT_CONTACT_SWITCHES", left_contact_switches)
+    emit("RIGHT_CONTACT_SWITCHES", right_contact_switches)
+    emit("TOTAL_CONTACT_SWITCHES", total_contact_switches)
+    emit("SINGLE_SUPPORT_FRAMES", single_support_frames)
+    emit("DOUBLE_SUPPORT_FRAMES", double_support_frames)
+    emit("NO_SUPPORT_FRAMES", no_support_frames)
+    emit("TRANSLATION_THRESHOLD", args.min_horizontal_displacement)
+    emit("CONTACT_SWITCH_THRESHOLD", args.min_contact_switches)
+    emit("TRANSLATION_OBSERVED", translation_observed)
+    emit("FOOT_ALTERNATION_OBSERVED", foot_alternation_observed)
+    emit("LOCOMOTION_OBSERVED", locomotion_observed)
+    emit("HEIGHT_OK_RANGE", args.height_ok_min, args.height_ok_max, height_ok)
     if not finite_ok or not height_ok:
         raise SystemExit("GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_FAILED")
-    print("GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK")
+    heartbeat(args, progress_path, args.frames, "done")
+    emit("GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK")
 
 
 def read_root_pose(backend: GenesisG1SceneBackend) -> RootPose:
     qpos = backend._read_root_qpos()
     return root_pose_from_qpos(qpos)
+
+
+def emit(*parts: object) -> None:
+    print(*parts, flush=True)
+
+
+def heartbeat(args: argparse.Namespace, progress_path: Path | None, frame: int, stage: str) -> None:
+    message = f"HEARTBEAT frame={frame} stage={stage} monotonic={time.monotonic():.3f}"
+    if args.heartbeat_every_frame:
+        emit(message)
+    if progress_path is not None:
+        progress_path.parent.mkdir(parents=True, exist_ok=True)
+        progress_path.write_text(message + "\n")
+
+
+def enforce_wall_time(started_at: float, max_wall_time_s: float | None) -> None:
+    if max_wall_time_s is None:
+        return
+    elapsed_s = time.monotonic() - started_at
+    if elapsed_s > max_wall_time_s:
+        raise SystemExit(f"GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_TIMEOUT {elapsed_s:.3f}s")
 
 
 def root_pose_from_qpos(qpos: Sequence[float]) -> RootPose:
@@ -439,19 +503,19 @@ def print_foot_summary(label: str, samples: Sequence[FootSample]) -> None:
     force_values = [sample.force for sample in samples if sample.force is not None]
     contact_values = [sample.contact for sample in samples if sample.contact is not None]
     if z_values:
-        print(f"{label}_FOOT_Z_MIN", min(z_values))
-        print(f"{label}_FOOT_Z_MAX", max(z_values))
-        print(f"{label}_FOOT_Z_RANGE", max(z_values) - min(z_values))
+        emit(f"{label}_FOOT_Z_MIN", min(z_values))
+        emit(f"{label}_FOOT_Z_MAX", max(z_values))
+        emit(f"{label}_FOOT_Z_RANGE", max(z_values) - min(z_values))
     else:
-        print(f"{label}_FOOT_Z_AVAILABLE", False)
+        emit(f"{label}_FOOT_Z_AVAILABLE", False)
     if force_values:
-        print(f"{label}_FOOT_FORCE_MAX", max(force_values))
+        emit(f"{label}_FOOT_FORCE_MAX", max(force_values))
     else:
-        print(f"{label}_FOOT_FORCE_AVAILABLE", False)
+        emit(f"{label}_FOOT_FORCE_AVAILABLE", False)
     if contact_values:
-        print(f"{label}_CONTACT_FRAMES", sum(1 for value in contact_values if value))
+        emit(f"{label}_CONTACT_FRAMES", sum(1 for value in contact_values if value))
     else:
-        print(f"{label}_CONTACT_AVAILABLE", False)
+        emit(f"{label}_CONTACT_AVAILABLE", False)
 
 
 def _is_finite(values: Sequence[float]) -> bool:

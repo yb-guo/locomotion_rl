@@ -9,6 +9,8 @@ from h200_locomotion_lab.tools.genesis_sonic_policy_locomotion_probe import (
     count_double_support_frames,
     count_no_support_frames,
     count_single_support_frames,
+    enforce_wall_time,
+    heartbeat,
     read_foot_sample,
     resolve_link_index,
     root_pose_from_qpos,
@@ -78,6 +80,41 @@ def test_read_foot_sample_returns_empty_sample_for_missing_link() -> None:
     sample = read_foot_sample(_FakeLinkRobot(), None, contact_threshold=5.0)
 
     assert sample == FootSample(z=None, force=None, contact=None)
+
+
+def test_heartbeat_writes_latest_progress() -> None:
+    progress_path = _FakeProgressPath()
+    args = _Args(heartbeat_every_frame=False)
+
+    heartbeat(args, progress_path, frame=7, stage="step")
+
+    assert "frame=7" in progress_path.content
+    assert "stage=step" in progress_path.content
+
+
+def test_enforce_wall_time_raises_after_budget() -> None:
+    with pytest.raises(SystemExit, match="GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_TIMEOUT"):
+        enforce_wall_time(started_at=0.0, max_wall_time_s=0.001)
+
+
+class _Args:
+    def __init__(self, *, heartbeat_every_frame: bool) -> None:
+        self.heartbeat_every_frame = heartbeat_every_frame
+
+
+class _FakeProgressPath:
+    content = ""
+
+    @property
+    def parent(self) -> "_FakeProgressPath":
+        return self
+
+    def mkdir(self, parents: bool, exist_ok: bool) -> None:
+        assert parents is True
+        assert exist_ok is True
+
+    def write_text(self, content: str) -> None:
+        self.content = content
 
 
 class _FakeLink:

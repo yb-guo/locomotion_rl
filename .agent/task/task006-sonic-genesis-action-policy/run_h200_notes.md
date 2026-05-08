@@ -550,3 +550,129 @@ The stuck process was killed. Do not rerun long L2 probes unchanged. The next
 attempt should add an internal per-frame timeout/progress heartbeat or reduce
 the tool to an action-export + shorter Genesis stepping loop before attempting
 another 80/100-frame run.
+
+## L2 Short Walking Pass 2026-05-08
+
+Added safer L2 probe controls:
+
+- line-buffered output and per-frame stage heartbeats;
+- optional `--progress-file`;
+- optional `--skip-foot-metrics`;
+- `--max-wall-time-s` guard checked between frames.
+
+Updated helper script:
+
+```text
+.agent/task/task006-sonic-genesis-action-policy/run_h200_walking_locomotion_probe.sh
+```
+
+Verification:
+
+```text
+Local related pytest: 36 passed
+H200 test_genesis_sonic_policy_locomotion_probe.py: 7 passed
+```
+
+5-frame heartbeat isolation, skipping foot metrics:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_sonic_walking_obs_5f_heartbeat_skip_foot.log
+
+Result:
+GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK
+
+Observation:
+Each frame advanced. The expensive stage is `backend.step`, around 4.8-5.0 s
+per policy frame on this H200/Genesis setup. No hang reproduced.
+```
+
+10-frame heartbeat run with foot/contact metrics enabled:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_sonic_walking_obs_10f_heartbeat_metrics.log
+
+HORIZONTAL_DISPLACEMENT 0.0841102183964299
+PATH_LENGTH_XY 0.08489193449579213
+AVERAGE_SPEED_XY 0.4205510919821495
+ROOT_Z_MIN 0.7292487621307373
+ROOT_Z_FINAL 0.73612380027771
+SINGLE_SUPPORT_FRAMES 3
+DOUBLE_SUPPORT_FRAMES 5
+NO_SUPPORT_FRAMES 2
+TOTAL_CONTACT_SWITCHES 3
+TRANSLATION_OBSERVED True
+FOOT_ALTERNATION_OBSERVED True
+LOCOMOTION_OBSERVED True
+HEIGHT_OK_RANGE 0.3 1.2 True
+GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK
+```
+
+20-frame walking probe:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_sonic_walking_obs_20f_metrics.log
+
+HORIZONTAL_DISPLACEMENT 0.1291484013080984
+PATH_LENGTH_XY 0.1319194914726968
+AVERAGE_SPEED_XY 0.322871003270246
+ROOT_Z_MIN 0.7292487025260925
+ROOT_Z_FINAL 0.7582225203514099
+SINGLE_SUPPORT_FRAMES 7
+DOUBLE_SUPPORT_FRAMES 11
+NO_SUPPORT_FRAMES 2
+TOTAL_CONTACT_SWITCHES 4
+TRANSLATION_OBSERVED True
+FOOT_ALTERNATION_OBSERVED True
+LOCOMOTION_OBSERVED True
+HEIGHT_OK_RANGE 0.3 1.2 True
+GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK
+```
+
+40-frame walking probe:
+
+```text
+Log:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/logs/genesis_g1_sonic_walking_obs_40f_metrics.log
+
+HORIZONTAL_DISPLACEMENT 0.1781279369041812
+PATH_LENGTH_XY 0.1955194149409191
+AVERAGE_SPEED_XY 0.22265992113022648
+ROOT_Z_MIN 0.7292487025260925
+ROOT_Z_FINAL 0.7679193019866943
+SINGLE_SUPPORT_FRAMES 15
+DOUBLE_SUPPORT_FRAMES 23
+NO_SUPPORT_FRAMES 2
+TOTAL_CONTACT_SWITCHES 6
+TRANSLATION_OBSERVED True
+FOOT_ALTERNATION_OBSERVED True
+LOCOMOTION_OBSERVED True
+HEIGHT_OK_RANGE 0.3 1.2 True
+GENESIS_SONIC_POLICY_LOCOMOTION_PROBE_OK
+```
+
+Visual evidence:
+
+```text
+Remote GIF:
+/root/h200-locomotion-lab-runs/task006-sonic-genesis-action-policy/videos/genesis_g1_sonic_walking_obs_40f_correct_root.gif
+
+Local GIF:
+.agent/task/task006-sonic-genesis-action-policy/artifacts/genesis_g1_sonic_walking_obs_40f_correct_root.gif
+
+Frames: 40
+Resolution: 420 x 320
+GIF bytes: 101840
+BASE_HEIGHT_MIN 0.7292487025260925
+BASE_HEIGHT_FINAL 0.767897367477417
+GENESIS_SONIC_POLICY_ROLLOUT_GIF_OK
+```
+
+Review: L2 decoder-only SONIC walking replay now has complete H200 evidence
+through 40 frames with corrected walking root pose, official q0 reset,
+SONIC motor config, and official walking obs/token replay. This is a short
+walking pass, not yet a long-horizon policy rollout. The next scale-up should
+target 80/100 frames with the same heartbeat/progress controls and should keep
+the corrected walking root quaternion.

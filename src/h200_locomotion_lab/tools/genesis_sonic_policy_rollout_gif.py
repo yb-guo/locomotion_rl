@@ -22,6 +22,7 @@ from h200_locomotion_lab.tools.sonic_policy_decoder_forward import (
     read_obs_csv_rows,
     vector_range,
 )
+from h200_locomotion_lab.tools.genesis_action_replay_smoke import read_default_joint_positions
 from h200_locomotion_lab.tools.sonic_reference_replay_smoke import apply_sonic_g1_motor_config
 
 
@@ -41,6 +42,11 @@ def main() -> None:
     parser.add_argument("--base-pos", nargs=3, type=float, default=(0.0, 0.0, 0.0))
     parser.add_argument("--base-quat", nargs=4, type=float, default=(1.0, 0.0, 0.0, 0.0))
     parser.add_argument("--root-qpos", nargs=7, type=float)
+    parser.add_argument(
+        "--initial-joint-pos-csv",
+        help="CSV whose selected 29D row is used as the physical reset motor pose.",
+    )
+    parser.add_argument("--initial-joint-pos-row", type=int, default=0)
     parser.add_argument("--camera-pos", nargs=3, type=float, default=(3.4, -4.2, 2.2))
     parser.add_argument("--camera-lookat", nargs=3, type=float, default=(0.0, 0.0, 0.85))
     parser.add_argument("--fov", type=float, default=42.0)
@@ -66,6 +72,11 @@ def main() -> None:
     if args.history_init == "official_obs" and not obs_rows:
         raise ValueError("--history-init official_obs requires --obs-csv")
     fixed_token_state = token_states[0] if token_states else (0.0,) * SONIC_TOKEN_DIM
+    initial_motor_positions = (
+        read_default_joint_positions(Path(args.initial_joint_pos_csv), args.initial_joint_pos_row, 29)
+        if args.initial_joint_pos_csv
+        else None
+    )
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -76,6 +87,7 @@ def main() -> None:
             base_pos=tuple(args.base_pos),
             base_quat=tuple(args.base_quat),
             root_qpos=tuple(args.root_qpos) if args.root_qpos else None,
+            initial_motor_positions=initial_motor_positions,
             action_mode="sonic_policy_raw",
             logging_level="warning",
             camera=GenesisCameraConfig(
@@ -115,6 +127,10 @@ def main() -> None:
     print("FRAMES", args.frames)
     print("RES", (args.width, args.height))
     print("ROOT_QPOS", tuple(args.root_qpos) if args.root_qpos else None)
+    print("INITIAL_JOINT_POS_SOURCE", args.initial_joint_pos_csv or "default_motor_positions")
+    if initial_motor_positions is not None:
+        print("INITIAL_JOINT_POS_ROW", args.initial_joint_pos_row)
+        print("INITIAL_JOINT_POS_MIN_MAX", min(initial_motor_positions), max(initial_motor_positions))
     print("CAMERA_POS", tuple(args.camera_pos))
     print("CAMERA_LOOKAT", tuple(args.camera_lookat))
 
