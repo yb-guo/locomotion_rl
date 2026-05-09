@@ -37,6 +37,7 @@ DEFAULT_OUTPUT_ROOT = Path("outputs/task014/standing_reset_pose_probe")
 DEFAULT_ROOT_Z_VALUES = "0.90,1.00,1.10,1.20"
 DEFAULT_POSE_CANDIDATES = ",".join(G1_STANDING_RESET_POSE_NAMES)
 DEFAULT_TERMINATION_HEIGHT_MIN_VALUES = "0.20,0.25,0.30,0.35,0.40,0.45"
+DEFAULT_MOTOR_MULT_VALUES = "1.0"
 
 
 def main() -> None:
@@ -71,6 +72,9 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_TERMINATION_HEIGHT_MIN_VALUES,
     )
     parser.add_argument("--termination-height-max", type=positive_float, default=1.20)
+    parser.add_argument("--motor-kp-mult-values", default=DEFAULT_MOTOR_MULT_VALUES)
+    parser.add_argument("--motor-kv-mult-values", default=DEFAULT_MOTOR_MULT_VALUES)
+    parser.add_argument("--motor-force-limit-mult-values", default=DEFAULT_MOTOR_MULT_VALUES)
     parser.add_argument("--backend", default="cuda")
     parser.add_argument("--physical-gpu", default="1")
     parser.add_argument("--logical-cuda-device", default="cuda:0")
@@ -90,6 +94,11 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
     root_z_values = parse_float_list(args.root_z_values)
     pose_names = parse_name_list(args.pose_candidates)
     termination_height_min_values = parse_float_list(args.termination_height_min_values)
+    motor_kp_mult_values = parse_positive_float_list(args.motor_kp_mult_values)
+    motor_kv_mult_values = parse_positive_float_list(args.motor_kv_mult_values)
+    motor_force_limit_mult_values = parse_positive_float_list(
+        args.motor_force_limit_mult_values
+    )
     candidates = build_g1_standing_reset_pose_candidates(profile.control.default_angles_rad)
     missing = [name for name in pose_names if name not in candidates]
     if missing:
@@ -108,6 +117,9 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
             "height_max": args.height_max,
             "termination_height_min_values": termination_height_min_values,
             "termination_height_max": args.termination_height_max,
+            "motor_kp_mult_values": motor_kp_mult_values,
+            "motor_kv_mult_values": motor_kv_mult_values,
+            "motor_force_limit_mult_values": motor_force_limit_mult_values,
             "backend": args.backend,
             "physical_gpu": str(args.physical_gpu),
             "logical_cuda_device": args.logical_cuda_device,
@@ -129,34 +141,45 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
     zero_action = torch.zeros((args.n_envs, backend.action_dim), device=args.logical_cuda_device)
     rows: list[dict[str, Any]] = []
     rows_path = run_dir / "rows.jsonl"
-    for pose_name in pose_names:
-        pose = candidates[pose_name]
-        for root_z in root_z_values:
-            for termination_height_min in termination_height_min_values:
-                env_config = G1VelocityTrackingConfig(
-                    command_vx_min=0.0,
-                    command_vx_max=0.0,
-                    command_yaw_min=0.0,
-                    command_yaw_max=0.0,
-                    height_min=args.height_min,
-                    height_max=args.height_max,
-                    termination_height_min=termination_height_min,
-                    termination_height_max=args.termination_height_max,
+    for motor_kp_mult in motor_kp_mult_values:
+        for motor_kv_mult in motor_kv_mult_values:
+            for motor_force_limit_mult in motor_force_limit_mult_values:
+                backend.set_motor_config_multipliers(
+                    kp_mult=motor_kp_mult,
+                    kv_mult=motor_kv_mult,
+                    force_limit_mult=motor_force_limit_mult,
                 )
-                row = run_candidate(
-                    torch=torch,
-                    backend=backend,
-                    env_config=env_config,
-                    zero_action=zero_action,
-                    pose_name=pose_name,
-                    pose=pose,
-                    root_z=root_z,
-                    steps=args.steps,
-                    n_envs=args.n_envs,
-                    logical_cuda_device=args.logical_cuda_device,
-                )
-                rows.append(row)
-                append_jsonl(rows_path, row)
+                for pose_name in pose_names:
+                    pose = candidates[pose_name]
+                    for root_z in root_z_values:
+                        for termination_height_min in termination_height_min_values:
+                            env_config = G1VelocityTrackingConfig(
+                                command_vx_min=0.0,
+                                command_vx_max=0.0,
+                                command_yaw_min=0.0,
+                                command_yaw_max=0.0,
+                                height_min=args.height_min,
+                                height_max=args.height_max,
+                                termination_height_min=termination_height_min,
+                                termination_height_max=args.termination_height_max,
+                            )
+                            row = run_candidate(
+                                torch=torch,
+                                backend=backend,
+                                env_config=env_config,
+                                zero_action=zero_action,
+                                pose_name=pose_name,
+                                pose=pose,
+                                root_z=root_z,
+                                steps=args.steps,
+                                n_envs=args.n_envs,
+                                logical_cuda_device=args.logical_cuda_device,
+                                motor_kp_mult=motor_kp_mult,
+                                motor_kv_mult=motor_kv_mult,
+                                motor_force_limit_mult=motor_force_limit_mult,
+                            )
+                            rows.append(row)
+                            append_jsonl(rows_path, row)
 
     stable_rows = [
         row
@@ -189,6 +212,9 @@ def run_candidate(
     steps: int,
     n_envs: int,
     logical_cuda_device: str,
+    motor_kp_mult: float,
+    motor_kv_mult: float,
+    motor_force_limit_mult: float,
 ) -> dict[str, Any]:
     backend.set_reset_pose(root_qpos=root_qpos(root_z), default_positions_rad=pose)
     env = G1VelocityTrackingVectorizedEnv(backend, env_config)
@@ -229,6 +255,9 @@ def run_candidate(
         "height_max": env_config.height_max,
         "termination_height_min": env_config.termination_height_min,
         "termination_height_max": env_config.termination_height_max,
+        "motor_kp_mult": motor_kp_mult,
+        "motor_kv_mult": motor_kv_mult,
+        "motor_force_limit_mult": motor_force_limit_mult,
         "steps": steps,
         "n_envs": n_envs,
         "env_steps": steps * n_envs,
@@ -293,6 +322,13 @@ def parse_float_list(raw: str) -> list[float]:
     values = [float(item.strip()) for item in raw.split(",") if item.strip()]
     if not values:
         raise argparse.ArgumentTypeError("at least one float value is required")
+    return values
+
+
+def parse_positive_float_list(raw: str) -> list[float]:
+    values = parse_float_list(raw)
+    if any(value <= 0.0 for value in values):
+        raise argparse.ArgumentTypeError("all values must be positive")
     return values
 
 

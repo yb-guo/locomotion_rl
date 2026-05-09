@@ -77,3 +77,10 @@ def test_choose_best_row_prefers_fewer_resets_then_tilt_then_height() -> None:
 def test_parse_float_list_rejects_empty() -> None:
     with pytest.raises(Exception, match="at least one float"):
         probe.parse_float_list("")
+
+
+def test_parse_positive_float_list_rejects_zero_or_negative() -> None:
+    with pytest.raises(Exception, match="positive"):
+        probe.parse_positive_float_list("1.0,0.0")
+    with pytest.raises(Exception, match="positive"):
+        probe.parse_positive_float_list("-1.0")

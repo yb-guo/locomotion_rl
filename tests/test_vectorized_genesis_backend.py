@@ -29,6 +29,21 @@ def test_vectorized_genesis_backend_builds_and_resets_27dof_profile() -> None:
     assert backend.scene.n_envs == 4
     assert backend.gs.init_calls == [("fake-cpu", "warning")]
     assert backend.robot.morph_file.endswith("g1_27dof_nohand.xml")
+    assert len(backend.robot.kp_calls) == 1
+    kp_values, kp_indices = backend.robot.kp_calls[0]
+    assert kp_values == pytest.approx(backend.profile.control.kp)
+    assert kp_indices == backend.motor_dof_indices
+    assert len(backend.robot.kv_calls) == 1
+    kv_values, kv_indices = backend.robot.kv_calls[0]
+    assert kv_values == pytest.approx(backend.profile.control.kv)
+    assert kv_indices == backend.motor_dof_indices
+    assert len(backend.robot.force_range_calls) == 1
+    force_lower, force_upper, force_indices = backend.robot.force_range_calls[0]
+    assert force_lower == pytest.approx(
+        tuple(-limit for limit in backend.profile.control.force_limits)
+    )
+    assert force_upper == pytest.approx(backend.profile.control.force_limits)
+    assert force_indices == backend.motor_dof_indices
 
 
 def test_vectorized_genesis_backend_steps_action_batch_and_reports_info() -> None:
@@ -79,6 +94,31 @@ def test_vectorized_genesis_backend_applies_action_scale_multiplier() -> None:
         backend.default_positions_values[0] + 0.5 * backend.profile.control.action_scales_rad[0]
     )
     assert backend.robot.positions[0][6] == pytest.approx(expected_second_target)
+
+
+def test_vectorized_genesis_backend_can_reapply_motor_config_multipliers() -> None:
+    backend = _make_backend(n_envs=1)
+
+    backend.set_motor_config_multipliers(kp_mult=2.0, kv_mult=3.0, force_limit_mult=0.5)
+
+    kp_values, kp_indices = backend.robot.kp_calls[-1]
+    kv_values, kv_indices = backend.robot.kv_calls[-1]
+    force_lower, force_upper, force_indices = backend.robot.force_range_calls[-1]
+    assert kp_values == pytest.approx(
+        tuple(value * 2.0 for value in backend.profile.control.kp)
+    )
+    assert kv_values == pytest.approx(
+        tuple(value * 3.0 for value in backend.profile.control.kv)
+    )
+    assert force_lower == pytest.approx(
+        tuple(-value * 0.5 for value in backend.profile.control.force_limits)
+    )
+    assert force_upper == pytest.approx(
+        tuple(value * 0.5 for value in backend.profile.control.force_limits)
+    )
+    assert kp_indices == backend.motor_dof_indices
+    assert kv_indices == backend.motor_dof_indices
+    assert force_indices == backend.motor_dof_indices
 
 
 def test_vectorized_genesis_backend_can_freeze_non_leg_action_targets() -> None:
@@ -261,6 +301,11 @@ class _FakeRobot:
         self.qpos: list[list[float]] = []
         self.positions: list[list[float]] = []
         self.velocities: list[list[float]] = []
+        self.kp_calls: list[tuple[tuple[float, ...], tuple[int, ...]]] = []
+        self.kv_calls: list[tuple[tuple[float, ...], tuple[int, ...]]] = []
+        self.force_range_calls: list[
+            tuple[tuple[float, ...], tuple[float, ...], tuple[int, ...]]
+        ] = []
 
     def configure_envs(self, n_envs: int) -> None:
         self.n_envs = n_envs
@@ -270,6 +315,28 @@ class _FakeRobot:
 
     def get_joint(self, name: str) -> _FakeJoint:
         return _FakeJoint(self.joint_indices[name])
+
+    def set_dofs_kp(
+        self,
+        gains: tuple[float, ...],
+        dofs_idx_local: tuple[int, ...],
+    ) -> None:
+        self.kp_calls.append((tuple(gains), tuple(dofs_idx_local)))
+
+    def set_dofs_kv(
+        self,
+        gains: tuple[float, ...],
+        dofs_idx_local: tuple[int, ...],
+    ) -> None:
+        self.kv_calls.append((tuple(gains), tuple(dofs_idx_local)))
+
+    def set_dofs_force_range(
+        self,
+        lower: tuple[float, ...],
+        upper: tuple[float, ...],
+        dofs_idx_local: tuple[int, ...],
+    ) -> None:
+        self.force_range_calls.append((tuple(lower), tuple(upper), tuple(dofs_idx_local)))
 
     def control_dofs_position(
         self,

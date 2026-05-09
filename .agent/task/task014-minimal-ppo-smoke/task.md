@@ -149,6 +149,7 @@ and read-only review.
 9. `009-standing-reset-pose-search.md`
 10. `010-action-scale-standing-curriculum.md`
 11. `011-reset-semantics-calibration.md`
+12. `012-upright-balance-stabilization.md`
 
 # Log
 
@@ -351,6 +352,39 @@ and read-only review.
     `reset_count=1024`.
 - Did not run `vx_yaw` PPO after subtask 011, because standing mode still has
   tilt/balance resets.
+- 2026-05-09 Added subtask 012 for upright/balance stabilization:
+  - low-noise/action-scale standing PPO still ended with
+    `tilt_bad_count=1024` and `termination_height_bad_count=0`;
+  - low-lr standing PPO reduced KL but still ended with
+    `tilt_bad_count=1024` and `termination_height_bad_count=0`;
+  - code inspection found `VectorizedGenesisBackend` loaded profile `kp`, `kv`,
+    and `force_limits` but did not apply them to Genesis motor DoFs;
+  - implemented profile motor gain/force-limit application in
+    `VectorizedGenesisBackend`.
+- Local verification for subtask 012:
+  - focused command:
+    `PYTHONPATH=src python -m pytest tests/test_vectorized_genesis_backend.py tests/test_g1_velocity_tracking_env.py tests/test_g1_standing_reset_pose_probe.py tests/test_g1_ppo_smoke.py tests/test_ppo_loop.py -q -p no:cacheprovider`;
+  - result after final changes: `32 passed, 4 skipped`;
+  - full command:
+    `PYTHONPATH=src python -m pytest -q -p no:cacheprovider`;
+  - result after final changes: `191 passed, 4 skipped`.
+- H200 verification for subtask 012:
+  - focused tests after final changes: `36 passed in 13.50s`;
+  - 512-step zero-action with motor config improved but did not solve passive
+    balance: `tilt_bad_count=5120`, `reset_count=5120`,
+    `termination_height_bad_count=0`;
+  - pose/root-z and gain sweeps confirmed no passive stable standing point in
+    the tested set;
+  - standing PPO final run dir:
+    `/root/agent_workspace/project/h200-locomotion-lab-task014-minimal-ppo-smoke/outputs/task014/minimal_ppo_smoke/h200-gpu1-standing-motorgains-warmup-termh020-actionscale010-logstd25-three-seed-v1`;
+  - standing final result: `all_seeds_passed=true`, min collect throughput
+    `12255.188467549899`, final update seeds `0,1,2` all had
+    `reset_count=0`, `termination_height_bad_count=0`, `tilt_bad_count=0`;
+  - `vx_yaw` final run dir:
+    `/root/agent_workspace/project/h200-locomotion-lab-task014-minimal-ppo-smoke/outputs/task014/minimal_ppo_smoke/h200-gpu1-vxyaw-motorgains-warmup-termh020-actionscale010-logstd25-three-seed-v1`;
+  - `vx_yaw` final result: `all_seeds_passed=true`, min collect throughput
+    `20352.60733855557`, final update seeds `0,1,2` all had
+    `reset_count=0`, `termination_height_bad_count=0`, `tilt_bad_count=0`.
 
 # Review
 
@@ -399,3 +433,13 @@ Status: passed.
     long-horizon and standing PPO checks;
   - remaining resets are tilt/upright control failures, so the next task
     should target balance/upright stabilization rather than lower height gates.
+- Upright/balance stabilization review:
+  - `VectorizedGenesisBackend` now applies the profile motor `kp`, `kv`, and
+    `force_limits` to the Genesis motor DoFs;
+  - passive zero-action standing is still not a valid long-horizon stability
+    claim for G1, even after motor gains;
+  - PPO smoke stability is fixed with motor config, one warmup step, and
+    conservative policy initialization (`action_scale_mult=0.10`,
+    `log_std_init=-2.5`);
+  - standing and `vx_yaw` both pass H200 three-seed smoke with final reset
+    causes at zero and throughput above task014 threshold.

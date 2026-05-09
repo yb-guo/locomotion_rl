@@ -33,6 +33,8 @@ def test_parse_args_accepts_log_std_init(monkeypatch: pytest.MonkeyPatch) -> Non
             "0.5",
             "--termination-penalty",
             "-5.0",
+            "--warmup-steps",
+            "2",
         ],
     )
 
@@ -48,6 +50,7 @@ def test_parse_args_accepts_log_std_init(monkeypatch: pytest.MonkeyPatch) -> Non
     assert args.command_mode == "standing"
     assert args.base_height_reward_scale == 0.5
     assert args.termination_penalty == -5.0
+    assert args.warmup_steps == 2
 
 
 def test_parse_args_defaults_to_stable_tall_crouch_pose(

@@ -33,6 +33,7 @@ from h200_locomotion_lab.training.ppo_loop import (
     parameter_l1_sum,
     ppo_update,
     require_torch,
+    synchronize_device,
     tensor_device_ok,
 )
 
@@ -105,6 +106,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--run-id", default="")
     parser.add_argument("--min-collect-env-steps-per-sec", type=positive_float, default=10000.0)
+    parser.add_argument("--warmup-steps", type=non_negative_int, default=1)
     return parser.parse_args()
 
 
@@ -160,6 +162,7 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 "action_rate_penalty_scale": args.action_rate_penalty_scale,
                 "joint_deviation_penalty_scale": args.joint_deviation_penalty_scale,
                 "termination_penalty": args.termination_penalty,
+                "warmup_steps": args.warmup_steps,
             },
             "seeds": seeds,
             "backend": args.backend,
@@ -200,6 +203,13 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
             termination_penalty=args.termination_penalty,
         ),
     )
+    warmup_env(
+        torch=torch,
+        env=env,
+        action_dim=profile.action_dim,
+        steps=args.warmup_steps,
+        logical_cuda_device=args.logical_cuda_device,
+    )
     seed_summaries = []
     checkpoints: dict[int, dict[str, Any]] = {}
     metrics_path = run_dir / "metrics.jsonl"
@@ -238,6 +248,26 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
         run_dir / "final_checkpoint.pt",
     )
     return summary
+
+
+def warmup_env(
+    *,
+    torch: Any,
+    env: G1VelocityTrackingVectorizedEnv,
+    action_dim: int,
+    steps: int,
+    logical_cuda_device: str,
+) -> None:
+    if steps <= 0:
+        return
+    observation = env.reset()
+    synchronize_device(getattr(observation, "device", None))
+    zero_action = torch.zeros((env.n_envs, action_dim), device=logical_cuda_device)
+    for _ in range(steps):
+        transition = env.step(zero_action)
+        observation = transition.observation
+    synchronize_device(getattr(observation, "device", None))
+    env.reset()
 
 
 def run_seed(
@@ -437,6 +467,13 @@ def positive_int(value: str) -> int:
     parsed = int(value)
     if parsed <= 0:
         raise argparse.ArgumentTypeError("value must be positive")
+    return parsed
+
+
+def non_negative_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("value must be non-negative")
     return parsed
 
 

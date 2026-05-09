@@ -52,6 +52,9 @@ class VectorizedGenesisConfig:
     default_positions_rad: tuple[float, ...] | None = None
     action_scale_mult: float = 1.0
     action_joint_group: str = "all"
+    motor_kp_mult: float = 1.0
+    motor_kv_mult: float = 1.0
+    motor_force_limit_mult: float = 1.0
     require_asset_path: bool = True
 
     def __post_init__(self) -> None:
@@ -65,6 +68,12 @@ class VectorizedGenesisConfig:
             raise ValueError("action_scale_mult must be positive")
         if self.action_joint_group not in ACTION_JOINT_GROUPS:
             raise ValueError(f"action_joint_group must be one of {ACTION_JOINT_GROUPS}")
+        if self.motor_kp_mult <= 0.0:
+            raise ValueError("motor_kp_mult must be positive")
+        if self.motor_kv_mult <= 0.0:
+            raise ValueError("motor_kv_mult must be positive")
+        if self.motor_force_limit_mult <= 0.0:
+            raise ValueError("motor_force_limit_mult must be positive")
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +134,10 @@ class VectorizedGenesisBackend:
         self.decimation = self.profile.training_contract.decimation
         self.scene, self.robot = self._build_scene()
         self.motor_dof_indices = self._resolve_motor_dof_indices()
+        self.motor_kp_mult = float(self.config.motor_kp_mult)
+        self.motor_kv_mult = float(self.config.motor_kv_mult)
+        self.motor_force_limit_mult = float(self.config.motor_force_limit_mult)
+        self._apply_motor_config()
         self.reset_root_qpos = tuple(float(value) for value in self.config.root_qpos)
         self.default_positions_values = tuple(
             float(value)
@@ -144,6 +157,33 @@ class VectorizedGenesisBackend:
         self.action_scales = self._vector(self.action_scale_values)
         self.previous_action = self._zeros((self.config.n_envs, self.action_dim))
         self.step_count = 0
+
+    def set_motor_config_multipliers(
+        self,
+        *,
+        kp_mult: float | None = None,
+        kv_mult: float | None = None,
+        force_limit_mult: float | None = None,
+    ) -> None:
+        """Reapply profile motor config with diagnostic scale multipliers."""
+
+        next_kp = self.motor_kp_mult if kp_mult is None else float(kp_mult)
+        next_kv = self.motor_kv_mult if kv_mult is None else float(kv_mult)
+        next_force = (
+            self.motor_force_limit_mult
+            if force_limit_mult is None
+            else float(force_limit_mult)
+        )
+        if next_kp <= 0.0:
+            raise ValueError("kp_mult must be positive")
+        if next_kv <= 0.0:
+            raise ValueError("kv_mult must be positive")
+        if next_force <= 0.0:
+            raise ValueError("force_limit_mult must be positive")
+        self.motor_kp_mult = next_kp
+        self.motor_kv_mult = next_kv
+        self.motor_force_limit_mult = next_force
+        self._apply_motor_config()
 
     @property
     def n_envs(self) -> int:
@@ -342,6 +382,55 @@ class VectorizedGenesisBackend:
         if len(set(indices)) != self.action_dim:
             raise ValueError(f"Duplicate motor DOF indices: {indices}")
         return tuple(indices)
+
+    def _apply_motor_config(self) -> None:
+        self._set_dofs_kp(
+            self._scale_values(self.profile.control.kp, self.motor_kp_mult)
+        )
+        self._set_dofs_kv(
+            self._scale_values(self.profile.control.kv, self.motor_kv_mult)
+        )
+        self._set_dofs_force_range(
+            self._scale_values(
+                self.profile.control.force_limits,
+                self.motor_force_limit_mult,
+            )
+        )
+
+    def _scale_values(self, values: Sequence[float], multiplier: float) -> tuple[float, ...]:
+        return tuple(float(value) * multiplier for value in values)
+
+    def _set_dofs_kp(self, values: Sequence[float]) -> None:
+        if not hasattr(self.robot, "set_dofs_kp"):
+            return
+        gains = tuple(float(value) for value in values)
+        try:
+            self.robot.set_dofs_kp(gains, dofs_idx_local=self.motor_dof_indices)
+        except TypeError:
+            self.robot.set_dofs_kp(gains, self.motor_dof_indices)
+
+    def _set_dofs_kv(self, values: Sequence[float]) -> None:
+        if not hasattr(self.robot, "set_dofs_kv"):
+            return
+        gains = tuple(float(value) for value in values)
+        try:
+            self.robot.set_dofs_kv(gains, dofs_idx_local=self.motor_dof_indices)
+        except TypeError:
+            self.robot.set_dofs_kv(gains, self.motor_dof_indices)
+
+    def _set_dofs_force_range(self, limits: Sequence[float]) -> None:
+        if not hasattr(self.robot, "set_dofs_force_range"):
+            return
+        lower = tuple(-float(limit) for limit in limits)
+        upper = tuple(float(limit) for limit in limits)
+        try:
+            self.robot.set_dofs_force_range(
+                lower,
+                upper,
+                dofs_idx_local=self.motor_dof_indices,
+            )
+        except TypeError:
+            self.robot.set_dofs_force_range(lower, upper, self.motor_dof_indices)
 
     def _coerce_action(self, action: Any) -> Any:
         if is_tensor_like(action):
