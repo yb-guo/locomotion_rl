@@ -12,8 +12,20 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from h200_locomotion_lab.robots import (
+    G1_27DOF_NOHAND_ACTUATOR_ORDER,
     G1NoHandGenesisTrainingProfile,
     load_g1_27dof_nohand_profile,
+)
+
+
+ACTION_JOINT_GROUPS = ("all", "legs", "legs_waist")
+LEG_JOINT_SUFFIXES = (
+    "_hip_pitch_joint",
+    "_hip_roll_joint",
+    "_hip_yaw_joint",
+    "_knee_joint",
+    "_ankle_pitch_joint",
+    "_ankle_roll_joint",
 )
 
 
@@ -37,6 +49,12 @@ class VectorizedGenesisConfig:
         0.0,
         0.0,
     )
+    default_positions_rad: tuple[float, ...] | None = None
+    action_scale_mult: float = 1.0
+    action_joint_group: str = "all"
+    motor_kp_mult: float = 1.0
+    motor_kv_mult: float = 1.0
+    motor_force_limit_mult: float = 1.0
     require_asset_path: bool = True
 
     def __post_init__(self) -> None:
@@ -44,6 +62,18 @@ class VectorizedGenesisConfig:
             raise ValueError("n_envs must be positive")
         if self.backend == "cuda" and self.logical_cuda_device != "cuda:0":
             raise ValueError("CUDA backend expects logical_cuda_device=cuda:0")
+        if self.default_positions_rad is not None and len(self.default_positions_rad) != 27:
+            raise ValueError("default_positions_rad must have length 27")
+        if self.action_scale_mult <= 0.0:
+            raise ValueError("action_scale_mult must be positive")
+        if self.action_joint_group not in ACTION_JOINT_GROUPS:
+            raise ValueError(f"action_joint_group must be one of {ACTION_JOINT_GROUPS}")
+        if self.motor_kp_mult <= 0.0:
+            raise ValueError("motor_kp_mult must be positive")
+        if self.motor_kv_mult <= 0.0:
+            raise ValueError("motor_kv_mult must be positive")
+        if self.motor_force_limit_mult <= 0.0:
+            raise ValueError("motor_force_limit_mult must be positive")
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,10 +134,56 @@ class VectorizedGenesisBackend:
         self.decimation = self.profile.training_contract.decimation
         self.scene, self.robot = self._build_scene()
         self.motor_dof_indices = self._resolve_motor_dof_indices()
-        self.default_positions = self._vector(self.profile.control.default_angles_rad)
-        self.action_scales = self._vector(self.profile.control.action_scales_rad)
+        self.motor_kp_mult = float(self.config.motor_kp_mult)
+        self.motor_kv_mult = float(self.config.motor_kv_mult)
+        self.motor_force_limit_mult = float(self.config.motor_force_limit_mult)
+        self._apply_motor_config()
+        self.reset_root_qpos = tuple(float(value) for value in self.config.root_qpos)
+        self.default_positions_values = tuple(
+            float(value)
+            for value in (
+                self.config.default_positions_rad
+                if self.config.default_positions_rad is not None
+                else self.profile.control.default_angles_rad
+            )
+        )
+        self.default_positions = self._vector(self.default_positions_values)
+        self.action_scale_mult = float(self.config.action_scale_mult)
+        self.action_joint_group = self.config.action_joint_group
+        self.action_scale_values = self._scaled_action_values(
+            self.action_scale_mult,
+            self.action_joint_group,
+        )
+        self.action_scales = self._vector(self.action_scale_values)
         self.previous_action = self._zeros((self.config.n_envs, self.action_dim))
         self.step_count = 0
+
+    def set_motor_config_multipliers(
+        self,
+        *,
+        kp_mult: float | None = None,
+        kv_mult: float | None = None,
+        force_limit_mult: float | None = None,
+    ) -> None:
+        """Reapply profile motor config with diagnostic scale multipliers."""
+
+        next_kp = self.motor_kp_mult if kp_mult is None else float(kp_mult)
+        next_kv = self.motor_kv_mult if kv_mult is None else float(kv_mult)
+        next_force = (
+            self.motor_force_limit_mult
+            if force_limit_mult is None
+            else float(force_limit_mult)
+        )
+        if next_kp <= 0.0:
+            raise ValueError("kp_mult must be positive")
+        if next_kv <= 0.0:
+            raise ValueError("kv_mult must be positive")
+        if next_force <= 0.0:
+            raise ValueError("force_limit_mult must be positive")
+        self.motor_kp_mult = next_kp
+        self.motor_kv_mult = next_kv
+        self.motor_force_limit_mult = next_force
+        self._apply_motor_config()
 
     @property
     def n_envs(self) -> int:
@@ -118,8 +194,8 @@ class VectorizedGenesisBackend:
 
         selected_envs = self._normalize_env_ids(env_ids)
         target_count = self.n_envs if selected_envs is None else self._env_ids_count(selected_envs)
-        root_target = self._repeat(self.config.root_qpos, target_count)
-        motor_target = self._repeat(self.profile.control.default_angles_rad, target_count)
+        root_target = self._repeat(self.reset_root_qpos, target_count)
+        motor_target = self._repeat(self.default_positions_values, target_count)
         self._set_root_qpos(root_target, selected_envs)
         self._set_dofs_position(motor_target, selected_envs)
         self._zero_dofs_velocity(selected_envs)
@@ -127,6 +203,47 @@ class VectorizedGenesisBackend:
         if selected_envs is None:
             self.step_count = 0
         return self.observation()
+
+    def set_reset_pose(
+        self,
+        *,
+        root_qpos: Sequence[float] | None = None,
+        default_positions_rad: Sequence[float] | None = None,
+    ) -> None:
+        """Update reset targets for standing-pose probes without rebuilding Genesis."""
+
+        if root_qpos is not None:
+            root_values = tuple(float(value) for value in root_qpos)
+            if len(root_values) != 7:
+                raise ValueError("root_qpos must have length 7")
+            self.reset_root_qpos = root_values
+        if default_positions_rad is not None:
+            default_values = tuple(float(value) for value in default_positions_rad)
+            if len(default_values) != self.action_dim:
+                raise ValueError(f"default_positions_rad must have length {self.action_dim}")
+            self.default_positions_values = default_values
+            self.default_positions = self._vector(default_values)
+
+    def set_action_scale_mult(
+        self,
+        action_scale_mult: float,
+        *,
+        action_joint_group: str | None = None,
+    ) -> None:
+        """Update normalized-action-to-joint-target scale without rebuilding Genesis."""
+
+        if action_scale_mult <= 0.0:
+            raise ValueError("action_scale_mult must be positive")
+        next_group = action_joint_group or self.action_joint_group
+        if next_group not in ACTION_JOINT_GROUPS:
+            raise ValueError(f"action_joint_group must be one of {ACTION_JOINT_GROUPS}")
+        self.action_scale_mult = float(action_scale_mult)
+        self.action_joint_group = next_group
+        self.action_scale_values = self._scaled_action_values(
+            self.action_scale_mult,
+            self.action_joint_group,
+        )
+        self.action_scales = self._vector(self.action_scale_values)
 
     def step_physics(self, action: Any) -> Any:
         """Apply one action batch and advance one policy frame without building obs."""
@@ -266,6 +383,55 @@ class VectorizedGenesisBackend:
             raise ValueError(f"Duplicate motor DOF indices: {indices}")
         return tuple(indices)
 
+    def _apply_motor_config(self) -> None:
+        self._set_dofs_kp(
+            self._scale_values(self.profile.control.kp, self.motor_kp_mult)
+        )
+        self._set_dofs_kv(
+            self._scale_values(self.profile.control.kv, self.motor_kv_mult)
+        )
+        self._set_dofs_force_range(
+            self._scale_values(
+                self.profile.control.force_limits,
+                self.motor_force_limit_mult,
+            )
+        )
+
+    def _scale_values(self, values: Sequence[float], multiplier: float) -> tuple[float, ...]:
+        return tuple(float(value) * multiplier for value in values)
+
+    def _set_dofs_kp(self, values: Sequence[float]) -> None:
+        if not hasattr(self.robot, "set_dofs_kp"):
+            return
+        gains = tuple(float(value) for value in values)
+        try:
+            self.robot.set_dofs_kp(gains, dofs_idx_local=self.motor_dof_indices)
+        except TypeError:
+            self.robot.set_dofs_kp(gains, self.motor_dof_indices)
+
+    def _set_dofs_kv(self, values: Sequence[float]) -> None:
+        if not hasattr(self.robot, "set_dofs_kv"):
+            return
+        gains = tuple(float(value) for value in values)
+        try:
+            self.robot.set_dofs_kv(gains, dofs_idx_local=self.motor_dof_indices)
+        except TypeError:
+            self.robot.set_dofs_kv(gains, self.motor_dof_indices)
+
+    def _set_dofs_force_range(self, limits: Sequence[float]) -> None:
+        if not hasattr(self.robot, "set_dofs_force_range"):
+            return
+        lower = tuple(-float(limit) for limit in limits)
+        upper = tuple(float(limit) for limit in limits)
+        try:
+            self.robot.set_dofs_force_range(
+                lower,
+                upper,
+                dofs_idx_local=self.motor_dof_indices,
+            )
+        except TypeError:
+            self.robot.set_dofs_force_range(lower, upper, self.motor_dof_indices)
+
     def _coerce_action(self, action: Any) -> Any:
         if is_tensor_like(action):
             self._expect_shape(action, (self.n_envs, self.action_dim), "action")
@@ -287,13 +453,41 @@ class VectorizedGenesisBackend:
             [
                 default + delta * scale
                 for default, delta, scale in zip(
-                    self.profile.control.default_angles_rad,
+                    self.default_positions_values,
                     row,
-                    self.profile.control.action_scales_rad,
+                    self.action_scale_values,
                 )
             ]
             for row in action
         ]
+
+    def _scaled_action_values(
+        self,
+        action_scale_mult: float,
+        action_joint_group: str,
+    ) -> tuple[float, ...]:
+        mask = self._action_group_mask(action_joint_group)
+        return tuple(
+            float(value) * action_scale_mult * group_scale
+            for value, group_scale in zip(self.profile.control.action_scales_rad, mask)
+        )
+
+    def _action_group_mask(self, action_joint_group: str) -> tuple[float, ...]:
+        if action_joint_group == "all":
+            return (1.0,) * self.action_dim
+        values: list[float] = []
+        for joint_name in self.profile.actuator_order:
+            is_leg = joint_name.startswith(("left_", "right_")) and joint_name.endswith(
+                LEG_JOINT_SUFFIXES
+            )
+            is_waist = joint_name == "waist_yaw_joint"
+            if is_leg or (action_joint_group == "legs_waist" and is_waist):
+                values.append(1.0)
+            else:
+                values.append(0.0)
+        if tuple(self.profile.actuator_order) != G1_27DOF_NOHAND_ACTUATOR_ORDER:
+            raise ValueError("unexpected G1 27DoF actuator order")
+        return tuple(values)
 
     def _control_dofs_position(self, targets: Any) -> None:
         try:

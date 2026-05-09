@@ -27,6 +27,8 @@ class G1VelocityTrackingConfig:
     command_yaw_max: float = 0.5
     height_min: float = 0.45
     height_max: float = 1.20
+    termination_height_min: float = 0.20
+    termination_height_max: float = 1.20
     min_upright: float = 0.30
     lin_vel_sigma: float = 0.25
     yaw_rate_sigma: float = 0.25
@@ -34,8 +36,12 @@ class G1VelocityTrackingConfig:
     lin_vel_reward_scale: float = 1.00
     yaw_rate_reward_scale: float = 0.50
     upright_reward_scale: float = 0.50
+    base_height_target: float = 0.85
+    base_height_sigma: float = 0.10
+    base_height_reward_scale: float = 0.0
     action_rate_penalty_scale: float = 0.01
     joint_deviation_penalty_scale: float = 0.05
+    termination_penalty: float = 0.0
 
     def __post_init__(self) -> None:
         if self.max_episode_steps <= 0:
@@ -46,8 +52,14 @@ class G1VelocityTrackingConfig:
             raise ValueError("command_yaw_min must be <= command_yaw_max")
         if self.height_min >= self.height_max:
             raise ValueError("height_min must be < height_max")
+        if self.termination_height_min >= self.termination_height_max:
+            raise ValueError("termination_height_min must be < termination_height_max")
         if self.lin_vel_sigma <= 0 or self.yaw_rate_sigma <= 0:
             raise ValueError("tracking sigmas must be positive")
+        if self.base_height_sigma <= 0.0:
+            raise ValueError("base_height_sigma must be positive")
+        if self.base_height_reward_scale < 0.0:
+            raise ValueError("base_height_reward_scale must be non-negative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,31 +222,45 @@ class G1VelocityTrackingVectorizedEnv:
         yaw_rate_error = (state.root_ang_vel[:, 2] - self.commands[:, 2]).square()
         tracking_lin_vel = self.torch.exp(-lin_vel_error / self.config.lin_vel_sigma)
         tracking_yaw_rate = self.torch.exp(-yaw_rate_error / self.config.yaw_rate_sigma)
+        base_height_error = (root_height - self.config.base_height_target).square()
+        tracking_base_height = self.torch.exp(
+            -base_height_error / self.config.base_height_sigma
+        )
         action_rate_penalty = (action - previous_action).square().mean(dim=1)
         joint_error = self._sub(state.dof_pos, self.backend.default_positions)
         joint_deviation_penalty = joint_error.square().mean(dim=1)
+        height_bad = (root_height < self.config.height_min) | (
+            root_height > self.config.height_max
+        )
+        termination_height_bad = (root_height < self.config.termination_height_min) | (
+            root_height > self.config.termination_height_max
+        )
+        tilt_bad = upright < self.config.min_upright
+        terminated = termination_height_bad | tilt_bad
+        truncated = self.episode_lengths >= self.config.max_episode_steps
+        done = terminated | truncated
+        termination_penalty = terminated.float() * self.config.termination_penalty
         reward = (
             self.config.alive_reward
             + self.config.lin_vel_reward_scale * tracking_lin_vel
             + self.config.yaw_rate_reward_scale * tracking_yaw_rate
             + self.config.upright_reward_scale * upright
+            + self.config.base_height_reward_scale * tracking_base_height
             - self.config.action_rate_penalty_scale * action_rate_penalty
             - self.config.joint_deviation_penalty_scale * joint_deviation_penalty
+            + termination_penalty
         )
-        height_bad = (root_height < self.config.height_min) | (
-            root_height > self.config.height_max
-        )
-        tilt_bad = upright < self.config.min_upright
-        terminated = height_bad | tilt_bad
-        truncated = self.episode_lengths >= self.config.max_episode_steps
-        done = terminated | truncated
         components = {
+            "root_height": root_height,
             "tracking_lin_vel": tracking_lin_vel,
             "tracking_yaw_rate": tracking_yaw_rate,
+            "tracking_base_height": tracking_base_height,
             "upright": upright,
             "action_rate_penalty": action_rate_penalty,
             "joint_deviation_penalty": joint_deviation_penalty,
+            "termination_penalty": termination_penalty,
             "height_bad": height_bad,
+            "termination_height_bad": termination_height_bad,
             "tilt_bad": tilt_bad,
             "timeout": truncated,
         }
@@ -255,16 +281,19 @@ class G1VelocityTrackingVectorizedEnv:
         actions = as_rows(action)
         previous_actions = as_rows(previous_action)
         projected = as_rows(self._projected_gravity(state.root_quat))
-        default = list(self.backend.profile.control.default_angles_rad)
+        default = list(self.backend.default_positions_values)
         reward: list[float] = []
         terminated: list[bool] = []
         truncated: list[bool] = []
         tracking_lin_vel: list[float] = []
         tracking_yaw_rate: list[float] = []
+        tracking_base_height: list[float] = []
         upright_values: list[float] = []
         action_rate_penalty: list[float] = []
         joint_deviation_penalty: list[float] = []
+        termination_penalty_values: list[float] = []
         height_bad_values: list[bool] = []
+        termination_height_bad_values: list[bool] = []
         tilt_bad_values: list[bool] = []
         for index in range(self.n_envs):
             upright = max(0.0, min(1.0, -projected[index][2]))
@@ -272,6 +301,8 @@ class G1VelocityTrackingVectorizedEnv:
             yaw_error = (root_ang[index][2] - commands[index][2]) ** 2
             tracking_lin = math.exp(-lin_error / self.config.lin_vel_sigma)
             tracking_yaw = math.exp(-yaw_error / self.config.yaw_rate_sigma)
+            base_height_error = (root_pos[index][2] - self.config.base_height_target) ** 2
+            tracking_height = math.exp(-base_height_error / self.config.base_height_sigma)
             action_penalty = sum(
                 (value - previous) ** 2
                 for value, previous in zip(actions[index], previous_actions[index])
@@ -284,6 +315,7 @@ class G1VelocityTrackingVectorizedEnv:
                 + self.config.lin_vel_reward_scale * tracking_lin
                 + self.config.yaw_rate_reward_scale * tracking_yaw
                 + self.config.upright_reward_scale * upright
+                + self.config.base_height_reward_scale * tracking_height
                 - self.config.action_rate_penalty_scale * action_penalty
                 - self.config.joint_deviation_penalty_scale * joint_penalty
             )
@@ -291,26 +323,42 @@ class G1VelocityTrackingVectorizedEnv:
                 root_pos[index][2] < self.config.height_min
                 or root_pos[index][2] > self.config.height_max
             )
+            termination_height_bad = (
+                root_pos[index][2] < self.config.termination_height_min
+                or root_pos[index][2] > self.config.termination_height_max
+            )
             tilt_bad = upright < self.config.min_upright
+            terminated_item = termination_height_bad or tilt_bad
+            termination_penalty = (
+                self.config.termination_penalty if terminated_item else 0.0
+            )
             timeout = self.episode_lengths[index] >= self.config.max_episode_steps
             reward.append(item_reward)
-            terminated.append(height_bad or tilt_bad)
+            reward[-1] += termination_penalty
+            terminated.append(terminated_item)
             truncated.append(timeout)
             tracking_lin_vel.append(tracking_lin)
             tracking_yaw_rate.append(tracking_yaw)
+            tracking_base_height.append(tracking_height)
             upright_values.append(upright)
             action_rate_penalty.append(action_penalty)
             joint_deviation_penalty.append(joint_penalty)
+            termination_penalty_values.append(termination_penalty)
             height_bad_values.append(height_bad)
+            termination_height_bad_values.append(termination_height_bad)
             tilt_bad_values.append(tilt_bad)
         done = [left or right for left, right in zip(terminated, truncated)]
         components = {
+            "root_height": [row[2] for row in root_pos],
             "tracking_lin_vel": tracking_lin_vel,
             "tracking_yaw_rate": tracking_yaw_rate,
+            "tracking_base_height": tracking_base_height,
             "upright": upright_values,
             "action_rate_penalty": action_rate_penalty,
             "joint_deviation_penalty": joint_deviation_penalty,
+            "termination_penalty": termination_penalty_values,
             "height_bad": height_bad_values,
+            "termination_height_bad": termination_height_bad_values,
             "tilt_bad": tilt_bad_values,
             "timeout": truncated,
         }

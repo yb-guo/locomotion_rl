@@ -48,10 +48,14 @@ def test_g1_velocity_tracking_env_step_returns_reward_done_and_components() -> N
     assert set(step.info["components"]) == {
         "tracking_lin_vel",
         "tracking_yaw_rate",
+        "tracking_base_height",
+        "root_height",
         "upright",
         "action_rate_penalty",
         "joint_deviation_penalty",
+        "termination_penalty",
         "height_bad",
+        "termination_height_bad",
         "tilt_bad",
         "timeout",
     }
@@ -77,10 +81,13 @@ def test_g1_velocity_tracking_env_timeout_resets_only_done_env() -> None:
 def test_g1_velocity_tracking_env_height_done_resets_fallen_env() -> None:
     env = _make_env(n_envs=3)
     env.reset()
-    env.backend.robot.qpos[2][2] = 0.2
+    env.backend.robot.qpos[1][2] = 0.4
+    env.backend.robot.qpos[2][2] = 0.1
 
     step = env.step([[0.0] * env.action_dim for _ in range(env.n_envs)])
 
+    assert step.info["components"]["height_bad"] == [False, True, True]
+    assert step.info["components"]["termination_height_bad"] == [False, False, True]
     assert step.terminated == [False, False, True]
     assert step.done == [False, False, True]
     assert env.episode_lengths == [1, 1, 0]
