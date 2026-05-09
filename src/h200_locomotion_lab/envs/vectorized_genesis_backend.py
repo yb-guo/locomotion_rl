@@ -57,6 +57,20 @@ class VectorizedGenesisStep:
     info: Mapping[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True, slots=True)
+class VectorizedGenesisState:
+    """Batched state snapshot read once from the Genesis robot."""
+
+    qpos: Any
+    root_pos: Any
+    root_quat: Any
+    root_vel: Any
+    root_ang_vel: Any
+    dof_pos: Any
+    dof_vel: Any
+    previous_action: Any
+
+
 class VectorizedGenesisBackend:
     """Minimal batched Genesis backend for training smoke tests."""
 
@@ -99,11 +113,11 @@ class VectorizedGenesisBackend:
     def n_envs(self) -> int:
         return self.config.n_envs
 
-    def reset(self, env_ids: Sequence[int] | None = None) -> Any:
+    def reset(self, env_ids: Any | None = None) -> Any:
         """Reset all envs or a selected env subset and return observations."""
 
         selected_envs = self._normalize_env_ids(env_ids)
-        target_count = self.n_envs if selected_envs is None else len(selected_envs)
+        target_count = self.n_envs if selected_envs is None else self._env_ids_count(selected_envs)
         root_target = self._repeat(self.config.root_qpos, target_count)
         motor_target = self._repeat(self.profile.control.default_angles_rad, target_count)
         self._set_root_qpos(root_target, selected_envs)
@@ -114,8 +128,8 @@ class VectorizedGenesisBackend:
             self.step_count = 0
         return self.observation()
 
-    def step(self, action: Any) -> VectorizedGenesisStep:
-        """Apply one normalized action batch and advance one policy frame."""
+    def step_physics(self, action: Any) -> Any:
+        """Apply one action batch and advance one policy frame without building obs."""
 
         clipped_action = self._clip_action(self._coerce_action(action))
         targets = self._action_targets(clipped_action)
@@ -124,6 +138,12 @@ class VectorizedGenesisBackend:
             self.scene.step()
         self.previous_action = clipped_action
         self.step_count += 1
+        return clipped_action
+
+    def step(self, action: Any) -> VectorizedGenesisStep:
+        """Apply one normalized action batch and advance one policy frame."""
+
+        self.step_physics(action)
         observation = self.observation()
         return VectorizedGenesisStep(
             observation=observation,
@@ -141,9 +161,26 @@ class VectorizedGenesisBackend:
             },
         )
 
+    def state(self) -> VectorizedGenesisState:
+        """Read all state tensors needed by training envs in one place."""
+
+        dof_pos = self._ensure_matrix(self._read_dofs_position(), self.action_dim)
+        dof_vel = self._ensure_matrix(self._read_dofs_velocity(), self.action_dim)
+        return VectorizedGenesisState(
+            qpos=self.robot.get_qpos(),
+            root_pos=self._ensure_matrix(self.robot.get_pos(), 3),
+            root_quat=self._ensure_matrix(self.robot.get_quat(), 4),
+            root_vel=self._ensure_matrix(self.robot.get_vel(), 3),
+            root_ang_vel=self._ensure_matrix(self._read_root_ang_velocity(), 3),
+            dof_pos=dof_pos,
+            dof_vel=dof_vel,
+            previous_action=self.previous_action,
+        )
+
     def observation(self) -> Any:
-        motor_positions = self._ensure_matrix(self._read_dofs_position(), self.action_dim)
-        motor_velocities = self._ensure_matrix(self._read_dofs_velocity(), self.action_dim)
+        state = self.state()
+        motor_positions = state.dof_pos
+        motor_velocities = state.dof_vel
         position_error = self._sub(motor_positions, self.default_positions)
         observation = self._concat_columns(
             (
@@ -267,7 +304,7 @@ class VectorizedGenesisBackend:
         except TypeError:
             self.robot.control_dofs_position(targets, self.motor_dof_indices)
 
-    def _set_root_qpos(self, root_target: Any, env_ids: tuple[int, ...] | None) -> None:
+    def _set_root_qpos(self, root_target: Any, env_ids: Any | None) -> None:
         if not hasattr(self.robot, "set_qpos"):
             return
         envs_idx = self._env_ids_tensor(env_ids)
@@ -280,7 +317,7 @@ class VectorizedGenesisBackend:
             kwargs.pop("zero_velocity", None)
             self.robot.set_qpos(root_target, **kwargs)
 
-    def _set_dofs_position(self, target: Any, env_ids: tuple[int, ...] | None) -> None:
+    def _set_dofs_position(self, target: Any, env_ids: Any | None) -> None:
         envs_idx = self._env_ids_tensor(env_ids)
         kwargs: dict[str, Any] = {
             "position": target,
@@ -295,11 +332,11 @@ class VectorizedGenesisBackend:
             kwargs.pop("zero_velocity", None)
             self.robot.set_dofs_position(**kwargs)
 
-    def _zero_dofs_velocity(self, env_ids: tuple[int, ...] | None) -> None:
+    def _zero_dofs_velocity(self, env_ids: Any | None) -> None:
         if not hasattr(self.robot, "set_dofs_velocity"):
             return
         target = self._zeros(
-            (self.n_envs if env_ids is None else len(env_ids), self.action_dim)
+            (self.n_envs if env_ids is None else self._env_ids_count(env_ids), self.action_dim)
         )
         kwargs: dict[str, Any] = {"velocity": target, "dofs_idx_local": self.motor_dof_indices}
         envs_idx = self._env_ids_tensor(env_ids)
@@ -310,9 +347,12 @@ class VectorizedGenesisBackend:
         except TypeError:
             self.robot.set_dofs_velocity(None)
 
-    def _reset_previous_action(self, env_ids: tuple[int, ...] | None) -> None:
+    def _reset_previous_action(self, env_ids: Any | None) -> None:
         if env_ids is None:
             self.previous_action = self._zeros((self.n_envs, self.action_dim))
+            return
+        if is_tensor_like(env_ids) and is_tensor_like(self.previous_action):
+            self.previous_action[env_ids] = 0.0
             return
         rows = as_rows(self.previous_action)
         for env_id in env_ids:
@@ -324,6 +364,17 @@ class VectorizedGenesisBackend:
 
     def _read_dofs_velocity(self) -> Any:
         return self.robot.get_dofs_velocity(dofs_idx_local=self.motor_dof_indices)
+
+    def _read_root_ang_velocity(self) -> Any:
+        for method_name in (
+            "get_ang",
+            "get_ang_vel",
+            "get_angular_velocity",
+            "get_base_ang_vel",
+        ):
+            if hasattr(self.robot, method_name):
+                return getattr(self.robot, method_name)()
+        return self._zeros((self.n_envs, 3))
 
     def _read_state_for_devices(self) -> dict[str, Any]:
         return {
@@ -404,16 +455,29 @@ class VectorizedGenesisBackend:
     def _repeat(self, values: Sequence[float], rows: int) -> Any:
         return self._matrix([tuple(float(value) for value in values)] * rows)
 
-    def _env_ids_tensor(self, env_ids: tuple[int, ...] | None) -> Any | None:
+    def _env_ids_tensor(self, env_ids: Any | None) -> Any | None:
         if env_ids is None:
             return None
+        if is_tensor_like(env_ids):
+            if self.torch is not None:
+                return env_ids.to(self.config.logical_cuda_device)
+            return env_ids
         if self.torch is not None:
             return self.torch.tensor(env_ids, device=self.config.logical_cuda_device)
         return env_ids
 
-    def _normalize_env_ids(self, env_ids: Sequence[int] | None) -> tuple[int, ...] | None:
+    def _normalize_env_ids(self, env_ids: Any | None) -> Any | None:
         if env_ids is None:
             return None
+        if is_tensor_like(env_ids):
+            shape = tensor_shape(env_ids)
+            if len(shape) != 1:
+                raise ValueError("env_ids must be a 1D tensor or a sequence of integers")
+            if int(env_ids.numel()) == 0:
+                raise ValueError("env_ids must not be empty")
+            if self.torch is not None:
+                return env_ids.to(self.config.logical_cuda_device)
+            return env_ids
         normalized = tuple(int(env_id) for env_id in env_ids)
         if not normalized:
             raise ValueError("env_ids must not be empty")
@@ -422,6 +486,11 @@ class VectorizedGenesisBackend:
         if len(set(normalized)) != len(normalized):
             raise ValueError("env_ids must not contain duplicates")
         return normalized
+
+    def _env_ids_count(self, env_ids: Any) -> int:
+        if is_tensor_like(env_ids):
+            return int(env_ids.numel())
+        return len(env_ids)
 
     def _expect_shape(self, value: Any, expected: tuple[int, ...], label: str) -> None:
         shape = tensor_shape(value)
@@ -450,6 +519,8 @@ def tensor_shape(value: Any) -> tuple[int, ...]:
     shape = getattr(value, "shape", None)
     if shape is not None:
         return tuple(int(item) for item in shape)
+    if isinstance(value, list) and all(isinstance(item, (int, float, bool)) for item in value):
+        return (len(value),)
     rows = as_rows(value)
     if not rows:
         return (0,)
