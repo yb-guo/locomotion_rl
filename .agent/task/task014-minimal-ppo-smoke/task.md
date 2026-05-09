@@ -145,6 +145,7 @@ and read-only review.
 5. `005-h200-three-seed-verification.md`
 6. `006-review-and-decision.md`
 7. `007-efficiency-diagnosis-and-optimization.md`
+8. `008-action-std-reset-efficiency.md`
 
 # Log
 
@@ -223,6 +224,40 @@ and read-only review.
   - seed 2 passed, final collect throughput `20574.187580320217`,
     collect time `1.592675281688571s`, update time
     `0.04406619444489479s`.
+- 2026-05-09 Added subtask 008 for reset/fall efficiency diagnosis.
+- Reset diagnosis evidence:
+  - lowering `log_std_init` from `-0.5` to `-2.0` did not reduce
+    `fallen_count`; action noise was not the reset cause;
+  - reset-cause profile showed `reset_count=2048`,
+    `height_bad_count=2048`, `tilt_bad_count=0`;
+  - height profile showed `root_height_min=0.4272436201572418` with
+    `upright_mean=0.9985527396202087`, so the robot was upright but crossed
+    the root-height threshold;
+  - lowering `height_min` to `0.40` and `0.35` still produced
+    `height_bad_count=2048`, so threshold lowering alone was rejected;
+  - raising reset `root_z` improved collect throughput and reduced resets.
+- Root-z optimized smoke evidence:
+  - default PPO smoke CLI `root_z` changed from `0.78` to `1.10`;
+  - H200 focused tests: `11 passed in 2.77s`;
+  - H200 three-seed run dir:
+    `/root/agent_workspace/project/h200-locomotion-lab-task014-minimal-ppo-smoke/outputs/task014/minimal_ppo_smoke/h200-gpu1-rootz110-three-seed-v1`;
+  - `metrics.jsonl`: 15 rows;
+  - `config.json` records `root_z=1.1`, `height_min=0.45`,
+    `height_max=1.2`;
+  - `summary.json`: `all_seeds_passed=true`;
+  - synchronized min collect throughput:
+    `28997.905703819983 env_policy_steps_per_sec`;
+  - observed total smoke command wall time: about `48.1s`.
+- Root-z optimized per-seed final evidence:
+  - seed 0 passed, final collect throughput `46325.40749661221`,
+    `reset_count=1024`, `root_height_mean=0.8669933676719666`,
+    `upright_mean=0.9990267753601074`;
+  - seed 1 passed, final collect throughput `45960.52441677656`,
+    `reset_count=1024`, `root_height_mean=0.8671162128448486`,
+    `upright_mean=0.9990234375`;
+  - seed 2 passed, final collect throughput `44952.96445143137`,
+    `reset_count=1024`, `root_height_mean=0.8668215870857239`,
+    `upright_mean=0.9990200996398926`.
 
 # Review
 
@@ -247,4 +282,7 @@ Status: passed.
     task014 finite/value/device checks;
   - v3 metrics use synchronized CUDA timing and still exceed the 10k collect
     throughput threshold;
-  - remaining bottleneck is collect/env/reset side, not PPO update.
+  - root-z reset optimization further improved synchronized collect throughput
+    from `19381.815355781637` to `28997.905703819983`;
+  - final update reset/fall count improved from `2048` to `1024` per rollout;
+  - remaining bottleneck is still collect/env/reset side, not PPO update.

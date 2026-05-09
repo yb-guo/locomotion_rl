@@ -44,6 +44,12 @@ def test_compute_gae_known_values() -> None:
         done_count=1,
         timeout_count=0,
         fallen_count=1,
+        reset_count=1,
+        height_bad_count=0,
+        tilt_bad_count=1,
+        root_height_mean=0.8,
+        root_height_min=0.4,
+        upright_mean=1.0,
     )
 
     advantages, returns = compute_gae(batch, config)
@@ -106,6 +112,12 @@ def test_ppo_update_changes_actor_and_value_params() -> None:
         done_count=0,
         timeout_count=0,
         fallen_count=0,
+        reset_count=0,
+        height_bad_count=0,
+        tilt_bad_count=0,
+        root_height_mean=0.8,
+        root_height_min=0.8,
+        upright_mean=1.0,
     )
     advantages, returns = compute_gae(batch, config)
     actor_before = parameter_l1_sum(model.actor)

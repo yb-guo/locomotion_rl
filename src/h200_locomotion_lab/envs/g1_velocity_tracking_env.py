@@ -229,6 +229,7 @@ class G1VelocityTrackingVectorizedEnv:
         truncated = self.episode_lengths >= self.config.max_episode_steps
         done = terminated | truncated
         components = {
+            "root_height": root_height,
             "tracking_lin_vel": tracking_lin_vel,
             "tracking_yaw_rate": tracking_yaw_rate,
             "upright": upright,
@@ -305,6 +306,7 @@ class G1VelocityTrackingVectorizedEnv:
             tilt_bad_values.append(tilt_bad)
         done = [left or right for left, right in zip(terminated, truncated)]
         components = {
+            "root_height": [row[2] for row in root_pos],
             "tracking_lin_vel": tracking_lin_vel,
             "tracking_yaw_rate": tracking_yaw_rate,
             "upright": upright_values,

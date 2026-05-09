@@ -8,6 +8,27 @@ def test_parse_seeds_rejects_duplicates() -> None:
         g1_ppo_smoke.parse_seeds("0,1,0")
 
 
+def test_parse_args_accepts_log_std_init(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "g1_ppo_smoke",
+            "--log-std-init",
+            "-2.0",
+            "--height-min",
+            "0.40",
+            "--root-z",
+            "0.90",
+        ],
+    )
+
+    args = g1_ppo_smoke.parse_args()
+
+    assert args.log_std_init == -2.0
+    assert args.height_min == 0.40
+    assert args.root_z == 0.90
+
+
 def test_resolve_run_dir_stays_under_project_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
     project = g1_ppo_smoke.Path.cwd() / "project-root-for-test"
     monkeypatch.setattr(g1_ppo_smoke, "PROJECT_PREFIX", project)

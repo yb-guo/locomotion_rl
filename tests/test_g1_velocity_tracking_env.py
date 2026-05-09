@@ -48,6 +48,7 @@ def test_g1_velocity_tracking_env_step_returns_reward_done_and_components() -> N
     assert set(step.info["components"]) == {
         "tracking_lin_vel",
         "tracking_yaw_rate",
+        "root_height",
         "upright",
         "action_rate_penalty",
         "joint_deviation_penalty",

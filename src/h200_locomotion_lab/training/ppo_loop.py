@@ -79,6 +79,12 @@ class RolloutBatch:
     done_count: int
     timeout_count: int
     fallen_count: int
+    reset_count: int
+    height_bad_count: int
+    tilt_bad_count: int
+    root_height_mean: float
+    root_height_min: float
+    upright_mean: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,8 +211,13 @@ def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -
     dones: list[Any] = []
     truncated_flags: list[Any] = []
     terminated_flags: list[Any] = []
+    height_bad_flags: list[Any] = []
+    tilt_bad_flags: list[Any] = []
+    root_height_values: list[Any] = []
+    upright_values: list[Any] = []
     values: list[Any] = []
     log_probs: list[Any] = []
+    reset_count = 0
     synchronize_device(getattr(observation, "device", None))
     started = time.perf_counter()
     with torch.no_grad():
@@ -221,8 +232,18 @@ def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -
             dones.append(done)
             truncated_flags.append(transition.truncated)
             terminated_flags.append(transition.terminated)
+            components = transition.info.get("components", {})
+            if "height_bad" in components:
+                height_bad_flags.append(components["height_bad"])
+            if "tilt_bad" in components:
+                tilt_bad_flags.append(components["tilt_bad"])
+            if "root_height" in components:
+                root_height_values.append(components["root_height"])
+            if "upright" in components:
+                upright_values.append(components["upright"])
             values.append(value)
             log_probs.append(log_prob)
+            reset_count += int(transition.info.get("reset_count", 0))
             observation = transition.observation
         next_value = model.forward(observation)[1]
     synchronize_device(getattr(observation, "device", None))
@@ -254,6 +275,12 @@ def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -
         done_count=int(done_tensor.sum().item()),
         timeout_count=int(torch.stack(truncated_flags).sum().item()),
         fallen_count=int(torch.stack(terminated_flags).sum().item()),
+        reset_count=reset_count,
+        height_bad_count=sum_bool_tensors(torch, height_bad_flags),
+        tilt_bad_count=sum_bool_tensors(torch, tilt_bad_flags),
+        root_height_mean=mean_tensors(torch, root_height_values),
+        root_height_min=min_tensors(torch, root_height_values),
+        upright_mean=mean_tensors(torch, upright_values),
     )
 
 
@@ -380,6 +407,24 @@ def synchronize_device(device: Any) -> None:
         return
     torch = require_torch()
     torch.cuda.synchronize(device)
+
+
+def sum_bool_tensors(torch: Any, values: list[Any]) -> int:
+    if not values:
+        return 0
+    return int(torch.stack(values).sum().item())
+
+
+def mean_tensors(torch: Any, values: list[Any]) -> float:
+    if not values:
+        return 0.0
+    return float(torch.stack(values).float().mean().item())
+
+
+def min_tensors(torch: Any, values: list[Any]) -> float:
+    if not values:
+        return 0.0
+    return float(torch.stack(values).float().min().item())
 
 
 def tensor_device_ok(values: dict[str, Any], expected: str) -> bool:

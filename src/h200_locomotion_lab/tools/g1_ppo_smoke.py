@@ -69,6 +69,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--value-coef", type=positive_float, default=0.5)
     parser.add_argument("--entropy-coef", type=non_negative_float, default=0.0)
     parser.add_argument("--max-grad-norm", type=positive_float, default=1.0)
+    parser.add_argument("--log-std-init", type=float, default=-0.5)
+    parser.add_argument("--height-min", type=positive_float, default=0.45)
+    parser.add_argument("--height-max", type=positive_float, default=1.20)
+    parser.add_argument("--root-z", type=positive_float, default=1.10)
     parser.add_argument("--backend", default="cuda")
     parser.add_argument("--physical-gpu", default="1")
     parser.add_argument("--logical-cuda-device", default="cuda:0")
@@ -98,6 +102,7 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
         value_coef=args.value_coef,
         entropy_coef=args.entropy_coef,
         max_grad_norm=args.max_grad_norm,
+        log_std_init=args.log_std_init,
     )
     seeds = parse_seeds(args.seeds)
     run_dir = resolve_run_dir(args.output_root, args.run_id)
@@ -106,6 +111,11 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
         run_dir / "config.json",
         {
             "ppo": asdict(config),
+            "env": {
+                "height_min": args.height_min,
+                "height_max": args.height_max,
+                "root_z": args.root_z,
+            },
             "seeds": seeds,
             "backend": args.backend,
             "physical_gpu": str(args.physical_gpu),
@@ -119,9 +129,16 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
             n_envs=config.n_envs,
             backend=args.backend,
             logical_cuda_device=args.logical_cuda_device,
+            root_qpos=(0.0, 0.0, args.root_z, 1.0, 0.0, 0.0, 0.0),
         )
     )
-    env = G1VelocityTrackingVectorizedEnv(backend, G1VelocityTrackingConfig())
+    env = G1VelocityTrackingVectorizedEnv(
+        backend,
+        G1VelocityTrackingConfig(
+            height_min=args.height_min,
+            height_max=args.height_max,
+        ),
+    )
     seed_summaries = []
     checkpoints: dict[int, dict[str, Any]] = {}
     metrics_path = run_dir / "metrics.jsonl"
@@ -211,6 +228,12 @@ def run_seed(
             "done_count": batch.done_count,
             "timeout_count": batch.timeout_count,
             "fallen_count": batch.fallen_count,
+            "reset_count": batch.reset_count,
+            "height_bad_count": batch.height_bad_count,
+            "tilt_bad_count": batch.tilt_bad_count,
+            "root_height_mean": batch.root_height_mean,
+            "root_height_min": batch.root_height_min,
+            "upright_mean": batch.upright_mean,
             "policy_loss": diagnostics.policy_loss,
             "value_loss": diagnostics.value_loss,
             "entropy": diagnostics.entropy,
@@ -296,6 +319,9 @@ def assert_metric_row_ok(row: dict[str, Any]) -> None:
         "approx_kl",
         "clip_fraction",
         "grad_norm",
+        "root_height_mean",
+        "root_height_min",
+        "upright_mean",
         "collect_time_s",
         "collect_env_policy_steps_per_sec",
         "update_time_s",
