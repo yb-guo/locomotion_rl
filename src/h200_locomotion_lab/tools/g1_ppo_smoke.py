@@ -20,6 +20,7 @@ from h200_locomotion_lab.envs.g1_reset_poses import (
     leg_value_summary,
 )
 from h200_locomotion_lab.envs.vectorized_genesis_backend import (
+    ACTION_JOINT_GROUPS,
     VectorizedGenesisBackend,
     VectorizedGenesisConfig,
 )
@@ -40,6 +41,7 @@ PROJECT_PREFIX = Path("/root/agent_workspace/project")
 DEFAULT_OUTPUT_ROOT = Path("outputs/task014/minimal_ppo_smoke")
 DEFAULT_RESET_POSE = "tall_crouch"
 DEFAULT_ROOT_Z = 1.20
+COMMAND_MODES = ("vx_yaw", "standing")
 
 
 def main() -> None:
@@ -81,6 +83,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--height-min", type=positive_float, default=0.45)
     parser.add_argument("--height-max", type=positive_float, default=1.20)
     parser.add_argument("--root-z", type=positive_float, default=DEFAULT_ROOT_Z)
+    parser.add_argument("--action-scale-mult", type=positive_float, default=1.0)
+    parser.add_argument("--action-joint-group", choices=ACTION_JOINT_GROUPS, default="all")
+    parser.add_argument("--command-mode", choices=COMMAND_MODES, default="vx_yaw")
+    parser.add_argument("--base-height-target", type=positive_float, default=0.85)
+    parser.add_argument("--base-height-sigma", type=positive_float, default=0.10)
+    parser.add_argument("--base-height-reward-scale", type=non_negative_float, default=0.0)
+    parser.add_argument("--action-rate-penalty-scale", type=non_negative_float, default=0.01)
+    parser.add_argument("--joint-deviation-penalty-scale", type=non_negative_float, default=0.05)
+    parser.add_argument("--termination-penalty", type=float, default=0.0)
     parser.add_argument(
         "--default-pose",
         choices=G1_STANDING_RESET_POSE_NAMES,
@@ -122,6 +133,7 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
     default_pose = build_g1_standing_reset_pose_candidates(
         profile.control.default_angles_rad
     )[args.default_pose]
+    command_ranges = command_ranges_for_mode(args.command_mode)
     run_dir = resolve_run_dir(args.output_root, args.run_id)
     run_dir.mkdir(parents=True, exist_ok=False)
     write_json(
@@ -134,6 +146,16 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 "root_z": args.root_z,
                 "default_pose": args.default_pose,
                 "default_pose_leg_values_rad": leg_value_summary(default_pose),
+                "action_scale_mult": args.action_scale_mult,
+                "action_joint_group": args.action_joint_group,
+                "command_mode": args.command_mode,
+                "command_ranges": command_ranges,
+                "base_height_target": args.base_height_target,
+                "base_height_sigma": args.base_height_sigma,
+                "base_height_reward_scale": args.base_height_reward_scale,
+                "action_rate_penalty_scale": args.action_rate_penalty_scale,
+                "joint_deviation_penalty_scale": args.joint_deviation_penalty_scale,
+                "termination_penalty": args.termination_penalty,
             },
             "seeds": seeds,
             "backend": args.backend,
@@ -150,6 +172,8 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
             logical_cuda_device=args.logical_cuda_device,
             root_qpos=(0.0, 0.0, args.root_z, 1.0, 0.0, 0.0, 0.0),
             default_positions_rad=default_pose,
+            action_scale_mult=args.action_scale_mult,
+            action_joint_group=args.action_joint_group,
         ),
         profile=profile,
     )
@@ -158,6 +182,16 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
         G1VelocityTrackingConfig(
             height_min=args.height_min,
             height_max=args.height_max,
+            command_vx_min=command_ranges["command_vx_min"],
+            command_vx_max=command_ranges["command_vx_max"],
+            command_yaw_min=command_ranges["command_yaw_min"],
+            command_yaw_max=command_ranges["command_yaw_max"],
+            base_height_target=args.base_height_target,
+            base_height_sigma=args.base_height_sigma,
+            base_height_reward_scale=args.base_height_reward_scale,
+            action_rate_penalty_scale=args.action_rate_penalty_scale,
+            joint_deviation_penalty_scale=args.joint_deviation_penalty_scale,
+            termination_penalty=args.termination_penalty,
         ),
     )
     seed_summaries = []
@@ -363,6 +397,24 @@ def parse_seeds(raw: str) -> list[int]:
     if len(set(seeds)) != len(seeds):
         raise argparse.ArgumentTypeError("seeds must be unique")
     return seeds
+
+
+def command_ranges_for_mode(mode: str) -> dict[str, float]:
+    if mode == "vx_yaw":
+        return {
+            "command_vx_min": 0.0,
+            "command_vx_max": 0.8,
+            "command_yaw_min": -0.5,
+            "command_yaw_max": 0.5,
+        }
+    if mode == "standing":
+        return {
+            "command_vx_min": 0.0,
+            "command_vx_max": 0.0,
+            "command_yaw_min": 0.0,
+            "command_yaw_max": 0.0,
+        }
+    raise ValueError(f"unknown command mode: {mode}")
 
 
 def write_json(path: Path, data: dict[str, Any]) -> None:

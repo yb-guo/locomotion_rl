@@ -51,6 +51,59 @@ def test_vectorized_genesis_backend_steps_action_batch_and_reports_info() -> Non
     assert backend.robot.positions[0][6] == pytest.approx(expected_first_target)
 
 
+def test_vectorized_genesis_backend_applies_action_scale_multiplier() -> None:
+    backend = VectorizedGenesisBackend(
+        VectorizedGenesisConfig(
+            n_envs=1,
+            backend="cpu",
+            logical_cuda_device="cpu",
+            require_asset_path=False,
+            action_scale_mult=0.25,
+        ),
+        genesis_module=_FakeGenesisModule(),
+        profile=load_g1_27dof_nohand_profile(),
+    )
+    backend.reset()
+
+    backend.step([[1.0] * backend.action_dim])
+
+    expected_first_target = (
+        backend.default_positions_values[0] + 0.25 * backend.profile.control.action_scales_rad[0]
+    )
+    assert backend.robot.positions[0][6] == pytest.approx(expected_first_target)
+
+    backend.set_action_scale_mult(0.5)
+    backend.step([[1.0] * backend.action_dim])
+
+    expected_second_target = (
+        backend.default_positions_values[0] + 0.5 * backend.profile.control.action_scales_rad[0]
+    )
+    assert backend.robot.positions[0][6] == pytest.approx(expected_second_target)
+
+
+def test_vectorized_genesis_backend_can_freeze_non_leg_action_targets() -> None:
+    backend = VectorizedGenesisBackend(
+        VectorizedGenesisConfig(
+            n_envs=1,
+            backend="cpu",
+            logical_cuda_device="cpu",
+            require_asset_path=False,
+            action_joint_group="legs",
+        ),
+        genesis_module=_FakeGenesisModule(),
+        profile=load_g1_27dof_nohand_profile(),
+    )
+    backend.reset()
+
+    backend.step([[1.0] * backend.action_dim])
+
+    waist_action_index = backend.profile.actuator_order.index("waist_yaw_joint")
+    waist_dof_index = backend.motor_dof_indices[waist_action_index]
+    assert backend.robot.positions[0][waist_dof_index] == pytest.approx(
+        backend.default_positions_values[waist_action_index]
+    )
+
+
 def test_vectorized_genesis_backend_rejects_wrong_action_shape() -> None:
     backend = _make_backend(n_envs=2)
 

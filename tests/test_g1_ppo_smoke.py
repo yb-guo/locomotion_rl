@@ -21,6 +21,16 @@ def test_parse_args_accepts_log_std_init(monkeypatch: pytest.MonkeyPatch) -> Non
             "0.90",
             "--default-pose",
             "profile",
+            "--action-scale-mult",
+            "0.25",
+            "--action-joint-group",
+            "legs",
+            "--command-mode",
+            "standing",
+            "--base-height-reward-scale",
+            "0.5",
+            "--termination-penalty",
+            "-5.0",
         ],
     )
 
@@ -30,6 +40,11 @@ def test_parse_args_accepts_log_std_init(monkeypatch: pytest.MonkeyPatch) -> Non
     assert args.height_min == 0.40
     assert args.root_z == 0.90
     assert args.default_pose == "profile"
+    assert args.action_scale_mult == 0.25
+    assert args.action_joint_group == "legs"
+    assert args.command_mode == "standing"
+    assert args.base_height_reward_scale == 0.5
+    assert args.termination_penalty == -5.0
 
 
 def test_parse_args_defaults_to_stable_tall_crouch_pose(
@@ -60,6 +75,16 @@ def test_resolve_run_dir_rejects_non_project_path(
 
     with pytest.raises(RuntimeError, match="output path must stay under"):
         g1_ppo_smoke.resolve_run_dir(g1_ppo_smoke.Path.cwd() / "elsewhere", "run-a")
+
+
+def test_command_ranges_for_mode() -> None:
+    assert g1_ppo_smoke.command_ranges_for_mode("standing") == {
+        "command_vx_min": 0.0,
+        "command_vx_max": 0.0,
+        "command_yaw_min": 0.0,
+        "command_yaw_max": 0.0,
+    }
+    assert g1_ppo_smoke.command_ranges_for_mode("vx_yaw")["command_vx_max"] == 0.8
 
 
 def test_metric_row_rejects_non_finite_value() -> None:

@@ -12,8 +12,20 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from h200_locomotion_lab.robots import (
+    G1_27DOF_NOHAND_ACTUATOR_ORDER,
     G1NoHandGenesisTrainingProfile,
     load_g1_27dof_nohand_profile,
+)
+
+
+ACTION_JOINT_GROUPS = ("all", "legs", "legs_waist")
+LEG_JOINT_SUFFIXES = (
+    "_hip_pitch_joint",
+    "_hip_roll_joint",
+    "_hip_yaw_joint",
+    "_knee_joint",
+    "_ankle_pitch_joint",
+    "_ankle_roll_joint",
 )
 
 
@@ -38,6 +50,8 @@ class VectorizedGenesisConfig:
         0.0,
     )
     default_positions_rad: tuple[float, ...] | None = None
+    action_scale_mult: float = 1.0
+    action_joint_group: str = "all"
     require_asset_path: bool = True
 
     def __post_init__(self) -> None:
@@ -47,6 +61,10 @@ class VectorizedGenesisConfig:
             raise ValueError("CUDA backend expects logical_cuda_device=cuda:0")
         if self.default_positions_rad is not None and len(self.default_positions_rad) != 27:
             raise ValueError("default_positions_rad must have length 27")
+        if self.action_scale_mult <= 0.0:
+            raise ValueError("action_scale_mult must be positive")
+        if self.action_joint_group not in ACTION_JOINT_GROUPS:
+            raise ValueError(f"action_joint_group must be one of {ACTION_JOINT_GROUPS}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,7 +135,13 @@ class VectorizedGenesisBackend:
             )
         )
         self.default_positions = self._vector(self.default_positions_values)
-        self.action_scales = self._vector(self.profile.control.action_scales_rad)
+        self.action_scale_mult = float(self.config.action_scale_mult)
+        self.action_joint_group = self.config.action_joint_group
+        self.action_scale_values = self._scaled_action_values(
+            self.action_scale_mult,
+            self.action_joint_group,
+        )
+        self.action_scales = self._vector(self.action_scale_values)
         self.previous_action = self._zeros((self.config.n_envs, self.action_dim))
         self.step_count = 0
 
@@ -159,6 +183,27 @@ class VectorizedGenesisBackend:
                 raise ValueError(f"default_positions_rad must have length {self.action_dim}")
             self.default_positions_values = default_values
             self.default_positions = self._vector(default_values)
+
+    def set_action_scale_mult(
+        self,
+        action_scale_mult: float,
+        *,
+        action_joint_group: str | None = None,
+    ) -> None:
+        """Update normalized-action-to-joint-target scale without rebuilding Genesis."""
+
+        if action_scale_mult <= 0.0:
+            raise ValueError("action_scale_mult must be positive")
+        next_group = action_joint_group or self.action_joint_group
+        if next_group not in ACTION_JOINT_GROUPS:
+            raise ValueError(f"action_joint_group must be one of {ACTION_JOINT_GROUPS}")
+        self.action_scale_mult = float(action_scale_mult)
+        self.action_joint_group = next_group
+        self.action_scale_values = self._scaled_action_values(
+            self.action_scale_mult,
+            self.action_joint_group,
+        )
+        self.action_scales = self._vector(self.action_scale_values)
 
     def step_physics(self, action: Any) -> Any:
         """Apply one action batch and advance one policy frame without building obs."""
@@ -321,11 +366,39 @@ class VectorizedGenesisBackend:
                 for default, delta, scale in zip(
                     self.default_positions_values,
                     row,
-                    self.profile.control.action_scales_rad,
+                    self.action_scale_values,
                 )
             ]
             for row in action
         ]
+
+    def _scaled_action_values(
+        self,
+        action_scale_mult: float,
+        action_joint_group: str,
+    ) -> tuple[float, ...]:
+        mask = self._action_group_mask(action_joint_group)
+        return tuple(
+            float(value) * action_scale_mult * group_scale
+            for value, group_scale in zip(self.profile.control.action_scales_rad, mask)
+        )
+
+    def _action_group_mask(self, action_joint_group: str) -> tuple[float, ...]:
+        if action_joint_group == "all":
+            return (1.0,) * self.action_dim
+        values: list[float] = []
+        for joint_name in self.profile.actuator_order:
+            is_leg = joint_name.startswith(("left_", "right_")) and joint_name.endswith(
+                LEG_JOINT_SUFFIXES
+            )
+            is_waist = joint_name == "waist_yaw_joint"
+            if is_leg or (action_joint_group == "legs_waist" and is_waist):
+                values.append(1.0)
+            else:
+                values.append(0.0)
+        if tuple(self.profile.actuator_order) != G1_27DOF_NOHAND_ACTUATOR_ORDER:
+            raise ValueError("unexpected G1 27DoF actuator order")
+        return tuple(values)
 
     def _control_dofs_position(self, targets: Any) -> None:
         try:

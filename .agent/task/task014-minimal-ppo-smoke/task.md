@@ -147,6 +147,7 @@ and read-only review.
 7. `007-efficiency-diagnosis-and-optimization.md`
 8. `008-action-std-reset-efficiency.md`
 9. `009-standing-reset-pose-search.md`
+10. `010-action-scale-standing-curriculum.md`
 
 # Log
 
@@ -290,6 +291,33 @@ and read-only review.
   - final update tilt counts: all `0`;
   - remaining resets are height threshold resets from the untrained stochastic
     policy, not passive standing-pose tilt.
+- 2026-05-09 Added subtask 010 for action scale, standing curriculum, and
+  long-horizon height-reset diagnosis.
+- Action-safety evidence:
+  - added `action_scale_mult`, `action_joint_group`, `command_mode`,
+    base-height reward, and termination-penalty knobs;
+  - added probe CLI:
+    `src/h200_locomotion_lab/tools/g1_policy_action_safety_probe.py`;
+  - H200 focused tests: `30 passed in 0.32s`;
+  - H200 action-safety sweep run dir:
+    `/root/agent_workspace/project/h200-locomotion-lab-task014-minimal-ppo-smoke/outputs/task014/policy_action_safety_probe/h200-gpu1-action-safety-sweep-v2`;
+  - baseline first rollout `action_scale_mult=1.0`, `log_std_init=-0.5`,
+    `command_mode=vx_yaw`: `reset_count=869`;
+  - first rollout `action_scale_mult=0.25`, `log_std_init=-0.5`,
+    `command_mode=vx_yaw`: `reset_count=0`;
+  - H200 PPO smoke variants for smaller action scale, lower log std,
+    standing command mode, base-height reward, termination penalty,
+    higher root-z/height-max, and legs-only action group still reached
+    final-update `reset_count=1024`.
+- Long-horizon zero-action evidence:
+  - run dir:
+    `/root/agent_workspace/project/h200-locomotion-lab-task014-minimal-ppo-smoke/outputs/task014/standing_reset_pose_probe/h200-gpu1-standing-tall-rootz120-160step-v1`;
+  - `pose=tall_crouch`, `root_z=1.20`, `steps=160`;
+  - `reset_count=4096`, `height_bad_count=4096`, `tilt_bad_count=0`;
+  - `root_height_min=0.404991090297699`,
+    `upright_mean=0.9964646697044373`;
+  - conclusion: the remaining reset issue is long-horizon standing-height
+    threshold/settling, not initial policy action noise.
 
 # Review
 
@@ -325,3 +353,9 @@ Status: passed.
   - the PPO smoke still has height resets under random policy actions, so the
     next diagnosis should target policy action scale/control cost/reset
     interaction rather than another passive standing pose sweep.
+- Action-safety review:
+  - action scale reduction fixes the first-rollout random-action reset symptom
+    but not the 5-rollout PPO smoke reset symptom;
+  - long-horizon zero-action control reproduces height resets with no tilt
+    failure, so the next task should calibrate height termination or find a
+    true long-horizon stable standing pose before further PPO tuning.
