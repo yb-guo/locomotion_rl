@@ -217,7 +217,9 @@ def run_seed(
             "approx_kl": diagnostics.approx_kl,
             "clip_fraction": diagnostics.clip_fraction,
             "grad_norm": diagnostics.grad_norm,
+            "collect_time_s": batch.collect_time_s,
             "collect_env_policy_steps_per_sec": collect_rate,
+            "update_time_s": diagnostics.update_time_s,
             "update_samples_per_sec": diagnostics.update_samples_per_sec,
             "tensor_device_ok": device_ok,
         }
@@ -294,7 +296,9 @@ def assert_metric_row_ok(row: dict[str, Any]) -> None:
         "approx_kl",
         "clip_fraction",
         "grad_norm",
+        "collect_time_s",
         "collect_env_policy_steps_per_sec",
+        "update_time_s",
         "update_samples_per_sec",
     )
     for key in finite_keys:

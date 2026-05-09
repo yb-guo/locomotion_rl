@@ -144,6 +144,7 @@ and read-only review.
 4. `004-h200-smoke-cli-and-artifacts.md`
 5. `005-h200-three-seed-verification.md`
 6. `006-review-and-decision.md`
+7. `007-efficiency-diagnosis-and-optimization.md`
 
 # Log
 
@@ -194,6 +195,34 @@ and read-only review.
   - Genesis/MJCF warned on `floating_base_joint` actuator parse;
   - Genesis warned on expected G1 link mass/COM geometry estimates.
   None blocked task014 smoke acceptance.
+- 2026-05-09 Added subtask 007 for efficiency diagnosis and trainer-local
+  optimization.
+- Efficiency hypotheses tested:
+  - CUDA timing needed synchronization to report real collect/update time;
+  - rollout finite checks were better batched after rollout stack;
+  - PPO metric scalar conversion was better batched after minibatches;
+  - fall/reset frequency remains visible but was not changed in task014.
+- Optimized PPO smoke evidence:
+  - H200 focused tests: `10 passed in 4.73s`;
+  - H200 smoke run dir:
+    `/root/agent_workspace/project/h200-locomotion-lab-task014-minimal-ppo-smoke/outputs/task014/minimal_ppo_smoke/h200-gpu1-three-seed-v3`;
+  - `metrics.jsonl`: 15 rows, now including `collect_time_s` and
+    `update_time_s`;
+  - `summary.json`: `all_seeds_passed=true`;
+  - synchronized min collect throughput:
+    `19381.815355781637 env_policy_steps_per_sec`;
+  - observed total smoke command wall time improved from about `73.3s` in v2
+    to about `53.6s` in v3.
+- Optimized per-seed final evidence:
+  - seed 0 passed, final collect throughput `29075.040446951498`,
+    collect time `1.1270147692412138s`, update time
+    `0.043640587478876114s`;
+  - seed 1 passed, final collect throughput `19381.815355781637`,
+    collect time `1.6906569069251418s`, update time
+    `0.044599851593375206s`;
+  - seed 2 passed, final collect throughput `20574.187580320217`,
+    collect time `1.592675281688571s`, update time
+    `0.04406619444489479s`.
 
 # Review
 
@@ -213,3 +242,9 @@ Status: passed.
   - no LocoFormer, SONIC, ONNX, planner, render/GIF path used by smoke;
   - no download path added;
   - no write/delete under `/mnt/workspace` or `/mnt/workspace1`.
+- Efficiency review:
+  - trainer-local synchronization overhead was reduced without relaxing
+    task014 finite/value/device checks;
+  - v3 metrics use synchronized CUDA timing and still exceed the 10k collect
+    throughput threshold;
+  - remaining bottleneck is collect/env/reset side, not PPO update.

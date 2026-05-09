@@ -207,25 +207,14 @@ def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -
     terminated_flags: list[Any] = []
     values: list[Any] = []
     log_probs: list[Any] = []
-    finite_checks: dict[str, list[Any]] = {
-        "observation": [],
-        "action": [],
-        "reward": [],
-        "value": [],
-        "log_prob": [],
-    }
+    synchronize_device(getattr(observation, "device", None))
     started = time.perf_counter()
     with torch.no_grad():
         for _ in range(config.rollout_steps):
-            finite_checks["observation"].append(torch.isfinite(observation).all())
             action, log_prob, value, _entropy = model.act(observation)
-            finite_checks["action"].append(torch.isfinite(action).all())
-            finite_checks["log_prob"].append(torch.isfinite(log_prob).all())
-            finite_checks["value"].append(torch.isfinite(value).all())
             transition = env.step(action)
             reward = transition.reward
             done = transition.done
-            finite_checks["reward"].append(torch.isfinite(reward).all())
             observations.append(observation)
             actions.append(action)
             rewards.append(reward)
@@ -236,19 +225,27 @@ def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -
             log_probs.append(log_prob)
             observation = transition.observation
         next_value = model.forward(observation)[1]
+    synchronize_device(getattr(observation, "device", None))
     collect_time_s = time.perf_counter() - started
-    for label, checks in finite_checks.items():
-        assert_finite_flags(torch.stack(checks), label)
+    observation_tensor = torch.stack(observations)
+    action_tensor = torch.stack(actions)
     reward_tensor = torch.stack(rewards)
     done_tensor = torch.stack(dones)
+    value_tensor = torch.stack(values)
+    log_prob_tensor = torch.stack(log_probs)
+    assert_finite_tensor(observation_tensor, "observation")
+    assert_finite_tensor(action_tensor, "action")
+    assert_finite_tensor(reward_tensor, "reward")
+    assert_finite_tensor(value_tensor, "value")
+    assert_finite_tensor(log_prob_tensor, "log_prob")
     env_steps = config.rollout_steps * config.n_envs
     return RolloutBatch(
-        observations=torch.stack(observations),
-        actions=torch.stack(actions),
+        observations=observation_tensor,
+        actions=action_tensor,
         rewards=reward_tensor,
         dones=done_tensor,
-        values=torch.stack(values),
-        log_probs=torch.stack(log_probs),
+        values=value_tensor,
+        log_probs=log_prob_tensor,
         next_observation=observation,
         next_value=next_value,
         collect_time_s=collect_time_s,
@@ -285,7 +282,6 @@ def ppo_update(
     config: PPOConfig,
 ) -> PPODiagnostics:
     torch = require_torch()
-    started = time.perf_counter()
     flat_observations = batch.observations.reshape(-1, config.obs_dim)
     flat_actions = batch.actions.reshape(-1, config.action_dim)
     flat_old_log_probs = batch.log_probs.reshape(-1)
@@ -294,18 +290,22 @@ def ppo_update(
     flat_advantages = (flat_advantages - flat_advantages.mean()) / (
         flat_advantages.std(unbiased=False) + 1e-8
     )
+    device = flat_observations.device
+    synchronize_device(device)
+    started = time.perf_counter()
     batch_size = flat_observations.shape[0]
     metric_sums = {
-        "policy_loss": 0.0,
-        "value_loss": 0.0,
-        "entropy": 0.0,
-        "approx_kl": 0.0,
-        "clip_fraction": 0.0,
-        "grad_norm": 0.0,
+        "policy_loss": torch.zeros((), device=device),
+        "value_loss": torch.zeros((), device=device),
+        "entropy": torch.zeros((), device=device),
+        "approx_kl": torch.zeros((), device=device),
+        "clip_fraction": torch.zeros((), device=device),
+        "grad_norm": torch.zeros((), device=device),
     }
+    finite_loss_flags: list[Any] = []
     minibatches = 0
     for _epoch in range(config.epochs):
-        indices = torch.randperm(batch_size, device=flat_observations.device)
+        indices = torch.randperm(batch_size, device=device)
         for start in range(0, batch_size, config.minibatch_size):
             minibatch = indices[start : start + config.minibatch_size]
             new_log_prob, entropy, value = model.evaluate_actions(
@@ -323,7 +323,7 @@ def ppo_update(
             value_loss = 0.5 * (value - flat_returns[minibatch]).square().mean()
             entropy_mean = entropy.mean()
             loss = policy_loss + config.value_coef * value_loss - config.entropy_coef * entropy_mean
-            assert_finite_tensor(loss, "ppo_loss")
+            finite_loss_flags.append(torch.isfinite(loss.detach()))
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
@@ -331,23 +331,25 @@ def ppo_update(
             with torch.no_grad():
                 approx_kl = ((ratio - 1.0) - log_ratio).mean()
                 clip_fraction = ((ratio - 1.0).abs() > config.clip).float().mean()
-            metric_sums["policy_loss"] += float(policy_loss.item())
-            metric_sums["value_loss"] += float(value_loss.item())
-            metric_sums["entropy"] += float(entropy_mean.item())
-            metric_sums["approx_kl"] += float(approx_kl.item())
-            metric_sums["clip_fraction"] += float(clip_fraction.item())
-            metric_sums["grad_norm"] += float(grad_norm.item())
+                metric_sums["policy_loss"] += policy_loss.detach()
+                metric_sums["value_loss"] += value_loss.detach()
+                metric_sums["entropy"] += entropy_mean.detach()
+                metric_sums["approx_kl"] += approx_kl.detach()
+                metric_sums["clip_fraction"] += clip_fraction.detach()
+                metric_sums["grad_norm"] += grad_norm.detach()
             minibatches += 1
+    assert_finite_flags(torch.stack(finite_loss_flags), "ppo_loss")
+    synchronize_device(device)
     update_time_s = time.perf_counter() - started
     scale = 1.0 / max(1, minibatches)
     samples = batch_size * config.epochs
     return PPODiagnostics(
-        policy_loss=metric_sums["policy_loss"] * scale,
-        value_loss=metric_sums["value_loss"] * scale,
-        entropy=metric_sums["entropy"] * scale,
-        approx_kl=metric_sums["approx_kl"] * scale,
-        clip_fraction=metric_sums["clip_fraction"] * scale,
-        grad_norm=metric_sums["grad_norm"] * scale,
+        policy_loss=float((metric_sums["policy_loss"] * scale).item()),
+        value_loss=float((metric_sums["value_loss"] * scale).item()),
+        entropy=float((metric_sums["entropy"] * scale).item()),
+        approx_kl=float((metric_sums["approx_kl"] * scale).item()),
+        clip_fraction=float((metric_sums["clip_fraction"] * scale).item()),
+        grad_norm=float((metric_sums["grad_norm"] * scale).item()),
         update_time_s=update_time_s,
         update_samples_per_sec=samples / update_time_s if update_time_s > 0.0 else 0.0,
     )
@@ -369,6 +371,15 @@ def assert_finite_tensor(value: Any, label: str) -> None:
 def assert_finite_flags(flags: Any, label: str) -> None:
     if not flags.all():
         raise ValueError(f"{label} contains NaN or Inf")
+
+
+def synchronize_device(device: Any) -> None:
+    if device is None:
+        return
+    if getattr(device, "type", None) != "cuda":
+        return
+    torch = require_torch()
+    torch.cuda.synchronize(device)
 
 
 def tensor_device_ok(values: dict[str, Any], expected: str) -> bool:
