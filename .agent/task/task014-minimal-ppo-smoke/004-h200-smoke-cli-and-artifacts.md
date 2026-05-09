@@ -43,8 +43,31 @@ Add the H200-facing PPO smoke CLI and artifact writer.
 
 ## Log
 
-Pending implementation.
+- 2026-05-09 Added CLI:
+  `python -m h200_locomotion_lab.tools.g1_ppo_smoke`.
+- CLI defaults match task014:
+  - `1024` envs;
+  - `32` rollout steps;
+  - `5` PPO updates;
+  - seeds `0,1,2`;
+  - `epochs=2`;
+  - `minibatch_size=8192`.
+- CUDA guard enforces:
+  - `CUDA_VISIBLE_DEVICES=1`;
+  - one visible CUDA device;
+  - `logical_cuda_device=cuda:0`.
+- Output guard enforces run dirs under
+  `/root/agent_workspace/project`.
+- H200 run created:
+  - `config.json` (`567` bytes);
+  - `metrics.jsonl` (`7.0K`, 15 rows);
+  - `summary.json` (`2.9K`);
+  - `final_checkpoint.pt` (`2.2M`).
 
 ## Review
 
-Status: pending.
+Status: passed.
+
+- CLI produces only task014 smoke artifacts and does not enter render, GIF,
+  SONIC, ONNX, planner, or download paths.
+- Path guard rejects outputs outside `/root/agent_workspace/project`.

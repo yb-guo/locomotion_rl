@@ -150,7 +150,66 @@ and read-only review.
 - 2026-05-09 Created task014 branch/worktree from `master` commit `7617e96`.
 - Created task014 closed-loop docs from task13 evidence and task14 planning
   decisions.
+- 2026-05-09 Implemented minimal PPO smoke loop:
+  - reusable PPO core in `src/h200_locomotion_lab/training/ppo_loop.py`;
+  - H200 CLI in `src/h200_locomotion_lab/tools/g1_ppo_smoke.py`;
+  - focused tests in `tests/test_ppo_loop.py` and
+    `tests/test_g1_ppo_smoke.py`.
+- Batched rollout finite checks and terminal counters so the smoke loop avoids
+  per-step diagnostic `.item()` GPU syncs.
+- Local verification:
+  - `PYTHONPATH=src python -m pytest tests/test_ppo_loop.py tests/test_g1_ppo_smoke.py -q -p no:cacheprovider`
+    passed: `6 passed, 4 skipped`;
+  - `PYTHONPATH=src python -m pytest -q -p no:cacheprovider`
+    passed: `178 passed, 4 skipped`.
+- H200 focused verification:
+  - guarded command under
+    `/root/agent_workspace/project/h200-locomotion-lab-task014-minimal-ppo-smoke`;
+  - result after final PPO core revision: `10 passed in 14.21s`.
+- H200 PPO smoke:
+  - command used `CUDA_VISIBLE_DEVICES=1`;
+  - recorded `physical_gpu=1` and `logical_cuda_device=cuda:0`;
+  - seeds `0,1,2`;
+  - `n_envs=1024`, `rollout_steps=32`, `ppo_updates=5`;
+  - run dir:
+    `/root/agent_workspace/project/h200-locomotion-lab-task014-minimal-ppo-smoke/outputs/task014/minimal_ppo_smoke/h200-gpu1-three-seed-v2`;
+  - output files: `config.json`, `metrics.jsonl`, `summary.json`,
+    `final_checkpoint.pt`;
+  - `metrics.jsonl`: 15 rows;
+  - `summary.json`: `all_seeds_passed=true`;
+  - min collect throughput:
+    `12201.757460784085 env_policy_steps_per_sec`.
+- Per-seed final evidence:
+  - seed 0 passed, actor/value changed, final reward mean
+    `1.4817044734954834`, min collect throughput
+    `12246.350717997004`;
+  - seed 1 passed, actor/value changed, final reward mean
+    `1.4735194444656372`, min collect throughput
+    `17392.21648739249`;
+  - seed 2 passed, actor/value changed, final reward mean
+    `1.479083776473999`, min collect throughput
+    `12201.757460784085`.
+- Warnings observed:
+  - Genesis warned torch `<2.8.0` is unsupported;
+  - Genesis/MJCF warned on `floating_base_joint` actuator parse;
+  - Genesis warned on expected G1 link mass/COM geometry estimates.
+  None blocked task014 smoke acceptance.
 
 # Review
 
-Status: pending.
+Status: passed.
+
+- Acceptance met:
+  - local full pytest passes without hard torch import;
+  - torch-dependent tests use `pytest.importorskip("torch")`;
+  - H200 focused tests pass with torch/CUDA;
+  - H200 PPO smoke passes all 3 seeds;
+  - tensors report `cuda:0`;
+  - actor/value params changed for every seed;
+  - all collect throughput values exceeded `10000`;
+  - artifacts stayed under `/root/agent_workspace/project/.../outputs/task014`.
+- Boundary review:
+  - no `GenesisG1SceneBackend` changes;
+  - no LocoFormer, SONIC, ONNX, planner, render/GIF path used by smoke;
+  - no download path added;
+  - no write/delete under `/mnt/workspace` or `/mnt/workspace1`.

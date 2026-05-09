@@ -38,8 +38,29 @@ policy/trainer internals.
 
 ## Log
 
-Pending implementation.
+- 2026-05-09 Added separate MLP actor and value networks:
+  - obs dim `90`;
+  - action dim `27`;
+  - hidden layers `2x128`;
+  - `Tanh` activations;
+  - learned `log_std`.
+- Added rollout collection for:
+  - observations `[steps, n_envs, 90]`;
+  - actions `[steps, n_envs, 27]`;
+  - rewards/dones/values/log_probs `[steps, n_envs]`;
+  - next observation and next value for bootstrap.
+- H200 smoke confirmed tensor device residency with
+  `tensor_device_ok=true` in every metrics row.
+- Collection throughput was recorded separately from update throughput in
+  `metrics.jsonl`.
+- Rollout diagnostics aggregate finite and terminal flags after the rollout
+  instead of synchronizing once per simulation step.
 
 ## Review
 
-Status: pending.
+Status: passed.
+
+- Actor/value and rollout tensors match the task013 env contract.
+- Actions are tanh-squashed to `[-1, 1]` before env step.
+- No rollout storage path forced per-step CPU conversion before PPO math;
+  scalar diagnostics are converted at rollout/update reporting boundaries.

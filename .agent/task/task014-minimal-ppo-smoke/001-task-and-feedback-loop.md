@@ -37,8 +37,22 @@ implementation.
 
 ## Log
 
-Pending implementation.
+- 2026-05-09 Confirmed branch/worktree:
+  `codex/task014-minimal-ppo-smoke` at
+  `../_worktrees/h200-locomotion-lab-task014-minimal-ppo-smoke`.
+- Read `.agent/index.md` and task014 stop rules before implementation.
+- Used task013 env contract as upstream input:
+  `G1VelocityTrackingVectorizedEnv` with 90D observation and 27D action.
+- Established local loop and H200 loop:
+  - local focused tests for PPO and CLI boundaries;
+  - local full pytest;
+  - H200 focused pytest;
+  - H200 3-seed PPO smoke on physical GPU 1.
 
 ## Review
 
-Status: pending.
+Status: passed.
+
+- Feedback loop was sufficient to catch local no-torch import regressions before
+  H200 execution.
+- H200 stop rule was honored through guarded commands and project-only output.

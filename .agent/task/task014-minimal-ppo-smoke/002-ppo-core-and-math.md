@@ -46,8 +46,34 @@ Implement reusable PPO math with a small, testable seam.
 
 ## Log
 
-Pending implementation.
+- 2026-05-09 Replaced placeholder PPO loop with reusable core:
+  - `PPOConfig`, `RolloutBatch`, `PPODiagnostics`;
+  - separate actor/value construction helper;
+  - tanh Gaussian sampling and corrected log-prob;
+  - GAE and returns;
+  - clipped PPO objective, value loss, entropy, approx KL, clip fraction, and
+    grad norm.
+- Kept torch import lazy through `require_torch()`.
+- Batched finite checks and terminal counters at rollout granularity to avoid
+  per-step diagnostic `.item()` synchronization.
+- Added focused tests:
+  - no-torch module import;
+  - config validation;
+  - known-value GAE;
+  - finite tanh log-prob near action bounds;
+  - actor/value output shapes;
+  - one PPO update changes actor/value params.
+- Local focused result:
+  `6 passed, 4 skipped`.
+- H200 focused result:
+  `10 passed in 14.21s`.
 
 ## Review
 
-Status: pending.
+Status: passed.
+
+- GAE masks bootstrap with transition `done`, which is the expected contract
+  for an auto-reset vectorized env.
+- Tanh log-prob clamps action inversion and stays finite near bounds.
+- PPO update keeps minibatch tensors on the source device and performs no
+  intentional CPU sync inside minibatch math beyond final scalar diagnostics.

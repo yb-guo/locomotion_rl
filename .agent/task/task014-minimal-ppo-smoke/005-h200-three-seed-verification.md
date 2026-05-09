@@ -41,8 +41,38 @@ Run the real task014 PPO smoke on H200 and record pass/fail evidence.
 
 ## Log
 
-Pending implementation.
+- 2026-05-09 Copied task014 code and docs to:
+  `/root/agent_workspace/project/h200-locomotion-lab-task014-minimal-ppo-smoke`.
+- H200 focused pytest command:
+  `/root/agent_workspace/safe_agent/run_guarded.sh bash -lc 'cd /root/agent_workspace/project/h200-locomotion-lab-task014-minimal-ppo-smoke && PYTHONPATH=src python -m pytest tests/test_ppo_loop.py tests/test_g1_ppo_smoke.py -q -p no:cacheprovider'`
+- H200 focused pytest result:
+  `10 passed in 14.21s`.
+- H200 PPO smoke command:
+  `/root/agent_workspace/safe_agent/run_guarded.sh bash -lc 'cd /root/agent_workspace/project/h200-locomotion-lab-task014-minimal-ppo-smoke && mkdir -p outputs/task014 && CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src timeout 1200 python -m h200_locomotion_lab.tools.g1_ppo_smoke --n-envs 1024 --rollout-steps 32 --ppo-updates 5 --seeds 0,1,2 --backend cuda --physical-gpu 1 --logical-cuda-device cuda:0 --run-id h200-gpu1-three-seed-v2 | tee outputs/task014/minimal_ppo_smoke_h200_stdout_v2.txt'`
+- H200 PPO smoke summary:
+  - status `ok`;
+  - all seeds passed;
+  - run dir:
+    `/root/agent_workspace/project/h200-locomotion-lab-task014-minimal-ppo-smoke/outputs/task014/minimal_ppo_smoke/h200-gpu1-three-seed-v2`;
+  - min collect throughput:
+    `12201.757460784085 env_policy_steps_per_sec`;
+  - mean final reward mean: `1.4781025648117065`.
+- Artifact check:
+  - `config.json`;
+  - `metrics.jsonl`;
+  - `summary.json`;
+  - `final_checkpoint.pt`;
+  - `metrics.jsonl` row count: `15`.
+- Warnings:
+  - Genesis torch version warning;
+  - Genesis MJCF floating base actuator parse warning;
+  - Genesis G1 mass/COM geometry estimate warnings.
+  Smoke criteria still passed.
 
 ## Review
 
-Status: pending.
+Status: passed.
+
+- No seed failed, so upstream stop rules did not block later seeds.
+- No NaN/Inf, device, parameter-change, artifact, or throughput blocker was
+  reported by the CLI.
