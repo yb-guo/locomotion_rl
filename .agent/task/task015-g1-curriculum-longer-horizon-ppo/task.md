@@ -121,6 +121,7 @@ Expected run files:
 3. `003-h200-dev-probe.md`
 4. `004-h200-three-seed-final.md`
 5. `005-review-and-decision.md`
+6. `006-long-horizon-tilt-reset-diagnosis-recommendation.md`
 
 # Log
 
@@ -156,6 +157,8 @@ Expected run files:
   - task015 passed as a runner/curriculum smoke, not as a stable locomotion
     quality claim.
 - 2026-05-09 Final read-only reviewer found no blocking issues.
+- 2026-05-09 Added subtask 006 to recommend the next diagnosis target:
+  recurring long-horizon tilt resets.
 
 # Review
 
@@ -177,3 +180,6 @@ Status: passed as longer-horizon curriculum smoke.
     on H200;
   - the next task should reduce long-horizon tilt resets, not increase the
     curriculum length.
+- Next recommendation:
+  - create a tilt-reset ablation unit that compares PPO schedule, reward
+    penalty, and curriculum range hypotheses with H200 evidence.
