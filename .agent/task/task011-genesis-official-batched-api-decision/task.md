@@ -173,8 +173,81 @@ needed.
 
 ## Result
 
-pending
+passed
+
+Decision: proceed to `VectorizedGenesisBackend`.
+
+Evidence:
+
+- Independent official batched API probe added:
+  `h200_locomotion_lab.tools.genesis_official_batched_api_probe`.
+- The probe does not modify or use `GenesisG1SceneBackend`.
+- Local verification:
+  `$env:PYTHONPATH='src'; python -m pytest -q -p no:cacheprovider`
+  -> 125 passed; focused probe tests cover 16 cases.
+- H200 guarded focused verification:
+  `PYTHONPATH=src python -m pytest tests/test_genesis_official_batched_api_probe.py -q -p no:cacheprovider`
+  -> 16 passed.
+- Remote evidence is saved under
+  `/root/agent_workspace/project/h200-locomotion-lab-task011-genesis-official-batched-api-decision/outputs/task011`.
+- Benchmark GPU isolation:
+  `CUDA_VISIBLE_DEVICES=1`, `physical_gpu=1`,
+  `logical_cuda_device=cuda:0`.
+- Franka official MJCF default path passed through `n_envs=1024`.
+- Go2 official URDF/floating-base default path passed through `n_envs=1024`.
+- G1 target default MJCF path passed through `n_envs=1024`; optional
+  `n_envs=4096` also passed.
+- Batched runs verified CUDA tensor devices, selected reset target-only
+  behavior, and no render/GIF/SONIC/ONNX/planner/PPO benchmark-loop work.
+- Follow-up G1 single-variable diagnostics at `n_envs=1024` found
+  `performance_mode=True` is not accepted by Genesis 0.4.6 `MJCF`;
+  `convexify=True` and `decimate=True` did not materially improve steady-state
+  throughput versus the default baseline.
+- Follow-up component profiling found raw `scene.step()` is the bottleneck:
+  G1 29DoF needed 4.380875s for 400 raw scene steps at `n_envs=1024`, while
+  Go2 needed 0.522974s. Action write and state read were millisecond-scale.
+- Existing simpler G1 assets were inventoried without downloads. The directly
+  runnable faster candidate is `g1_27dof_nohand.xml`, which reached
+  45827.527990 env policy steps/s at `n_envs=1024`; `g1_27dof_fakehand.xml`
+  reached 44164.266383. Several 12DoF/23DoF candidates are present but blocked
+  by existing mesh/importer issues.
+- A standalone `g1_27dof_nohand.xml` training asset profile was added for the
+  `VectorizedGenesisBackend` route:
+  `configs/robots/unitree_g1_27dof_nohand_genesis.yaml`.
+  It uses a separate loader,
+  `h200_locomotion_lab.robots.g1_27dof_nohand`, so the 29DoF SONIC robot
+  profile remains strict. The profile records the H200 guarded benchmark
+  evidence, component-profile evidence, 27D action size, and 90D observation
+  contract.
+- Focused profile verification:
+  `$env:PYTHONPATH='src'; python -m pytest tests/test_g1_27dof_nohand_profile.py tests/test_robot_profile_loader.py -q -p no:cacheprovider`
+  -> 27 passed.
 
 ## Review
 
-Status: pending.
+Status: passed.
+
+Initial read-only review found two blocking evidence gaps: floating-base
+selected reset only covered DOFs, and root velocity device was not measured.
+The probe was fixed to emit `root_vel_device` and to exercise selected root
+qpos plus selected joint reset for Go2/G1. A second read-only review found no
+blocking or important findings.
+
+Training-profile re-review addendum:
+
+- A read-only reviewer initially inspected the wrong root
+  `D:\guoyubo.9\Documents\New project 2\h200-locomotion-lab`, so those
+  findings were invalid for this task worktree.
+- A corrected read-only review against
+  `D:\guoyubo.9\Documents\New project 2\_worktrees\h200-locomotion-lab-task011-genesis-official-batched-api-decision`
+  found one blocking issue: the new 27DoF loader validated uniqueness but not
+  canonical 29DoF-derived actuator order. The loader was fixed to enforce the
+  canonical `g1_27dof_nohand.xml` actuator order and the
+  `joint_order.order` / `joint_order.derived_from` schema fields.
+- Focused verification after the fix:
+  `$env:PYTHONPATH='src'; python -m pytest tests/test_g1_27dof_nohand_profile.py tests/test_robot_profile_loader.py -q -p no:cacheprovider`
+  -> 27 passed.
+- Full local verification after the profile fix:
+  `$env:PYTHONPATH='src'; python -m pytest -q -p no:cacheprovider`
+  -> 146 passed.
+- Corrected read-only re-review after the fix found no blocking findings.
