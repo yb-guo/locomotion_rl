@@ -37,6 +37,7 @@ class VectorizedGenesisConfig:
         0.0,
         0.0,
     )
+    default_positions_rad: tuple[float, ...] | None = None
     require_asset_path: bool = True
 
     def __post_init__(self) -> None:
@@ -44,6 +45,8 @@ class VectorizedGenesisConfig:
             raise ValueError("n_envs must be positive")
         if self.backend == "cuda" and self.logical_cuda_device != "cuda:0":
             raise ValueError("CUDA backend expects logical_cuda_device=cuda:0")
+        if self.default_positions_rad is not None and len(self.default_positions_rad) != 27:
+            raise ValueError("default_positions_rad must have length 27")
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,7 +107,16 @@ class VectorizedGenesisBackend:
         self.decimation = self.profile.training_contract.decimation
         self.scene, self.robot = self._build_scene()
         self.motor_dof_indices = self._resolve_motor_dof_indices()
-        self.default_positions = self._vector(self.profile.control.default_angles_rad)
+        self.reset_root_qpos = tuple(float(value) for value in self.config.root_qpos)
+        self.default_positions_values = tuple(
+            float(value)
+            for value in (
+                self.config.default_positions_rad
+                if self.config.default_positions_rad is not None
+                else self.profile.control.default_angles_rad
+            )
+        )
+        self.default_positions = self._vector(self.default_positions_values)
         self.action_scales = self._vector(self.profile.control.action_scales_rad)
         self.previous_action = self._zeros((self.config.n_envs, self.action_dim))
         self.step_count = 0
@@ -118,8 +130,8 @@ class VectorizedGenesisBackend:
 
         selected_envs = self._normalize_env_ids(env_ids)
         target_count = self.n_envs if selected_envs is None else self._env_ids_count(selected_envs)
-        root_target = self._repeat(self.config.root_qpos, target_count)
-        motor_target = self._repeat(self.profile.control.default_angles_rad, target_count)
+        root_target = self._repeat(self.reset_root_qpos, target_count)
+        motor_target = self._repeat(self.default_positions_values, target_count)
         self._set_root_qpos(root_target, selected_envs)
         self._set_dofs_position(motor_target, selected_envs)
         self._zero_dofs_velocity(selected_envs)
@@ -127,6 +139,26 @@ class VectorizedGenesisBackend:
         if selected_envs is None:
             self.step_count = 0
         return self.observation()
+
+    def set_reset_pose(
+        self,
+        *,
+        root_qpos: Sequence[float] | None = None,
+        default_positions_rad: Sequence[float] | None = None,
+    ) -> None:
+        """Update reset targets for standing-pose probes without rebuilding Genesis."""
+
+        if root_qpos is not None:
+            root_values = tuple(float(value) for value in root_qpos)
+            if len(root_values) != 7:
+                raise ValueError("root_qpos must have length 7")
+            self.reset_root_qpos = root_values
+        if default_positions_rad is not None:
+            default_values = tuple(float(value) for value in default_positions_rad)
+            if len(default_values) != self.action_dim:
+                raise ValueError(f"default_positions_rad must have length {self.action_dim}")
+            self.default_positions_values = default_values
+            self.default_positions = self._vector(default_values)
 
     def step_physics(self, action: Any) -> Any:
         """Apply one action batch and advance one policy frame without building obs."""
@@ -287,7 +319,7 @@ class VectorizedGenesisBackend:
             [
                 default + delta * scale
                 for default, delta, scale in zip(
-                    self.profile.control.default_angles_rad,
+                    self.default_positions_values,
                     row,
                     self.profile.control.action_scales_rad,
                 )

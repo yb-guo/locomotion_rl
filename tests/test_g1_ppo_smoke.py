@@ -19,6 +19,8 @@ def test_parse_args_accepts_log_std_init(monkeypatch: pytest.MonkeyPatch) -> Non
             "0.40",
             "--root-z",
             "0.90",
+            "--default-pose",
+            "profile",
         ],
     )
 
@@ -27,6 +29,18 @@ def test_parse_args_accepts_log_std_init(monkeypatch: pytest.MonkeyPatch) -> Non
     assert args.log_std_init == -2.0
     assert args.height_min == 0.40
     assert args.root_z == 0.90
+    assert args.default_pose == "profile"
+
+
+def test_parse_args_defaults_to_stable_tall_crouch_pose(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("sys.argv", ["g1_ppo_smoke"])
+
+    args = g1_ppo_smoke.parse_args()
+
+    assert args.root_z == 1.20
+    assert args.default_pose == "tall_crouch"
 
 
 def test_resolve_run_dir_stays_under_project_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -57,7 +71,12 @@ def test_metric_row_rejects_non_finite_value() -> None:
         "approx_kl": 0.0,
         "clip_fraction": 0.0,
         "grad_norm": 0.0,
+        "root_height_mean": 1.0,
+        "root_height_min": 1.0,
+        "upright_mean": 1.0,
+        "collect_time_s": 1.0,
         "collect_env_policy_steps_per_sec": 1.0,
+        "update_time_s": 1.0,
         "update_samples_per_sec": 1.0,
         "tensor_device_ok": True,
     }

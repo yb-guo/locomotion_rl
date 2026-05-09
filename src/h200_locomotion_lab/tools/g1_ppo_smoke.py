@@ -14,10 +14,16 @@ from h200_locomotion_lab.envs.g1_velocity_tracking_env import (
     G1VelocityTrackingConfig,
     G1VelocityTrackingVectorizedEnv,
 )
+from h200_locomotion_lab.envs.g1_reset_poses import (
+    G1_STANDING_RESET_POSE_NAMES,
+    build_g1_standing_reset_pose_candidates,
+    leg_value_summary,
+)
 from h200_locomotion_lab.envs.vectorized_genesis_backend import (
     VectorizedGenesisBackend,
     VectorizedGenesisConfig,
 )
+from h200_locomotion_lab.robots import load_g1_27dof_nohand_profile
 from h200_locomotion_lab.training.ppo_loop import (
     PPOConfig,
     build_actor_critic,
@@ -32,6 +38,8 @@ from h200_locomotion_lab.training.ppo_loop import (
 
 PROJECT_PREFIX = Path("/root/agent_workspace/project")
 DEFAULT_OUTPUT_ROOT = Path("outputs/task014/minimal_ppo_smoke")
+DEFAULT_RESET_POSE = "tall_crouch"
+DEFAULT_ROOT_Z = 1.20
 
 
 def main() -> None:
@@ -72,7 +80,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log-std-init", type=float, default=-0.5)
     parser.add_argument("--height-min", type=positive_float, default=0.45)
     parser.add_argument("--height-max", type=positive_float, default=1.20)
-    parser.add_argument("--root-z", type=positive_float, default=1.10)
+    parser.add_argument("--root-z", type=positive_float, default=DEFAULT_ROOT_Z)
+    parser.add_argument(
+        "--default-pose",
+        choices=G1_STANDING_RESET_POSE_NAMES,
+        default=DEFAULT_RESET_POSE,
+    )
     parser.add_argument("--backend", default="cuda")
     parser.add_argument("--physical-gpu", default="1")
     parser.add_argument("--logical-cuda-device", default="cuda:0")
@@ -105,6 +118,10 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
         log_std_init=args.log_std_init,
     )
     seeds = parse_seeds(args.seeds)
+    profile = load_g1_27dof_nohand_profile()
+    default_pose = build_g1_standing_reset_pose_candidates(
+        profile.control.default_angles_rad
+    )[args.default_pose]
     run_dir = resolve_run_dir(args.output_root, args.run_id)
     run_dir.mkdir(parents=True, exist_ok=False)
     write_json(
@@ -115,6 +132,8 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 "height_min": args.height_min,
                 "height_max": args.height_max,
                 "root_z": args.root_z,
+                "default_pose": args.default_pose,
+                "default_pose_leg_values_rad": leg_value_summary(default_pose),
             },
             "seeds": seeds,
             "backend": args.backend,
@@ -130,7 +149,9 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
             backend=args.backend,
             logical_cuda_device=args.logical_cuda_device,
             root_qpos=(0.0, 0.0, args.root_z, 1.0, 0.0, 0.0, 0.0),
-        )
+            default_positions_rad=default_pose,
+        ),
+        profile=profile,
     )
     env = G1VelocityTrackingVectorizedEnv(
         backend,

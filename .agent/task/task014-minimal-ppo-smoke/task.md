@@ -146,6 +146,7 @@ and read-only review.
 6. `006-review-and-decision.md`
 7. `007-efficiency-diagnosis-and-optimization.md`
 8. `008-action-std-reset-efficiency.md`
+9. `009-standing-reset-pose-search.md`
 
 # Log
 
@@ -258,6 +259,37 @@ and read-only review.
   - seed 2 passed, final collect throughput `44952.96445143137`,
     `reset_count=1024`, `root_height_mean=0.8668215870857239`,
     `upright_mean=0.9990200996398926`.
+- 2026-05-09 Added subtask 009 for stable standing reset/default joint pose
+  search.
+- Standing reset pose evidence:
+  - added a zero-action probe CLI:
+    `src/h200_locomotion_lab/tools/g1_standing_reset_pose_probe.py`;
+  - added shared pose definitions:
+    `src/h200_locomotion_lab/envs/g1_reset_poses.py`;
+  - H200 default-height zero-action confirmation run dir:
+    `/root/agent_workspace/project/h200-locomotion-lab-task014-minimal-ppo-smoke/outputs/task014/standing_reset_pose_probe/h200-gpu1-standing-tall-rootz120-default-heightmax-v1`;
+  - selected `default_pose=tall_crouch`, `root_z=1.20`;
+  - leg joint values in radians:
+    `hip_pitch=-0.06`, `knee=0.12`, `ankle_pitch=-0.07`;
+  - zero-action 32-step confirmation:
+    `reset_count=0`, `height_bad_count=0`, `tilt_bad_count=0`,
+    `root_height_min=0.45437127351760864`,
+    `upright_mean=0.9968236088752747`;
+  - H200 focused tests after the reset-pose change:
+    `25 passed in 0.34s`.
+- Standing default PPO smoke evidence:
+  - default PPO smoke CLI now uses `root_z=1.20` and
+    `default_pose=tall_crouch`;
+  - H200 three-seed run dir:
+    `/root/agent_workspace/project/h200-locomotion-lab-task014-minimal-ppo-smoke/outputs/task014/minimal_ppo_smoke/h200-gpu1-standing-default-three-seed-v1`;
+  - `summary.json`: `all_seeds_passed=true`;
+  - synchronized min collect throughput:
+    `24606.65830209426 env_policy_steps_per_sec`;
+  - final update reset/fall counts: seed 0 `960`, seed 1 `962`,
+    seed 2 `948`;
+  - final update tilt counts: all `0`;
+  - remaining resets are height threshold resets from the untrained stochastic
+    policy, not passive standing-pose tilt.
 
 # Review
 
@@ -286,3 +318,10 @@ Status: passed.
     from `19381.815355781637` to `28997.905703819983`;
   - final update reset/fall count improved from `2048` to `1024` per rollout;
   - remaining bottleneck is still collect/env/reset side, not PPO update.
+- Standing reset review:
+  - `tall_crouch/root_z=1.20` is accepted as the task014 stable standing reset
+    default because the zero-action 32-step H200 probe has no reset, height
+    failure, or tilt failure under default height bounds;
+  - the PPO smoke still has height resets under random policy actions, so the
+    next diagnosis should target policy action scale/control cost/reset
+    interaction rather than another passive standing pose sweep.

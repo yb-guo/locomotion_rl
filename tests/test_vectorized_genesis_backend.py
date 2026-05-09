@@ -77,10 +77,26 @@ def test_vectorized_genesis_backend_selected_reset_changes_only_target_env() -> 
     assert backend.robot.positions[1][6:33] == pytest.approx(
         backend.profile.control.default_angles_rad
     )
-    assert backend.robot.qpos[1] == pytest.approx(backend.config.root_qpos)
+    assert backend.robot.qpos[1] == pytest.approx(backend.reset_root_qpos)
     assert backend.previous_action[0] == [1.0] * backend.action_dim
     assert backend.previous_action[1] == [0.0] * backend.action_dim
     assert backend.previous_action[2] == [1.0] * backend.action_dim
+
+
+def test_vectorized_genesis_backend_can_override_reset_pose() -> None:
+    backend = _make_backend(n_envs=2)
+    custom_defaults = tuple(0.01 * index for index in range(backend.action_dim))
+    custom_root = (0.0, 0.0, 1.1, 1.0, 0.0, 0.0, 0.0)
+
+    backend.set_reset_pose(
+        root_qpos=custom_root,
+        default_positions_rad=custom_defaults,
+    )
+    backend.reset()
+    backend.step([[0.0] * backend.action_dim for _ in range(backend.n_envs)])
+
+    assert backend.robot.qpos[0] == pytest.approx(custom_root)
+    assert backend.robot.positions[0][6:33] == pytest.approx(custom_defaults)
 
 
 def test_vectorized_genesis_backend_validates_env_ids() -> None:
