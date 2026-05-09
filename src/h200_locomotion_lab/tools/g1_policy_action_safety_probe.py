@@ -81,6 +81,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--command-modes", default=DEFAULT_COMMAND_MODES)
     parser.add_argument("--height-min", type=positive_float, default=0.45)
     parser.add_argument("--height-max", type=positive_float, default=1.20)
+    parser.add_argument("--termination-height-min", type=positive_float, default=0.20)
+    parser.add_argument("--termination-height-max", type=positive_float, default=1.20)
     parser.add_argument("--root-z", type=positive_float, default=DEFAULT_ROOT_Z)
     parser.add_argument("--default-pose", default=DEFAULT_RESET_POSE)
     parser.add_argument("--base-height-target", type=positive_float, default=0.85)
@@ -134,6 +136,8 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
             "command_modes": command_modes,
             "height_min": args.height_min,
             "height_max": args.height_max,
+            "termination_height_min": args.termination_height_min,
+            "termination_height_max": args.termination_height_max,
             "root_z": args.root_z,
             "default_pose": args.default_pose,
             "default_pose_leg_values_rad": leg_value_summary(default_pose),
@@ -233,6 +237,7 @@ def run_candidate(
         "reset_count": batch.reset_count,
         "done_count": batch.done_count,
         "height_bad_count": batch.height_bad_count,
+        "termination_height_bad_count": batch.termination_height_bad_count,
         "tilt_bad_count": batch.tilt_bad_count,
         "root_height_mean": batch.root_height_mean,
         "root_height_min": batch.root_height_min,
@@ -252,6 +257,8 @@ def build_env_config(args: argparse.Namespace, command_mode: str) -> G1VelocityT
         command_yaw_max=ranges["command_yaw_max"],
         height_min=args.height_min,
         height_max=args.height_max,
+        termination_height_min=args.termination_height_min,
+        termination_height_max=args.termination_height_max,
         base_height_target=args.base_height_target,
         base_height_sigma=args.base_height_sigma,
         base_height_reward_scale=args.base_height_reward_scale,
@@ -265,8 +272,9 @@ def choose_best_row(rows: list[dict[str, Any]]) -> dict[str, Any]:
         rows,
         key=lambda row: (
             row["reset_count"],
-            row["height_bad_count"],
+            row.get("termination_height_bad_count", row["height_bad_count"]),
             row["tilt_bad_count"],
+            row["height_bad_count"],
             -row["root_height_min"],
             -row["env_policy_steps_per_sec"],
         ),

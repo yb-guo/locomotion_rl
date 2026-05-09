@@ -17,6 +17,8 @@ def test_parse_args_accepts_log_std_init(monkeypatch: pytest.MonkeyPatch) -> Non
             "-2.0",
             "--height-min",
             "0.40",
+            "--termination-height-min",
+            "0.20",
             "--root-z",
             "0.90",
             "--default-pose",
@@ -38,6 +40,7 @@ def test_parse_args_accepts_log_std_init(monkeypatch: pytest.MonkeyPatch) -> Non
 
     assert args.log_std_init == -2.0
     assert args.height_min == 0.40
+    assert args.termination_height_min == 0.20
     assert args.root_z == 0.90
     assert args.default_pose == "profile"
     assert args.action_scale_mult == 0.25

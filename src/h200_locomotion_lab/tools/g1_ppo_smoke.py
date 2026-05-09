@@ -82,6 +82,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log-std-init", type=float, default=-0.5)
     parser.add_argument("--height-min", type=positive_float, default=0.45)
     parser.add_argument("--height-max", type=positive_float, default=1.20)
+    parser.add_argument("--termination-height-min", type=positive_float, default=0.20)
+    parser.add_argument("--termination-height-max", type=positive_float, default=1.20)
     parser.add_argument("--root-z", type=positive_float, default=DEFAULT_ROOT_Z)
     parser.add_argument("--action-scale-mult", type=positive_float, default=1.0)
     parser.add_argument("--action-joint-group", choices=ACTION_JOINT_GROUPS, default="all")
@@ -143,6 +145,8 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
             "env": {
                 "height_min": args.height_min,
                 "height_max": args.height_max,
+                "termination_height_min": args.termination_height_min,
+                "termination_height_max": args.termination_height_max,
                 "root_z": args.root_z,
                 "default_pose": args.default_pose,
                 "default_pose_leg_values_rad": leg_value_summary(default_pose),
@@ -182,6 +186,8 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
         G1VelocityTrackingConfig(
             height_min=args.height_min,
             height_max=args.height_max,
+            termination_height_min=args.termination_height_min,
+            termination_height_max=args.termination_height_max,
             command_vx_min=command_ranges["command_vx_min"],
             command_vx_max=command_ranges["command_vx_max"],
             command_yaw_min=command_ranges["command_yaw_min"],
@@ -285,6 +291,7 @@ def run_seed(
             "fallen_count": batch.fallen_count,
             "reset_count": batch.reset_count,
             "height_bad_count": batch.height_bad_count,
+            "termination_height_bad_count": batch.termination_height_bad_count,
             "tilt_bad_count": batch.tilt_bad_count,
             "root_height_mean": batch.root_height_mean,
             "root_height_min": batch.root_height_min,

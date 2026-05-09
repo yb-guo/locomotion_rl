@@ -81,6 +81,7 @@ class RolloutBatch:
     fallen_count: int
     reset_count: int
     height_bad_count: int
+    termination_height_bad_count: int
     tilt_bad_count: int
     root_height_mean: float
     root_height_min: float
@@ -212,6 +213,7 @@ def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -
     truncated_flags: list[Any] = []
     terminated_flags: list[Any] = []
     height_bad_flags: list[Any] = []
+    termination_height_bad_flags: list[Any] = []
     tilt_bad_flags: list[Any] = []
     root_height_values: list[Any] = []
     upright_values: list[Any] = []
@@ -235,6 +237,8 @@ def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -
             components = transition.info.get("components", {})
             if "height_bad" in components:
                 height_bad_flags.append(components["height_bad"])
+            if "termination_height_bad" in components:
+                termination_height_bad_flags.append(components["termination_height_bad"])
             if "tilt_bad" in components:
                 tilt_bad_flags.append(components["tilt_bad"])
             if "root_height" in components:
@@ -277,6 +281,7 @@ def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -
         fallen_count=int(torch.stack(terminated_flags).sum().item()),
         reset_count=reset_count,
         height_bad_count=sum_bool_tensors(torch, height_bad_flags),
+        termination_height_bad_count=sum_bool_tensors(torch, termination_height_bad_flags),
         tilt_bad_count=sum_bool_tensors(torch, tilt_bad_flags),
         root_height_mean=mean_tensors(torch, root_height_values),
         root_height_min=min_tensors(torch, root_height_values),

@@ -148,6 +148,7 @@ and read-only review.
 8. `008-action-std-reset-efficiency.md`
 9. `009-standing-reset-pose-search.md`
 10. `010-action-scale-standing-curriculum.md`
+11. `011-reset-semantics-calibration.md`
 
 # Log
 
@@ -318,6 +319,38 @@ and read-only review.
     `upright_mean=0.9964646697044373`;
   - conclusion: the remaining reset issue is long-horizon standing-height
     threshold/settling, not initial policy action noise.
+- 2026-05-09 Added subtask 011 for reset semantics calibration:
+  - split diagnostic standing-height band from hard height termination;
+  - added `termination_height_min` and `termination_height_max`;
+  - added `termination_height_bad_count` metrics;
+  - updated the standing reset probe to sweep hard height termination lines.
+- Reset semantics evidence:
+  - local full verification: `189 passed, 4 skipped`;
+  - H200 focused tests: `25 passed in 5.63s`;
+  - hard-height sweep run dir:
+    `/root/agent_workspace/project/h200-locomotion-lab-task014-minimal-ppo-smoke/outputs/task014/standing_reset_pose_probe/h200-gpu1-reset-semantics-512step-v1`;
+  - at `termination_height_min=0.20`, hard height resets were eliminated:
+    `termination_height_bad_count=0`;
+  - the same row still had `tilt_bad_count=10240`, so passive 512-step
+    standing still fails by upright/balance rather than height.
+- Pose/root-z 512-step sweep:
+  - run dir:
+    `/root/agent_workspace/project/h200-locomotion-lab-task014-minimal-ppo-smoke/outputs/task014/standing_reset_pose_probe/h200-gpu1-reset-pose-rootz-512step-v1`;
+  - best row was `pose=straight`, `root_z=1.20`,
+    `termination_height_bad_count=0`, `height_bad_count=0`,
+    `tilt_bad_count=10240`;
+  - no pose/root-z candidate achieved passive 512-step zero-action standing.
+- Standing PPO smoke after reset semantics split:
+  - run dir:
+    `/root/agent_workspace/project/h200-locomotion-lab-task014-minimal-ppo-smoke/outputs/task014/minimal_ppo_smoke/h200-gpu1-standing-termh020-actionscale025-three-seed-v1`;
+  - `summary.json`: `all_seeds_passed=true`;
+  - min collect throughput:
+    `24342.973420741637 env_policy_steps_per_sec`;
+  - final reset cause for seeds `0,1,2` was no longer height:
+    `termination_height_bad_count=0`, `tilt_bad_count=1024`,
+    `reset_count=1024`.
+- Did not run `vx_yaw` PPO after subtask 011, because standing mode still has
+  tilt/balance resets.
 
 # Review
 
@@ -359,3 +392,10 @@ Status: passed.
   - long-horizon zero-action control reproduces height resets with no tilt
     failure, so the next task should calibrate height termination or find a
     true long-horizon stable standing pose before further PPO tuning.
+- Reset-semantics review:
+  - `height_bad_count` is now diagnostic, and `termination_height_bad_count`
+    is the hard reset cause;
+  - `termination_height_min=0.20` removes height-caused resets in the H200
+    long-horizon and standing PPO checks;
+  - remaining resets are tilt/upright control failures, so the next task
+    should target balance/upright stabilization rather than lower height gates.

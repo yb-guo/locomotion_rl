@@ -36,6 +36,7 @@ from h200_locomotion_lab.tools.g1_ppo_smoke import (
 DEFAULT_OUTPUT_ROOT = Path("outputs/task014/standing_reset_pose_probe")
 DEFAULT_ROOT_Z_VALUES = "0.90,1.00,1.10,1.20"
 DEFAULT_POSE_CANDIDATES = ",".join(G1_STANDING_RESET_POSE_NAMES)
+DEFAULT_TERMINATION_HEIGHT_MIN_VALUES = "0.20,0.25,0.30,0.35,0.40,0.45"
 
 
 def main() -> None:
@@ -65,6 +66,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pose-candidates", default=DEFAULT_POSE_CANDIDATES)
     parser.add_argument("--height-min", type=non_negative_float, default=0.45)
     parser.add_argument("--height-max", type=positive_float, default=1.20)
+    parser.add_argument(
+        "--termination-height-min-values",
+        default=DEFAULT_TERMINATION_HEIGHT_MIN_VALUES,
+    )
+    parser.add_argument("--termination-height-max", type=positive_float, default=1.20)
     parser.add_argument("--backend", default="cuda")
     parser.add_argument("--physical-gpu", default="1")
     parser.add_argument("--logical-cuda-device", default="cuda:0")
@@ -83,6 +89,7 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
     profile = load_g1_27dof_nohand_profile()
     root_z_values = parse_float_list(args.root_z_values)
     pose_names = parse_name_list(args.pose_candidates)
+    termination_height_min_values = parse_float_list(args.termination_height_min_values)
     candidates = build_g1_standing_reset_pose_candidates(profile.control.default_angles_rad)
     missing = [name for name in pose_names if name not in candidates]
     if missing:
@@ -99,6 +106,8 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
             "pose_candidates": pose_names,
             "height_min": args.height_min,
             "height_max": args.height_max,
+            "termination_height_min_values": termination_height_min_values,
+            "termination_height_max": args.termination_height_max,
             "backend": args.backend,
             "physical_gpu": str(args.physical_gpu),
             "logical_cuda_device": args.logical_cuda_device,
@@ -117,40 +126,43 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
         ),
         profile=profile,
     )
-    env_config = G1VelocityTrackingConfig(
-        command_vx_min=0.0,
-        command_vx_max=0.0,
-        command_yaw_min=0.0,
-        command_yaw_max=0.0,
-        height_min=args.height_min,
-        height_max=args.height_max,
-    )
     zero_action = torch.zeros((args.n_envs, backend.action_dim), device=args.logical_cuda_device)
     rows: list[dict[str, Any]] = []
     rows_path = run_dir / "rows.jsonl"
     for pose_name in pose_names:
         pose = candidates[pose_name]
         for root_z in root_z_values:
-            row = run_candidate(
-                torch=torch,
-                backend=backend,
-                env_config=env_config,
-                zero_action=zero_action,
-                pose_name=pose_name,
-                pose=pose,
-                root_z=root_z,
-                steps=args.steps,
-                n_envs=args.n_envs,
-                logical_cuda_device=args.logical_cuda_device,
-            )
-            rows.append(row)
-            append_jsonl(rows_path, row)
+            for termination_height_min in termination_height_min_values:
+                env_config = G1VelocityTrackingConfig(
+                    command_vx_min=0.0,
+                    command_vx_max=0.0,
+                    command_yaw_min=0.0,
+                    command_yaw_max=0.0,
+                    height_min=args.height_min,
+                    height_max=args.height_max,
+                    termination_height_min=termination_height_min,
+                    termination_height_max=args.termination_height_max,
+                )
+                row = run_candidate(
+                    torch=torch,
+                    backend=backend,
+                    env_config=env_config,
+                    zero_action=zero_action,
+                    pose_name=pose_name,
+                    pose=pose,
+                    root_z=root_z,
+                    steps=args.steps,
+                    n_envs=args.n_envs,
+                    logical_cuda_device=args.logical_cuda_device,
+                )
+                rows.append(row)
+                append_jsonl(rows_path, row)
 
     stable_rows = [
         row
         for row in rows
         if row["reset_count"] == 0
-        and row["height_bad_count"] == 0
+        and row["termination_height_bad_count"] == 0
         and row["tilt_bad_count"] == 0
     ]
     best = choose_best_row(rows)
@@ -186,6 +198,7 @@ def run_candidate(
     reset_count = 0
     done_values: list[Any] = []
     height_bad_values: list[Any] = []
+    termination_height_bad_values: list[Any] = []
     tilt_bad_values: list[Any] = []
     root_height_values: list[Any] = []
     upright_values: list[Any] = []
@@ -197,6 +210,7 @@ def run_candidate(
         reset_count += int(transition.info["reset_count"])
         done_values.append(transition.done)
         height_bad_values.append(components["height_bad"])
+        termination_height_bad_values.append(components["termination_height_bad"])
         tilt_bad_values.append(components["tilt_bad"])
         root_height_values.append(components["root_height"])
         upright_values.append(components["upright"])
@@ -204,12 +218,17 @@ def run_candidate(
     elapsed = time.perf_counter() - started
     done_tensor = torch.stack(done_values)
     height_bad_tensor = torch.stack(height_bad_values)
+    termination_height_bad_tensor = torch.stack(termination_height_bad_values)
     tilt_bad_tensor = torch.stack(tilt_bad_values)
     root_height_tensor = torch.stack(root_height_values).float()
     upright_tensor = torch.stack(upright_values).float()
     return {
         "pose": pose_name,
         "root_z": root_z,
+        "height_min": env_config.height_min,
+        "height_max": env_config.height_max,
+        "termination_height_min": env_config.termination_height_min,
+        "termination_height_max": env_config.termination_height_max,
         "steps": steps,
         "n_envs": n_envs,
         "env_steps": steps * n_envs,
@@ -218,6 +237,7 @@ def run_candidate(
         "reset_count": reset_count,
         "done_count": int(done_tensor.sum().item()),
         "height_bad_count": int(height_bad_tensor.sum().item()),
+        "termination_height_bad_count": int(termination_height_bad_tensor.sum().item()),
         "tilt_bad_count": int(tilt_bad_tensor.sum().item()),
         "root_height_mean": float(root_height_tensor.mean().item()),
         "root_height_min": float(root_height_tensor.min().item()),
@@ -236,6 +256,7 @@ def choose_best_row(rows: list[dict[str, Any]]) -> dict[str, Any]:
         key=lambda row: (
             row["reset_count"],
             row["tilt_bad_count"],
+            row.get("termination_height_bad_count", row["height_bad_count"]),
             row["height_bad_count"],
             -row["root_height_min"],
             -row["env_policy_steps_per_sec"],

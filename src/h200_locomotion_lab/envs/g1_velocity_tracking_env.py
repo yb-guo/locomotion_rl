@@ -27,6 +27,8 @@ class G1VelocityTrackingConfig:
     command_yaw_max: float = 0.5
     height_min: float = 0.45
     height_max: float = 1.20
+    termination_height_min: float = 0.20
+    termination_height_max: float = 1.20
     min_upright: float = 0.30
     lin_vel_sigma: float = 0.25
     yaw_rate_sigma: float = 0.25
@@ -50,6 +52,8 @@ class G1VelocityTrackingConfig:
             raise ValueError("command_yaw_min must be <= command_yaw_max")
         if self.height_min >= self.height_max:
             raise ValueError("height_min must be < height_max")
+        if self.termination_height_min >= self.termination_height_max:
+            raise ValueError("termination_height_min must be < termination_height_max")
         if self.lin_vel_sigma <= 0 or self.yaw_rate_sigma <= 0:
             raise ValueError("tracking sigmas must be positive")
         if self.base_height_sigma <= 0.0:
@@ -228,8 +232,11 @@ class G1VelocityTrackingVectorizedEnv:
         height_bad = (root_height < self.config.height_min) | (
             root_height > self.config.height_max
         )
+        termination_height_bad = (root_height < self.config.termination_height_min) | (
+            root_height > self.config.termination_height_max
+        )
         tilt_bad = upright < self.config.min_upright
-        terminated = height_bad | tilt_bad
+        terminated = termination_height_bad | tilt_bad
         truncated = self.episode_lengths >= self.config.max_episode_steps
         done = terminated | truncated
         termination_penalty = terminated.float() * self.config.termination_penalty
@@ -253,6 +260,7 @@ class G1VelocityTrackingVectorizedEnv:
             "joint_deviation_penalty": joint_deviation_penalty,
             "termination_penalty": termination_penalty,
             "height_bad": height_bad,
+            "termination_height_bad": termination_height_bad,
             "tilt_bad": tilt_bad,
             "timeout": truncated,
         }
@@ -285,6 +293,7 @@ class G1VelocityTrackingVectorizedEnv:
         joint_deviation_penalty: list[float] = []
         termination_penalty_values: list[float] = []
         height_bad_values: list[bool] = []
+        termination_height_bad_values: list[bool] = []
         tilt_bad_values: list[bool] = []
         for index in range(self.n_envs):
             upright = max(0.0, min(1.0, -projected[index][2]))
@@ -314,8 +323,12 @@ class G1VelocityTrackingVectorizedEnv:
                 root_pos[index][2] < self.config.height_min
                 or root_pos[index][2] > self.config.height_max
             )
+            termination_height_bad = (
+                root_pos[index][2] < self.config.termination_height_min
+                or root_pos[index][2] > self.config.termination_height_max
+            )
             tilt_bad = upright < self.config.min_upright
-            terminated_item = height_bad or tilt_bad
+            terminated_item = termination_height_bad or tilt_bad
             termination_penalty = (
                 self.config.termination_penalty if terminated_item else 0.0
             )
@@ -332,6 +345,7 @@ class G1VelocityTrackingVectorizedEnv:
             joint_deviation_penalty.append(joint_penalty)
             termination_penalty_values.append(termination_penalty)
             height_bad_values.append(height_bad)
+            termination_height_bad_values.append(termination_height_bad)
             tilt_bad_values.append(tilt_bad)
         done = [left or right for left, right in zip(terminated, truncated)]
         components = {
@@ -344,6 +358,7 @@ class G1VelocityTrackingVectorizedEnv:
             "joint_deviation_penalty": joint_deviation_penalty,
             "termination_penalty": termination_penalty_values,
             "height_bad": height_bad_values,
+            "termination_height_bad": termination_height_bad_values,
             "tilt_bad": tilt_bad_values,
             "timeout": truncated,
         }
