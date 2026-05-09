@@ -22,6 +22,7 @@ H200 Locomotion Lab 的 agent 入口。
 - `task/task007-sonic-g1-deployment-bridge/task.md`
 - `task/task008-runtime-profile-foundation/task.md`
 - `task/task009-sonic-action-rollout-matrix/task.md`
+- `task/task014-minimal-ppo-smoke/task.md`
 
 ## Consensus
 
