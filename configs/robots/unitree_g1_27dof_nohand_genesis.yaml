@@ -1,0 +1,223 @@
+robot:
+  name: unitree_g1_27dof_nohand_genesis
+  family: unitree_g1
+  dof_count: 27
+  body_profile: body_only_no_dexterous_hands_no_waist_roll_pitch
+  route: VectorizedGenesisBackend
+asset:
+  format: mjcf
+  genesis_morph: MJCF
+  path: /root/h200-locomotion-lab-runs/task002-sonic-mujoco-smoke/GR00T-WholeBodyControl/gear_sonic/data/robots/g1/g1_27dof_nohand.xml
+  usage: prepared_path_metadata_only
+training_contract:
+  sim_dt_s: 0.005
+  decimation: 4
+  policy_rate_hz: 50
+  action_size: 27
+  observation_dim: 90
+  observation_segments:
+    - {name: base_angular_velocity, size: 3}
+    - {name: projected_gravity, size: 3}
+    - {name: command_velocity, size: 3}
+    - {name: joint_position_error, size: 27}
+    - {name: joint_velocity, size: 27}
+    - {name: previous_action, size: 27}
+joint_order:
+  order: actuator
+  excludes_floating_base_dofs: true
+  derived_from: unitree_g1_29dof_sonic.command_mujoco
+  removed_from_29dof_command_order:
+    - waist_roll_joint
+    - waist_pitch_joint
+  actuator:
+    - left_hip_pitch_joint
+    - left_hip_roll_joint
+    - left_hip_yaw_joint
+    - left_knee_joint
+    - left_ankle_pitch_joint
+    - left_ankle_roll_joint
+    - right_hip_pitch_joint
+    - right_hip_roll_joint
+    - right_hip_yaw_joint
+    - right_knee_joint
+    - right_ankle_pitch_joint
+    - right_ankle_roll_joint
+    - waist_yaw_joint
+    - left_shoulder_pitch_joint
+    - left_shoulder_roll_joint
+    - left_shoulder_yaw_joint
+    - left_elbow_joint
+    - left_wrist_roll_joint
+    - left_wrist_pitch_joint
+    - left_wrist_yaw_joint
+    - right_shoulder_pitch_joint
+    - right_shoulder_roll_joint
+    - right_shoulder_yaw_joint
+    - right_elbow_joint
+    - right_wrist_roll_joint
+    - right_wrist_pitch_joint
+    - right_wrist_yaw_joint
+control:
+  order: actuator
+  default_angles_rad:
+    - -0.312
+    - 0.0
+    - 0.0
+    - 0.669
+    - -0.363
+    - 0.0
+    - -0.312
+    - 0.0
+    - 0.0
+    - 0.669
+    - -0.363
+    - 0.0
+    - 0.0
+    - 0.2
+    - 0.2
+    - 0.0
+    - 0.6
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.2
+    - -0.2
+    - 0.0
+    - 0.6
+    - 0.0
+    - 0.0
+    - 0.0
+  action_scales_rad:
+    - 0.35066146635877904
+    - 0.35066146635877904
+    - 0.5475464651829304
+    - 0.35066146635877904
+    - 0.43857731389829635
+    - 0.43857731389829635
+    - 0.35066146635877904
+    - 0.35066146635877904
+    - 0.5475464651829304
+    - 0.35066146635877904
+    - 0.43857731389829635
+    - 0.43857731389829635
+    - 0.5475464651829304
+    - 0.43857731389829635
+    - 0.43857731389829635
+    - 0.43857731389829635
+    - 0.43857731389829635
+    - 0.43857731389829635
+    - 0.07450087032524835
+    - 0.07450087032524835
+    - 0.43857731389829635
+    - 0.43857731389829635
+    - 0.43857731389829635
+    - 0.43857731389829635
+    - 0.43857731389829635
+    - 0.07450087032524835
+    - 0.07450087032524835
+  kp:
+    - 99.098427782326
+    - 99.098427782326
+    - 40.17923847366998
+    - 99.098427782326
+    - 28.501246197377824
+    - 28.501246197377824
+    - 99.098427782326
+    - 99.098427782326
+    - 40.17923847366998
+    - 99.098427782326
+    - 28.501246197377824
+    - 28.501246197377824
+    - 40.17923847366998
+    - 14.250623098688912
+    - 14.250623098688912
+    - 14.250623098688912
+    - 14.250623098688912
+    - 14.250623098688912
+    - 16.77832748185191
+    - 16.77832748185191
+    - 14.250623098688912
+    - 14.250623098688912
+    - 14.250623098688912
+    - 14.250623098688912
+    - 14.250623098688912
+    - 16.77832748185191
+    - 16.77832748185191
+  kv:
+    - 6.3088018536769574
+    - 6.3088018536769574
+    - 2.5578897651010553
+    - 6.3088018536769574
+    - 1.8144456866367065
+    - 1.8144456866367065
+    - 6.3088018536769574
+    - 6.3088018536769574
+    - 2.5578897651010553
+    - 6.3088018536769574
+    - 1.8144456866367065
+    - 1.8144456866367065
+    - 2.5578897651010553
+    - 0.9072228433183532
+    - 0.9072228433183532
+    - 0.9072228433183532
+    - 0.9072228433183532
+    - 0.9072228433183532
+    - 1.0681415022205298
+    - 1.0681415022205298
+    - 0.9072228433183532
+    - 0.9072228433183532
+    - 0.9072228433183532
+    - 0.9072228433183532
+    - 0.9072228433183532
+    - 1.0681415022205298
+    - 1.0681415022205298
+  force_limits:
+    - 139.0
+    - 139.0
+    - 88.0
+    - 139.0
+    - 25.0
+    - 25.0
+    - 139.0
+    - 139.0
+    - 88.0
+    - 139.0
+    - 25.0
+    - 25.0
+    - 88.0
+    - 25.0
+    - 25.0
+    - 25.0
+    - 25.0
+    - 25.0
+    - 5.0
+    - 5.0
+    - 25.0
+    - 25.0
+    - 25.0
+    - 25.0
+    - 25.0
+    - 5.0
+    - 5.0
+h200_evidence:
+  CUDA_VISIBLE_DEVICES: "1"
+  physical_gpu: 1
+  logical_cuda_device: cuda:0
+  output: /root/agent_workspace/project/h200-locomotion-lab-task011-genesis-official-batched-api-decision/outputs/task011/g1_simpler/g1_27dof_nohand_xml_n1024.txt
+  n_envs: 1024
+  env_policy_steps_per_sec: 45827.527990
+  env_sim_steps_per_sec: 183310.111961
+  build_time_s: 50.844098
+  measure_time_s: 2.234465
+  tensor_device_ok: true
+  selected_reset:
+    target_only: true
+component_evidence:
+  output: /root/agent_workspace/project/h200-locomotion-lab-task011-genesis-official-batched-api-decision/outputs/task011/component_profile/g1_27dof_nohand_n1024.txt
+  action_write_time_s: 0.018051
+  state_read_time_s: 0.024633
+  scene_step_time_s: 2.134225
+  scene_steps_per_sec: 187.421643
+  env_scene_steps_per_sec: 191919.762451
+  combined_env_policy_steps_per_sec: 29547.329979
+  combined_env_sim_steps_per_sec: 118189.319917
