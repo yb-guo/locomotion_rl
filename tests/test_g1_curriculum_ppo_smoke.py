@@ -105,7 +105,54 @@ def test_run_smoke_writes_curriculum_artifacts(monkeypatch: pytest.MonkeyPatch) 
     assert all(row["env_tensor_device_ok"] for row in rows)
     assert {"reward_mean", "reset_count", "root_height_mean", "tilt_bad_count"} <= rows[0].keys()
     assert {"approx_kl", "policy_loss", "value_loss"} <= rows[0].keys()
+    standing = summary["seeds"][0]["stages"][0]
+    assert {
+        "first_tilt_update",
+        "max_reset_count",
+        "mean_reset_count",
+        "final_reset_count",
+        "max_tilt_bad_count",
+        "final_tilt_bad_count",
+        "final_termination_height_bad_count",
+        "max_approx_kl",
+        "final_approx_kl",
+        "final_entropy",
+        "min_root_height_min",
+        "final_root_height_mean",
+        "final_root_height_min",
+        "min_upright_mean",
+        "final_upright_mean",
+    } <= standing.keys()
+    assert standing["first_tilt_update"] is None
+    assert standing["final_reset_count"] == 0
     cleanup_test_dir(tmp_path)
+
+
+def test_summarize_stage_diagnostics_identifies_reset_wave() -> None:
+    rows = [
+        metric_row(stage_update=0, reset_count=0, tilt_bad_count=0, approx_kl=0.01),
+        metric_row(stage_update=1, reset_count=2, tilt_bad_count=2, approx_kl=0.03),
+        metric_row(stage_update=2, reset_count=1, tilt_bad_count=1, approx_kl=0.02),
+    ]
+
+    summary = curriculum.summarize_stage_diagnostics(rows)
+
+    assert summary["first_tilt_update"] == 1
+    assert summary["max_reset_count"] == 2
+    assert summary["mean_reset_count"] == pytest.approx(1.0)
+    assert summary["final_reset_count"] == 1
+    assert summary["max_tilt_bad_count"] == 2
+    assert summary["final_tilt_bad_count"] == 1
+    assert summary["final_termination_height_bad_count"] == 0
+    assert summary["max_approx_kl"] == pytest.approx(0.03)
+    assert summary["final_approx_kl"] == pytest.approx(0.02)
+    assert summary["final_entropy"] == pytest.approx(9.0)
+    assert summary["final_reward_mean"] == pytest.approx(1.25)
+    assert summary["min_root_height_min"] == pytest.approx(0.92)
+    assert summary["final_root_height_mean"] == pytest.approx(1.02)
+    assert summary["final_root_height_min"] == pytest.approx(0.94)
+    assert summary["min_upright_mean"] == pytest.approx(0.88)
+    assert summary["final_upright_mean"] == pytest.approx(0.88)
 
 
 def test_standing_failure_skips_velocity_stages() -> None:
@@ -299,3 +346,24 @@ class FakeEnv:
 
 def argparse_error() -> type[Exception]:
     return Exception
+
+
+def metric_row(
+    *,
+    stage_update: int,
+    reset_count: int,
+    tilt_bad_count: int,
+    approx_kl: float,
+) -> dict[str, object]:
+    return {
+        "stage_update": stage_update,
+        "reset_count": reset_count,
+        "tilt_bad_count": tilt_bad_count,
+        "termination_height_bad_count": 0,
+        "approx_kl": approx_kl,
+        "entropy": 9.0,
+        "reward_mean": 1.25,
+        "root_height_mean": 1.0 + (stage_update * 0.01),
+        "root_height_min": 0.92 + (stage_update * 0.01),
+        "upright_mean": 0.90 - (stage_update * 0.01),
+    }
