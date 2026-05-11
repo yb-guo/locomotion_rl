@@ -160,6 +160,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--logical-cuda-device", default="cuda:0")
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--run-id", default="")
+    parser.add_argument(
+        "--stage-names",
+        default="",
+        help="Comma-separated curriculum stages to run. Defaults to the full curriculum.",
+    )
     parser.add_argument("--min-collect-env-steps-per-sec", type=positive_float, default=10000.0)
     parser.add_argument("--warmup-steps", type=non_negative_int, default=DEFAULT_WARMUP_STEPS)
     return parser.parse_args(argv)
@@ -188,7 +193,7 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
         log_std_init=args.log_std_init,
     )
     seeds = parse_seeds(args.seeds)
-    stages = curriculum_stages()
+    stages = selected_curriculum_stages(args.stage_names)
     stage_env_configs = {
         stage.name: build_stage_env_config(args=args, stage=stage) for stage in stages
     }
@@ -244,6 +249,7 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
             metrics_path=metrics_path,
             min_collect_env_steps_per_sec=args.min_collect_env_steps_per_sec,
             logical_cuda_device=args.logical_cuda_device,
+            action_joint_names=profile.actuator_order,
         )
         seed_summaries.append(seed_summary)
         checkpoints[seed] = checkpoint
@@ -292,6 +298,22 @@ def curriculum_stages() -> tuple[CurriculumStage, ...]:
     return CURRICULUM_STAGES
 
 
+def selected_curriculum_stages(raw_stage_names: str) -> tuple[CurriculumStage, ...]:
+    requested = [name.strip() for name in raw_stage_names.split(",") if name.strip()]
+    if not requested:
+        return curriculum_stages()
+    stage_by_name = {stage.name: stage for stage in CURRICULUM_STAGES}
+    unknown = [name for name in requested if name not in stage_by_name]
+    if unknown:
+        valid = ",".join(stage_by_name)
+        raise argparse.ArgumentTypeError(
+            f"unknown curriculum stage {unknown[0]!r}; valid stages: {valid}"
+        )
+    if len(set(requested)) != len(requested):
+        raise argparse.ArgumentTypeError("stage names must be unique")
+    return tuple(stage_by_name[name] for name in requested)
+
+
 def build_run_config(
     *,
     args: argparse.Namespace,
@@ -304,6 +326,7 @@ def build_run_config(
         "ppo": asdict(ppo_config),
         "curriculum": {
             "updates_per_stage": args.updates_per_stage,
+            "stage_names": [stage.name for stage in stages],
             "stages": [asdict(stage) for stage in stages],
         },
         "env": {
@@ -386,6 +409,7 @@ def run_seed(
     metrics_path: Path,
     min_collect_env_steps_per_sec: float,
     logical_cuda_device: str,
+    action_joint_names: tuple[str, ...],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
@@ -415,6 +439,7 @@ def run_seed(
             global_update=global_update,
             min_collect_env_steps_per_sec=min_collect_env_steps_per_sec,
             logical_cuda_device=logical_cuda_device,
+            action_joint_names=action_joint_names,
         )
         stage_summaries.append(stage_summary)
         if stage_summary["updates_completed"] > 0:
@@ -473,6 +498,7 @@ def run_stage(
     global_update: int,
     min_collect_env_steps_per_sec: float,
     logical_cuda_device: str,
+    action_joint_names: tuple[str, ...],
 ) -> tuple[dict[str, Any], int, int]:
     initial_actor_l1 = parameter_l1_sum(model.actor)
     initial_value_l1 = parameter_l1_sum(model.value)
@@ -509,6 +535,7 @@ def run_stage(
                 stage_env_steps=stage_env_steps,
                 collect_rate=collect_rate,
                 logical_cuda_device=logical_cuda_device,
+                action_joint_names=action_joint_names,
             )
             assert_metric_row_ok(row)
             append_jsonl(metrics_path, row)
@@ -591,6 +618,7 @@ def summarize_stage_diagnostics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     approx_kls = [float(row["approx_kl"]) for row in rows]
     root_height_mins = [float(row["root_height_min"]) for row in rows]
     upright_means = [float(row["upright_mean"]) for row in rows]
+    action_abs_maxes = [float(row["action_abs_max"]) for row in rows]
     first_tilt_update = next(
         (
             int(row["stage_update"])
@@ -618,6 +646,11 @@ def summarize_stage_diagnostics(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "final_root_height_min": float(final_row["root_height_min"]),
         "min_upright_mean": min(upright_means),
         "final_upright_mean": float(final_row["upright_mean"]),
+        "final_action_abs_mean": float(final_row["action_abs_mean"]),
+        "max_action_abs_max": max(action_abs_maxes),
+        "final_action_abs_max": float(final_row["action_abs_max"]),
+        "final_action_std": float(final_row["action_std"]),
+        "final_top_action_rms_joints": final_row["top_action_rms_joints"],
     }
 
 
@@ -639,6 +672,11 @@ def empty_stage_diagnostics() -> dict[str, Any]:
         "final_root_height_min": 0.0,
         "min_upright_mean": 0.0,
         "final_upright_mean": 0.0,
+        "final_action_abs_mean": 0.0,
+        "max_action_abs_max": 0.0,
+        "final_action_abs_max": 0.0,
+        "final_action_std": 0.0,
+        "final_top_action_rms_joints": [],
     }
 
 
@@ -656,6 +694,7 @@ def build_metric_row(
     stage_env_steps: int,
     collect_rate: float,
     logical_cuda_device: str,
+    action_joint_names: tuple[str, ...],
 ) -> dict[str, Any]:
     device_ok = tensor_device_ok(
         {
@@ -671,6 +710,10 @@ def build_metric_row(
     env_device_ok = True
     if hasattr(env, "tensor_device_ok"):
         env_device_ok = bool(env.tensor_device_ok())
+    action_stats = normalized_action_stats(
+        batch.actions,
+        action_joint_names=action_joint_names,
+    )
     return {
         "seed": seed,
         "stage": stage.name,
@@ -690,6 +733,7 @@ def build_metric_row(
         "root_height_mean": batch.root_height_mean,
         "root_height_min": batch.root_height_min,
         "upright_mean": batch.upright_mean,
+        **action_stats,
         "policy_loss": diagnostics.policy_loss,
         "value_loss": diagnostics.value_loss,
         "entropy": diagnostics.entropy,
@@ -789,6 +833,9 @@ def assert_metric_row_ok(row: dict[str, Any]) -> None:
         "collect_env_policy_steps_per_sec",
         "update_time_s",
         "update_samples_per_sec",
+        "action_abs_mean",
+        "action_abs_max",
+        "action_std",
     )
     for key in finite_keys:
         value = float(row[key])
@@ -798,6 +845,31 @@ def assert_metric_row_ok(row: dict[str, Any]) -> None:
         raise ValueError("tensor_device_ok is false")
     if not row["env_tensor_device_ok"]:
         raise ValueError("env_tensor_device_ok is false")
+
+
+def normalized_action_stats(
+    actions: Any,
+    *,
+    action_joint_names: tuple[str, ...],
+    top_k: int = 5,
+) -> dict[str, Any]:
+    action_abs = actions.detach().abs()
+    rms_by_joint = actions.detach().square().mean(dim=(0, 1)).sqrt()
+    top_count = min(top_k, int(rms_by_joint.numel()), len(action_joint_names))
+    top_values, top_indices = rms_by_joint.topk(top_count)
+    top_entries = [
+        {
+            "joint": action_joint_names[int(index.item())],
+            "rms": float(value.item()),
+        }
+        for value, index in zip(top_values, top_indices)
+    ]
+    return {
+        "action_abs_mean": float(action_abs.mean().item()),
+        "action_abs_max": float(action_abs.max().item()),
+        "action_std": float(actions.detach().std(unbiased=False).item()),
+        "top_action_rms_joints": top_entries,
+    }
 
 
 def parse_seeds(raw: str) -> list[int]:
