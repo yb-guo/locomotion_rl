@@ -183,13 +183,32 @@ Record per chunk:
   rescue the failure; `unitree_gym` pose fails earlier than current.
 - 2026-05-11 Final read-only reviewer found no blocking findings for the
   completed first gate and agreed task019 should remain in progress.
+- 2026-05-11 Targeted gain-force follow-up completed on H200. No profile
+  strictly passed; `unitree_leg_gains`, `global_kv_4x`,
+  `global_kp_0_5x_kv_2x`, and `knee_ankle_kp_2x_kv_2x` recovered to final
+  zero-reset chunks after an early all-env tilt/reset wave.
+- 2026-05-11 `force_limit_2x` matched baseline with zero force saturation, so
+  force limit is not supported as the primary cause.
+- 2026-05-11 Reset/contact follow-up completed on H200. Warmup-only,
+  full pre-eval reset, selected-env pre-eval reset, current-pose root-z sweep,
+  and `unitree_gym` pose root-z sweep all failed with `max_reset_count=1024`.
+- 2026-05-11 Representative metrics show periodic real falls every three
+  chunks under `unitree_leg_gains`, not a one-time reset artifact.
+- 2026-05-11 Final read-only reviewer found no blocking findings and confirmed
+  task019 should not be marked passed.
 
 # Review
 
-Status: six-case gate complete; task still in progress for follow-up.
+Status: complete with no pass.
 
 - Do not mark task019 passed yet.
-- Completed scope: probe implementation, local/H200 focused tests, and six
-  H200 gate experiments.
-- Pending scope: targeted gain/force and, if still needed, reset/contact
+- Completed scope: probe implementation, local/H200 focused tests, six H200
+  gate experiments, targeted H200 gain-force matrix, and H200 reset/contact
   follow-up.
+- Final decision: task019 found a causal boundary below PPO. The current G1
+  27DoF no-hand Genesis standing setup has a periodic real zero-action fall
+  every roughly three chunks. Simple control mode changes, Unitree-style gains,
+  force-limit scaling, warmup/reset semantics, reset root-z sweeps, and the
+  existing `unitree_gym` pose do not produce a strict 1600-step standing pass.
+- Next boundary: create a standing-pose micro-sweep or inspect
+  asset/contact/inertia details before any PPO run.

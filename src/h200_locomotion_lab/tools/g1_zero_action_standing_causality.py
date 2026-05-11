@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import json
 import os
 import time
@@ -30,6 +31,16 @@ CONTROL_MODES = (
     "custom_pd_torque",
 )
 POSE_PROFILES = ("current", "unitree_gym")
+GAIN_PROFILES = (
+    "current",
+    "global_kv_2x",
+    "global_kv_4x",
+    "global_kp_0_5x_kv_2x",
+    "ankle_kp_2x_kv_2x",
+    "knee_ankle_kp_2x_kv_2x",
+    "unitree_leg_gains",
+    "force_limit_2x",
+)
 DEFAULT_ROOT_Z = 0.78
 DEFAULT_MIN_UPRIGHT = 0.30
 CURRENT_POSE_LEG_VALUES = {
@@ -40,6 +51,29 @@ CURRENT_POSE_LEG_VALUES = {
     "left_ankle_pitch_joint": -0.07,
     "right_ankle_pitch_joint": -0.07,
 }
+ANKLE_JOINTS = (
+    "left_ankle_pitch_joint",
+    "left_ankle_roll_joint",
+    "right_ankle_pitch_joint",
+    "right_ankle_roll_joint",
+)
+KNEE_JOINTS = ("left_knee_joint", "right_knee_joint")
+UNITREE_LEG_GAINS = {
+    "hip_pitch": (100.0, 2.0),
+    "hip_roll": (100.0, 2.0),
+    "hip_yaw": (100.0, 2.0),
+    "knee": (150.0, 4.0),
+    "ankle_pitch": (40.0, 2.0),
+    "ankle_roll": (40.0, 2.0),
+}
+
+
+@dataclass(frozen=True)
+class DiagnosticGainProfile:
+    name: str
+    kp: tuple[float, ...]
+    kv: tuple[float, ...]
+    force_limits: tuple[float, ...]
 
 
 def main() -> None:
@@ -70,9 +104,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--n-envs", type=positive_int, default=1024)
     parser.add_argument("--chunks", type=positive_int, default=50)
     parser.add_argument("--chunk-steps", type=positive_int, default=32)
+    parser.add_argument("--warmup-policy-steps", type=nonnegative_int, default=0)
+    parser.add_argument("--pre-eval-reset", action="store_true")
+    parser.add_argument(
+        "--pre-eval-reset-scope",
+        choices=("full", "all_env_ids"),
+        default="full",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--control-mode", choices=CONTROL_MODES, default="genesis_position")
     parser.add_argument("--pose-profile", choices=POSE_PROFILES, default="current")
+    parser.add_argument("--gain-profile", choices=GAIN_PROFILES, default="current")
     parser.add_argument("--root-z", type=positive_float, default=DEFAULT_ROOT_Z)
     parser.add_argument("--height-min", type=positive_float, default=0.45)
     parser.add_argument("--height-max", type=positive_float, default=1.20)
@@ -100,9 +142,10 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
 
     profile = load_g1_27dof_nohand_profile()
     pose = pose_profile_values(args.pose_profile, profile.control.default_angles_rad)
+    gains = gain_profile_values(args.gain_profile, profile.control)
     run_dir = resolve_run_dir(args.output_root, args.run_id)
     run_dir.mkdir(parents=True, exist_ok=False)
-    config_payload = build_run_config(args=args, default_pose=pose)
+    config_payload = build_run_config(args=args, default_pose=pose, gains=gains)
     write_json(run_dir / "config.json", config_payload)
 
     backend = VectorizedGenesisBackend(
@@ -115,8 +158,17 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
         ),
         profile=profile,
     )
+    apply_gain_profile_to_backend(backend, gains)
     backend.reset()
     zero_action = torch.zeros((args.n_envs, profile.action_dim), device=args.logical_cuda_device)
+    warmup_diagnostics = run_warmup(
+        torch=torch,
+        backend=backend,
+        zero_action=zero_action,
+        args=args,
+    )
+    if args.pre_eval_reset:
+        reset_before_eval(torch=torch, backend=backend, args=args)
     rows: list[dict[str, Any]] = []
     metrics_path = run_dir / "metrics.jsonl"
     total_policy_steps = 0
@@ -134,9 +186,111 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
         rows.append(row)
         append_jsonl(metrics_path, row)
 
-    summary = summarize_run(rows=rows, args=args, run_dir=run_dir)
+    summary = summarize_run(
+        rows=rows,
+        args=args,
+        run_dir=run_dir,
+        warmup_diagnostics=warmup_diagnostics,
+    )
     write_json(run_dir / "summary.json", summary)
     return summary
+
+
+def reset_before_eval(
+    *,
+    torch: Any,
+    backend: VectorizedGenesisBackend,
+    args: argparse.Namespace,
+) -> None:
+    if args.pre_eval_reset_scope == "full":
+        backend.reset()
+        return
+    if args.pre_eval_reset_scope == "all_env_ids":
+        env_ids = torch.arange(
+            backend.n_envs,
+            dtype=torch.long,
+            device=args.logical_cuda_device,
+        )
+        backend.reset(env_ids)
+        return
+    raise ValueError(f"unknown pre-eval reset scope: {args.pre_eval_reset_scope}")
+
+
+def run_warmup(
+    *,
+    torch: Any,
+    backend: VectorizedGenesisBackend,
+    zero_action: Any,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    if args.warmup_policy_steps == 0:
+        return empty_warmup_diagnostics()
+
+    height_bad_flags: list[Any] = []
+    termination_height_bad_flags: list[Any] = []
+    tilt_bad_flags: list[Any] = []
+    root_height_values: list[Any] = []
+    upright_values: list[Any] = []
+    joint_error_values: list[Any] = []
+    joint_velocity_values: list[Any] = []
+    saturation_values: list[Any] = []
+
+    synchronize_device(torch, args.logical_cuda_device)
+    with torch.no_grad():
+        for _ in range(args.warmup_policy_steps):
+            control = apply_control_mode(
+                torch=torch,
+                backend=backend,
+                action=zero_action,
+                mode=args.control_mode,
+            )
+            state = backend.state()
+            flags = standing_flags(torch=torch, state=state, config=env_config(args))
+            height_bad_flags.append(flags["height_bad"])
+            termination_height_bad_flags.append(flags["termination_height_bad"])
+            tilt_bad_flags.append(flags["tilt_bad"])
+            root_height_values.append(flags["root_height"])
+            upright_values.append(flags["upright"])
+            joint_error_values.append(state.dof_pos - backend.default_positions.unsqueeze(0))
+            joint_velocity_values.append(state.dof_vel)
+            saturation_values.append(control["saturated"])
+    synchronize_device(torch, args.logical_cuda_device)
+
+    joint_error_tensor = torch.stack(joint_error_values).float()
+    joint_velocity_tensor = torch.stack(joint_velocity_values).float()
+    saturation_tensor = torch.stack(saturation_values).bool()
+    return {
+        "policy_steps": args.warmup_policy_steps,
+        "height_bad_count": sum_bool_tensors(torch, height_bad_flags),
+        "termination_height_bad_count": sum_bool_tensors(
+            torch,
+            termination_height_bad_flags,
+        ),
+        "tilt_bad_count": sum_bool_tensors(torch, tilt_bad_flags),
+        "root_height_mean": mean_tensors(torch, root_height_values),
+        "root_height_min": min_tensors(torch, root_height_values),
+        "upright_mean": mean_tensors(torch, upright_values),
+        "upright_min": min_tensors(torch, upright_values),
+        "joint_position_error_rms": rms_tensor(torch, joint_error_tensor),
+        "joint_velocity_rms": rms_tensor(torch, joint_velocity_tensor),
+        "force_saturation_ratio": float(saturation_tensor.float().mean().item()),
+    }
+
+
+def empty_warmup_diagnostics() -> dict[str, Any]:
+    return {
+        "policy_steps": 0,
+        "height_bad_count": 0,
+        "termination_height_bad_count": 0,
+        "tilt_bad_count": 0,
+        "root_height_mean": 0.0,
+        "root_height_min": 0.0,
+        "upright_mean": 0.0,
+        "upright_min": 0.0,
+        "joint_position_error_rms": 0.0,
+        "joint_velocity_rms": 0.0,
+        "force_saturation_ratio": 0.0,
+    }
 
 
 def run_chunk(
@@ -207,6 +361,7 @@ def run_chunk(
         "seed": args.seed,
         "control_mode": args.control_mode,
         "pose_profile": args.pose_profile,
+        "gain_profile": args.gain_profile,
         "chunk_index": chunk_index,
         "chunk_steps": args.chunk_steps,
         "n_envs": backend.n_envs,
@@ -303,18 +458,19 @@ def compute_pd_torque(
     targets: Any,
     state: Any,
 ) -> dict[str, Any]:
+    gains = diagnostic_gains_for_backend(backend)
     kp = torch.tensor(
-        backend.profile.control.kp,
+        gains.kp,
         dtype=torch.float32,
         device=backend.config.logical_cuda_device,
     ) * float(backend.motor_kp_mult)
     kv = torch.tensor(
-        backend.profile.control.kv,
+        gains.kv,
         dtype=torch.float32,
         device=backend.config.logical_cuda_device,
     ) * float(backend.motor_kv_mult)
     limits = torch.tensor(
-        backend.profile.control.force_limits,
+        gains.force_limits,
         dtype=torch.float32,
         device=backend.config.logical_cuda_device,
     ) * float(backend.motor_force_limit_mult)
@@ -428,16 +584,166 @@ def unitree_gym_pose_values() -> tuple[float, ...]:
     return tuple(float(values[joint_name]) for joint_name in G1_27DOF_NOHAND_ACTUATOR_ORDER)
 
 
-def build_run_config(*, args: argparse.Namespace, default_pose: Sequence[float]) -> dict[str, Any]:
+def gain_profile_values(name: str, control: Any) -> DiagnosticGainProfile:
+    kp = [float(value) for value in control.kp]
+    kv = [float(value) for value in control.kv]
+    force_limits = [float(value) for value in control.force_limits]
+    if len(kp) != 27 or len(kv) != 27 or len(force_limits) != 27:
+        raise ValueError("gain profile inputs must have 27 values")
+
+    if name == "current":
+        pass
+    elif name == "global_kv_2x":
+        kv = scale_selected(kv, 2.0)
+    elif name == "global_kv_4x":
+        kv = scale_selected(kv, 4.0)
+    elif name == "global_kp_0_5x_kv_2x":
+        kp = scale_selected(kp, 0.5)
+        kv = scale_selected(kv, 2.0)
+    elif name == "ankle_kp_2x_kv_2x":
+        kp = scale_selected(kp, 2.0, ANKLE_JOINTS)
+        kv = scale_selected(kv, 2.0, ANKLE_JOINTS)
+    elif name == "knee_ankle_kp_2x_kv_2x":
+        selected = (*KNEE_JOINTS, *ANKLE_JOINTS)
+        kp = scale_selected(kp, 2.0, selected)
+        kv = scale_selected(kv, 2.0, selected)
+    elif name == "unitree_leg_gains":
+        for index, joint_name in enumerate(G1_27DOF_NOHAND_ACTUATOR_ORDER):
+            for suffix, values in UNITREE_LEG_GAINS.items():
+                if joint_name.endswith(f"_{suffix}_joint"):
+                    kp[index], kv[index] = values
+                    break
+    elif name == "force_limit_2x":
+        force_limits = scale_selected(force_limits, 2.0)
+    else:
+        raise ValueError(f"unknown gain profile: {name}")
+
+    return DiagnosticGainProfile(
+        name=name,
+        kp=tuple(kp),
+        kv=tuple(kv),
+        force_limits=tuple(force_limits),
+    )
+
+
+def scale_selected(
+    values: Sequence[float],
+    multiplier: float,
+    joint_names: Sequence[str] | None = None,
+) -> list[float]:
+    scaled = [float(value) for value in values]
+    if joint_names is None:
+        return [value * multiplier for value in scaled]
+    for joint_name in joint_names:
+        scaled[G1_27DOF_NOHAND_ACTUATOR_ORDER.index(joint_name)] *= multiplier
+    return scaled
+
+
+def apply_gain_profile_to_backend(
+    backend: VectorizedGenesisBackend,
+    gains: DiagnosticGainProfile,
+) -> None:
+    setattr(backend, "_diagnostic_gain_profile", gains)
+    set_robot_dofs_kp(
+        backend,
+        scale_selected(gains.kp, float(backend.motor_kp_mult)),
+    )
+    set_robot_dofs_kv(
+        backend,
+        scale_selected(gains.kv, float(backend.motor_kv_mult)),
+    )
+    set_robot_dofs_force_range(
+        backend,
+        scale_selected(gains.force_limits, float(backend.motor_force_limit_mult)),
+    )
+
+
+def diagnostic_gains_for_backend(backend: VectorizedGenesisBackend) -> DiagnosticGainProfile:
+    gains = getattr(backend, "_diagnostic_gain_profile", None)
+    if isinstance(gains, DiagnosticGainProfile):
+        return gains
+    return DiagnosticGainProfile(
+        name="current",
+        kp=tuple(float(value) for value in backend.profile.control.kp),
+        kv=tuple(float(value) for value in backend.profile.control.kv),
+        force_limits=tuple(float(value) for value in backend.profile.control.force_limits),
+    )
+
+
+def set_robot_dofs_kp(backend: VectorizedGenesisBackend, values: Sequence[float]) -> None:
+    robot = backend.robot
+    if not hasattr(robot, "set_dofs_kp"):
+        return
+    gains = tuple(float(value) for value in values)
+    try:
+        robot.set_dofs_kp(gains, dofs_idx_local=backend.motor_dof_indices)
+    except TypeError:
+        robot.set_dofs_kp(gains, backend.motor_dof_indices)
+
+
+def set_robot_dofs_kv(backend: VectorizedGenesisBackend, values: Sequence[float]) -> None:
+    robot = backend.robot
+    if not hasattr(robot, "set_dofs_kv"):
+        return
+    gains = tuple(float(value) for value in values)
+    try:
+        robot.set_dofs_kv(gains, dofs_idx_local=backend.motor_dof_indices)
+    except TypeError:
+        robot.set_dofs_kv(gains, backend.motor_dof_indices)
+
+
+def set_robot_dofs_force_range(
+    backend: VectorizedGenesisBackend,
+    values: Sequence[float],
+) -> None:
+    robot = backend.robot
+    if not hasattr(robot, "set_dofs_force_range"):
+        return
+    lower = tuple(-float(value) for value in values)
+    upper = tuple(float(value) for value in values)
+    try:
+        robot.set_dofs_force_range(lower, upper, dofs_idx_local=backend.motor_dof_indices)
+    except TypeError:
+        robot.set_dofs_force_range(lower, upper, backend.motor_dof_indices)
+
+
+def gain_value_summary(gains: DiagnosticGainProfile) -> dict[str, dict[str, float]]:
+    index = G1_27DOF_NOHAND_ACTUATOR_ORDER.index
+    return {
+        joint_name: {
+            "kp": float(gains.kp[index(joint_name)]),
+            "kv": float(gains.kv[index(joint_name)]),
+            "force_limit": float(gains.force_limits[index(joint_name)]),
+        }
+        for joint_name in (
+            "left_hip_pitch_joint",
+            "left_knee_joint",
+            "left_ankle_pitch_joint",
+            "left_ankle_roll_joint",
+        )
+    }
+
+
+def build_run_config(
+    *,
+    args: argparse.Namespace,
+    default_pose: Sequence[float],
+    gains: DiagnosticGainProfile,
+) -> dict[str, Any]:
     return {
         "task": "task019-g1-zero-action-standing-causality-diagnosis",
         "seed": args.seed,
         "n_envs": args.n_envs,
         "chunks": args.chunks,
         "chunk_steps": args.chunk_steps,
+        "warmup_policy_steps": args.warmup_policy_steps,
+        "pre_eval_reset": args.pre_eval_reset,
+        "pre_eval_reset_scope": args.pre_eval_reset_scope,
         "control_mode": args.control_mode,
         "pose_profile": args.pose_profile,
+        "gain_profile": args.gain_profile,
         "pose_leg_values_rad": leg_value_summary(default_pose),
+        "gain_values": gain_value_summary(gains),
         "root_z": args.root_z,
         "height_min": args.height_min,
         "height_max": args.height_max,
@@ -456,22 +762,42 @@ def summarize_run(
     rows: list[dict[str, Any]],
     args: argparse.Namespace,
     run_dir: Path,
+    warmup_diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    warmup = warmup_diagnostics or empty_warmup_diagnostics()
     diagnostics = summarize_chunk_diagnostics(rows)
     completed = len(rows) == args.chunks
     tensors_ok = all(bool(row["tensor_device_ok"]) for row in rows)
-    passed = (
+    evaluation_passed = (
         completed
         and tensors_ok
         and diagnostics["max_reset_count"] == 0
         and diagnostics["max_tilt_bad_count"] == 0
     )
+    diagnostic_passed = (
+        evaluation_passed
+        and args.warmup_policy_steps == 0
+        and not args.pre_eval_reset
+    )
+    if diagnostic_passed:
+        status = "passed"
+    elif evaluation_passed:
+        status = "diagnostic_passed"
+    else:
+        status = "failed"
     return {
-        "status": "passed" if passed else "failed",
-        "passed": passed,
+        "status": status,
+        "passed": diagnostic_passed,
+        "evaluation_passed": evaluation_passed,
+        "diagnostic_passed": diagnostic_passed,
         "run_dir": str(run_dir),
         "control_mode": args.control_mode,
         "pose_profile": args.pose_profile,
+        "gain_profile": args.gain_profile,
+        "warmup_policy_steps": args.warmup_policy_steps,
+        "pre_eval_reset": args.pre_eval_reset,
+        "pre_eval_reset_scope": args.pre_eval_reset_scope,
+        "warmup_diagnostics": warmup,
         "chunks_completed": len(rows),
         "chunks_expected": args.chunks,
         "physical_gpu": str(args.physical_gpu),
@@ -698,6 +1024,13 @@ def positive_int(value: str) -> int:
     parsed = int(value)
     if parsed <= 0:
         raise argparse.ArgumentTypeError("value must be positive")
+    return parsed
+
+
+def nonnegative_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("value must be nonnegative")
     return parsed
 
 
