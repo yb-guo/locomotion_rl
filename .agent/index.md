@@ -26,6 +26,7 @@ H200 Locomotion Lab 的 agent 入口。
 - `task/task015-g1-curriculum-longer-horizon-ppo/task.md`
 - `task/task016-g1-long-horizon-tilt-reset-ablation/task.md`
 - `task/task017-g1-action-control-semantics-diagnosis/task.md`
+- `task/task018-g1-no-update-ppo-causality-diagnosis/task.md`
 
 ## Consensus
 
