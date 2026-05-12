@@ -169,7 +169,15 @@ Ranked hypotheses:
   throughput 35292.82 env-policy steps/s, mean final episode_length_mean
   51.9209, mean final survival_rate 1.0, max final height/tilt/timeout reset
   rates all 0.0, no final full-env reset wave.
+- 2026-05-12 Subtask003b distribution profile committed through `55ab92d` and
+  verified locally and on H200. H200 run `h200-gpu1-standing-profile-v2`:
+  status ok, 3 seeds passed, physical GPU 1, logical `cuda:0`, min collect
+  throughput 35548.72 env-policy steps/s, no final reset wave, action
+  saturation ratio about 0.0026, observation_std about 0.314, log_std_mean
+  about -0.499. Reward contributions show base_height contributes 0.0 under
+  current config, while lin/yaw/upright dominate. No normalization or std clamp
+  is justified before reward-pack work.
 
 ## Review
 
-Status: in progress through subtask003 reset metrics hardening; not passed.
+Status: in progress through subtask003b distribution profile; not passed.
