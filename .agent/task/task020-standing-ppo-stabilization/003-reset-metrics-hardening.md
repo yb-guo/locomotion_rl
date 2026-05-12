@@ -39,7 +39,39 @@ Make reset semantics trainable and measurable before reward tuning.
   `$env:PYTHONPATH='src'; python -m pytest tests\test_g1_velocity_tracking_env.py
   tests\test_ppo_loop.py tests\test_g1_ppo_smoke.py -q -p no:cacheprovider`
   -> 19 passed, 5 skipped in 0.20s.
+- 2026-05-12 Router local extended verification:
+  `$env:PYTHONPATH='src'; python -m pytest tests\test_g1_curriculum_ppo_smoke.py
+  tests\test_g1_policy_action_safety_probe.py tests\test_g1_ppo_smoke.py
+  tests\test_ppo_loop.py -q -p no:cacheprovider` -> 22 passed, 9 skipped.
+- 2026-05-12 H200 focused verification through guarded command:
+  `PYTHONPATH=src python -m pytest tests/test_g1_velocity_tracking_env.py
+  tests/test_ppo_loop.py tests/test_g1_ppo_smoke.py -q -p no:cacheprovider`
+  -> 24 passed in 2.70s.
+- 2026-05-12 H200 extended compatibility verification through guarded command:
+  `PYTHONPATH=src python -m pytest tests/test_g1_curriculum_ppo_smoke.py
+  tests/test_g1_policy_action_safety_probe.py tests/test_g1_ppo_smoke.py
+  tests/test_ppo_loop.py -q -p no:cacheprovider` -> 31 passed in 2.46s.
+- 2026-05-12 H200 standing PPO reset-metrics run through guarded command:
+  `CUDA_VISIBLE_DEVICES=1`, physical GPU 1, logical `cuda:0`,
+  `command_mode=standing`, `action_scale_mult=0.25`, `root_z=1.20`,
+  `termination_height_min=0.20`, run id
+  `h200-gpu1-standing-reset-metrics-v1`. Result: status ok, 3/3 seeds passed,
+  min collect throughput 35292.82 env-policy steps/s, mean final reward
+  1.63395, mean final episode_length_mean 51.9209, mean final survival_rate
+  1.0, max final height_reset_rate 0.0, max final tilt_reset_rate 0.0, max final
+  timeout_rate 0.0, any_final_full_env_reset_wave false. Final per-seed
+  `completed_episode_count` remained 0 because no env reached a reset/timeout
+  in the final rollout.
 
 ## Review
 
-Status: local implementation verified; H200 evidence and read-only review pending.
+- 2026-05-12 Read-only reviewer found no implementation correctness blocking
+  issue. Initial P1 finding was evidence gap only; H200 evidence above resolves
+  the subtask003 acceptance gap. Residual risk: cause counts are diagnostic
+  flag counts over env-steps and are not mutually exclusive reset buckets.
+
+- 2026-05-12 Re-review found no blocking findings. Reviewer agreed the H200
+  evidence resolves the prior P1 evidence gap and that subtask003 can be
+  considered complete without marking task020 passed.
+
+Status: complete.

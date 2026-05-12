@@ -162,7 +162,14 @@ Ranked hypotheses:
   steps/s. Baseline shows PPO plumbing is healthy for short standing smoke, but
   task020 remains in progress because episode-length metrics, reset-rate
   hardening, deterministic eval, and review are still missing.
+- 2026-05-12 Subtask003 reset metrics hardening committed in `bd73bc3` and
+  verified locally and on H200. H200 reset-metrics run
+  `h200-gpu1-standing-reset-metrics-v1`: status ok, 3 seeds passed,
+  `CUDA_VISIBLE_DEVICES=1`, physical GPU 1, logical `cuda:0`, min collect
+  throughput 35292.82 env-policy steps/s, mean final episode_length_mean
+  51.9209, mean final survival_rate 1.0, max final height/tilt/timeout reset
+  rates all 0.0, no final full-env reset wave.
 
 ## Review
 
-Status: in progress through subtask002 baseline; not passed.
+Status: in progress through subtask003 reset metrics hardening; not passed.
