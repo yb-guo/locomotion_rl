@@ -124,9 +124,10 @@ Ranked hypotheses:
 7. `005-action-energy-ablation.md`
 8. `006-three-seed-standing-ppo-gate.md`
 9. `006a-training-reset-wave-metrics.md`
-10. `006b-deterministic-standing-eval.md`
-11. `007-standing-to-yaw-readiness.md`
-12. `008-review-and-decision.md`
+10. `006c-rollout-tilt-sweep-causality.md`
+11. `006b-deterministic-standing-eval.md`
+12. `007-standing-to-yaw-readiness.md`
+13. `008-review-and-decision.md`
 
 ## Acceptance
 
@@ -221,7 +222,16 @@ Ranked hypotheses:
   rollout-window tilt reset sweeps at updates 2, 5, 8, 11, 14, and 17
   (`reset_count=1024`, `tilt_reset_count=1024`, max training reset/tilt reset
   rate 0.03125). The task remains blocked in standing; yaw/vx remains closed.
+- 2026-05-12 Subtask006c no-update causality probes reproduced the same reset
+  sweep cadence without PPO updates. `zero_action`,
+  `untrained_mean_action`, and `untrained_sampled_action` all had
+  first_tilt_chunk 2, max_reset_count 1024, mean_reset_count 307.2,
+  final_reset_count 0, and reset chunks `2,5,8,11,14,17`. The zero-action run
+  had action mean/max 0.0/0.0, so the standing gate blocker does not require
+  PPO updates or action noise. Deterministic standing eval and yaw readiness
+  were skipped by stop rule.
 
 ## Review
 
-Status: in progress through subtask006a training reset-wave metrics; not passed.
+Status: blocked at standing PPO gate; final review pending. Task020 is not
+passed.

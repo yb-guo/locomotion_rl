@@ -22,7 +22,9 @@ This subtask does not train walking and does not open `vx_yaw`.
 ## Log
 
 - 2026-05-12 Planned.
+- 2026-05-12 Skipped by stop rule. Subtasks006-006c did not establish a stable
+  standing policy. No yaw or `vx_yaw` probe was run.
 
 ## Review
 
-Status: pending.
+Status: skipped because standing PPO gate failed.

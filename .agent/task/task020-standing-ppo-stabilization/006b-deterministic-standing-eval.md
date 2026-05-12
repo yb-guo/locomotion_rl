@@ -25,7 +25,13 @@ Verify learned standing policy outside noisy PPO rollout collection.
 ## Log
 
 - 2026-05-12 Planned.
+- 2026-05-12 Skipped by stop rule. Subtask006/006a did not pass the standing
+  PPO gate: final mean episode length stayed around 67, below the 2x baseline
+  threshold, and rollout-window tilt reset sweeps persisted. Subtask006c then
+  reproduced the same reset-sweep horizon without PPO updates, including
+  zero-action mode. A deterministic policy eval would not convert this into a
+  passing standing policy claim.
 
 ## Review
 
-Status: pending.
+Status: skipped because standing PPO gate failed.
