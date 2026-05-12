@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from h200_locomotion_lab.tools import g1_ppo_smoke
 
@@ -21,6 +23,7 @@ FIXED_TERMINATION_PENALTY = -1.0
 FIXED_TERMINATION_HEIGHT_MIN = 0.20
 FIXED_ROOT_Z = 1.20
 FIXED_COMMAND_MODE = "standing"
+Runner = Callable[[argparse.Namespace], dict[str, Any]]
 
 
 def main() -> None:
@@ -111,7 +114,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def run_ablation(args: argparse.Namespace) -> dict[str, Any]:
+def run_ablation(
+    args: argparse.Namespace,
+    runner: Runner | None = None,
+) -> dict[str, Any]:
+    runner = runner or run_candidate_subprocess
     action_scale_mults = parse_float_list(args.action_scale_mults, name="action_scale_mults")
     log_std_inits = parse_float_list(args.log_std_inits, name="log_std_inits")
     require_bounded_values(
@@ -151,14 +158,22 @@ def run_ablation(args: argparse.Namespace) -> dict[str, Any]:
                 candidate_args=candidate_args,
                 action_scale_mult=action_scale_mult,
                 log_std_init=log_std_init,
+                runner=runner,
             )
             candidates.append(candidate)
             append_jsonl(run_dir / "candidates.jsonl", candidate)
 
     selected = choose_candidate(candidates)
+    failure_blocker = candidate_failure_blocker(candidates)
+    status = "blocked" if failure_blocker else ("passed" if selected is not None else "blocked")
+    blocker = (
+        failure_blocker
+        if failure_blocker
+        else ("" if selected is not None else "no candidate passed standing PPO criteria")
+    )
     summary = {
-        "status": "passed" if selected is not None else "blocked",
-        "blocker": "" if selected is not None else "no candidate passed standing PPO criteria",
+        "status": status,
+        "blocker": blocker,
         "run_dir": str(run_dir),
         "fixed_reward_reset_config": fixed_reward_reset_config(),
         "candidate_count": len(candidates),
@@ -222,9 +237,10 @@ def run_candidate(
     candidate_args: argparse.Namespace,
     action_scale_mult: float,
     log_std_init: float,
+    runner: Runner,
 ) -> dict[str, Any]:
     try:
-        smoke_summary = g1_ppo_smoke.run_smoke(candidate_args)
+        smoke_summary = runner(candidate_args)
         status = "completed"
         blocker = ""
     except Exception as exc:  # pragma: no cover - H200 failure path.
@@ -239,6 +255,116 @@ def run_candidate(
         blocker=blocker,
         smoke_summary=smoke_summary,
     )
+
+
+def run_candidate_subprocess(candidate_args: argparse.Namespace) -> dict[str, Any]:
+    command = candidate_smoke_command(candidate_args)
+    completed = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "g1_ppo_smoke subprocess failed "
+            f"returncode={completed.returncode} "
+            f"stdout={trim_process_output(completed.stdout)} "
+            f"stderr={trim_process_output(completed.stderr)}"
+        )
+    summary_path = Path(candidate_args.output_root) / candidate_args.run_id / "summary.json"
+    if not summary_path.is_file():
+        raise RuntimeError(f"g1_ppo_smoke subprocess did not write {summary_path}")
+    return json.loads(summary_path.read_text(encoding="utf-8"))
+
+
+def candidate_smoke_command(candidate_args: argparse.Namespace) -> list[str]:
+    return [
+        sys.executable,
+        "-m",
+        "h200_locomotion_lab.tools.g1_ppo_smoke",
+        "--n-envs",
+        str(candidate_args.n_envs),
+        "--rollout-steps",
+        str(candidate_args.rollout_steps),
+        "--ppo-updates",
+        str(candidate_args.ppo_updates),
+        "--seeds",
+        str(candidate_args.seeds),
+        "--epochs",
+        str(candidate_args.epochs),
+        "--minibatch-size",
+        str(candidate_args.minibatch_size),
+        "--lr",
+        str(candidate_args.lr),
+        "--gamma",
+        str(candidate_args.gamma),
+        "--gae-lambda",
+        str(candidate_args.gae_lambda),
+        "--clip",
+        str(candidate_args.clip),
+        "--value-coef",
+        str(candidate_args.value_coef),
+        "--entropy-coef",
+        str(candidate_args.entropy_coef),
+        "--max-grad-norm",
+        str(candidate_args.max_grad_norm),
+        "--log-std-init",
+        str(candidate_args.log_std_init),
+        "--height-min",
+        str(candidate_args.height_min),
+        "--height-max",
+        str(candidate_args.height_max),
+        "--termination-height-min",
+        str(candidate_args.termination_height_min),
+        "--termination-height-max",
+        str(candidate_args.termination_height_max),
+        "--root-z",
+        str(candidate_args.root_z),
+        "--action-scale-mult",
+        str(candidate_args.action_scale_mult),
+        "--action-joint-group",
+        str(candidate_args.action_joint_group),
+        "--command-mode",
+        str(candidate_args.command_mode),
+        "--base-height-target",
+        str(candidate_args.base_height_target),
+        "--base-height-sigma",
+        str(candidate_args.base_height_sigma),
+        "--base-height-reward-scale",
+        str(candidate_args.base_height_reward_scale),
+        "--action-rate-penalty-scale",
+        str(candidate_args.action_rate_penalty_scale),
+        "--joint-velocity-penalty-scale",
+        str(candidate_args.joint_velocity_penalty_scale),
+        "--joint-deviation-penalty-scale",
+        str(candidate_args.joint_deviation_penalty_scale),
+        "--termination-penalty",
+        str(candidate_args.termination_penalty),
+        "--default-pose",
+        str(candidate_args.default_pose),
+        "--backend",
+        str(candidate_args.backend),
+        "--physical-gpu",
+        str(candidate_args.physical_gpu),
+        "--logical-cuda-device",
+        str(candidate_args.logical_cuda_device),
+        "--output-root",
+        str(candidate_args.output_root),
+        "--run-id",
+        str(candidate_args.run_id),
+        "--min-collect-env-steps-per-sec",
+        str(candidate_args.min_collect_env_steps_per_sec),
+        "--warmup-steps",
+        str(candidate_args.warmup_steps),
+    ]
+
+
+def trim_process_output(value: str, *, limit: int = 2000) -> str:
+    compact = value.strip().replace("\r", "\\r").replace("\n", "\\n")
+    if len(compact) <= limit:
+        return compact
+    return compact[-limit:]
 
 
 def summarize_candidate(
@@ -333,6 +459,17 @@ def choose_candidate(candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
     if not viable:
         return None
     return sorted(viable, key=candidate_sort_key)[0]
+
+
+def candidate_failure_blocker(candidates: list[dict[str, Any]]) -> str:
+    failed = [candidate for candidate in candidates if candidate.get("status") == "failed"]
+    if not failed:
+        return ""
+    details = "; ".join(
+        f"{candidate.get('name', 'unknown')}: {candidate.get('blocker', 'unknown failure')}"
+        for candidate in failed
+    )
+    return f"candidate runtime/subprocess failures: {details}"
 
 
 def candidate_sort_key(candidate: dict[str, Any]) -> tuple[Any, ...]:

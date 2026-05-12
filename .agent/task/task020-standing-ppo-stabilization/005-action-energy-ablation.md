@@ -64,7 +64,26 @@ waves.
   reset_rate 0.0, and no full-env reset wave; candidate sorting now ranks
   survival and episode length before reward/action energy. The tool also now
   rejects action/log-std values outside the task005 matrix.
+- 2026-05-12 H200 execution found the matrix evidence invalid because
+  `g1_action_energy_ablation` called `g1_ppo_smoke.run_smoke` repeatedly inside
+  one Python process; Genesis cannot initialize more than once, so all real
+  candidates after the first failed with `GenesisException:Genesis already
+  initialized.` Fixed by making the default candidate runner launch
+  `sys.executable -m h200_locomotion_lab.tools.g1_ppo_smoke` in a fresh
+  subprocess per candidate, with equivalent CLI args, captured stdout/stderr,
+  and summary loading from the candidate `summary.json`. `run_ablation` now
+  accepts an injectable runner so tests can still use fake smoke summaries
+  without spawning subprocesses.
+- 2026-05-12 Local focused verification after subprocess isolation:
+  `$env:PYTHONPATH='src'; python -m pytest tests\test_g1_action_energy_ablation.py -q -p no:cacheprovider`
+  -> 11 passed.
+- 2026-05-12 Reviewer P1 evidence-integrity fix: parent ablation summaries now
+  stay `blocked` if any candidate has `status=failed` from runner/runtime or
+  subprocess failure, even when another completed viable candidate is selected.
+  Completed but non-viable candidates can still coexist with a selected
+  candidate.
 
 ## Review
 
-Status: blocking review findings fixed locally; H200 evidence pending.
+Status: Genesis reinitialization blocker fixed locally; H200 matrix evidence must
+be rerun because previous multi-candidate process evidence was invalid.
