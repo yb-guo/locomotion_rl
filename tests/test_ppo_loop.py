@@ -42,6 +42,7 @@ def test_compute_gae_known_values() -> None:
         collect_time_s=1.0,
         env_steps=3,
         reward_mean=1.0,
+        reward_component_means={},
         done_count=1,
         timeout_count=0,
         fallen_count=1,
@@ -120,6 +121,7 @@ def test_ppo_update_changes_actor_and_value_params() -> None:
         collect_time_s=1.0,
         env_steps=config.rollout_steps * config.n_envs,
         reward_mean=0.0,
+        reward_component_means={},
         done_count=0,
         timeout_count=0,
         fallen_count=0,
@@ -179,6 +181,8 @@ def test_collect_rollout_reports_episode_length_and_reset_rates_inputs() -> None
     assert batch.episode_length_max == 3.0
     assert batch.completed_episode_count == 2
     assert batch.completed_episode_length_mean == pytest.approx(2.5)
+    assert batch.reward_component_means["tracking_lin_vel"] == pytest.approx(2.0)
+    assert batch.reward_component_means["action_rate_penalty"] == pytest.approx(-0.2)
 
 
 class _MetricModel:
@@ -272,6 +276,11 @@ class _MetricEnv:
                     "tilt_bad": tilt_bad,
                     "root_height": self.torch.full((self.config.n_envs,), 0.8),
                     "upright": self.torch.ones((self.config.n_envs,)),
+                    "tracking_lin_vel": self.torch.full(
+                        (self.config.n_envs,),
+                        float(self.step_index),
+                    ),
+                    "action_rate_penalty": self.torch.full((self.config.n_envs,), -0.2),
                 },
             },
         )

@@ -27,6 +27,7 @@ from h200_locomotion_lab.envs.vectorized_genesis_backend import (
 from h200_locomotion_lab.robots import load_g1_27dof_nohand_profile
 from h200_locomotion_lab.training.ppo_loop import (
     PPOConfig,
+    REWARD_COMPONENT_NAMES,
     build_actor_critic,
     collect_rollout,
     compute_gae,
@@ -319,6 +320,13 @@ def run_seed(
         batch = collect_rollout(env, model, observation, config)
         observation = batch.next_observation
         advantages, returns = compute_gae(batch, config)
+        profile_stats = rollout_profile_stats(
+            batch=batch,
+            advantages=advantages,
+            returns=returns,
+            model=model,
+            action_saturation_threshold=0.95,
+        )
         diagnostics = ppo_update(model, optimizer, batch, advantages, returns, config)
         collect_rate = (
             batch.env_steps / batch.collect_time_s if batch.collect_time_s > 0.0 else 0.0
@@ -376,6 +384,7 @@ def run_seed(
             "update_samples_per_sec": diagnostics.update_samples_per_sec,
             "tensor_device_ok": device_ok,
         }
+        row.update(profile_stats)
         assert_metric_row_ok(row)
         append_jsonl(metrics_path, row)
         final_reward_mean = batch.reward_mean
@@ -465,13 +474,89 @@ def assert_metric_row_ok(row: dict[str, Any]) -> None:
         "collect_env_policy_steps_per_sec",
         "update_time_s",
         "update_samples_per_sec",
+        "observation_mean",
+        "observation_std",
+        "observation_min",
+        "observation_max",
+        "action_mean",
+        "action_std",
+        "action_min",
+        "action_max",
+        "action_saturation_ratio",
+        "reward_std",
+        "reward_min",
+        "reward_max",
+        "value_prediction_mean",
+        "value_prediction_std",
+        "value_prediction_min",
+        "value_prediction_max",
+        "return_mean",
+        "return_std",
+        "return_min",
+        "return_max",
+        "advantage_mean",
+        "advantage_std",
+        "advantage_min",
+        "advantage_max",
+        "log_std_mean",
+        "log_std_min",
+        "log_std_max",
     )
     for key in finite_keys:
         value = float(row[key])
         if not math_is_finite(value):
             raise ValueError(f"{key} is not finite: {value}")
+    for key, value in row.items():
+        if key.startswith("reward_component_") and not math_is_finite(float(value)):
+            raise ValueError(f"{key} is not finite: {value}")
     if not row["tensor_device_ok"]:
         raise ValueError("tensor_device_ok is false")
+
+
+def rollout_profile_stats(
+    *,
+    batch: Any,
+    advantages: Any,
+    returns: Any,
+    model: Any,
+    action_saturation_threshold: float,
+) -> dict[str, float]:
+    stats = {}
+    stats.update(tensor_profile_stats(batch.observations, "observation"))
+    stats.update(tensor_profile_stats(batch.actions, "action"))
+    stats.update(tensor_profile_stats(batch.rewards, "reward"))
+    stats.update(tensor_profile_stats(batch.values, "value_prediction"))
+    stats.update(tensor_profile_stats(returns, "return"))
+    stats.update(tensor_profile_stats(advantages, "advantage"))
+    stats["action_saturation_ratio"] = action_saturation_ratio(
+        batch.actions,
+        threshold=action_saturation_threshold,
+    )
+    log_std = model.log_std.detach()
+    stats["log_std_mean"] = float(log_std.float().mean().item())
+    stats["log_std_min"] = float(log_std.float().min().item())
+    stats["log_std_max"] = float(log_std.float().max().item())
+    for name in REWARD_COMPONENT_NAMES:
+        if name in batch.reward_component_means:
+            stats[f"reward_component_{name}_mean"] = float(batch.reward_component_means[name])
+    return stats
+
+
+def tensor_profile_stats(tensor: Any, prefix: str) -> dict[str, float]:
+    values = tensor.detach().float().reshape(-1)
+    return {
+        f"{prefix}_mean": float(values.mean().item()),
+        f"{prefix}_std": float(values.std(unbiased=False).item()),
+        f"{prefix}_min": float(values.min().item()),
+        f"{prefix}_max": float(values.max().item()),
+    }
+
+
+def action_saturation_ratio(actions: Any, *, threshold: float) -> float:
+    if threshold <= 0.0:
+        raise ValueError("threshold must be positive")
+    saturated = actions.detach().abs() >= threshold
+    return float(saturated.float().mean().item())
 
 
 def parse_seeds(raw: str) -> list[int]:

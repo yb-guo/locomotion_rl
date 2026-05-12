@@ -94,35 +94,38 @@ def test_command_ranges_for_mode() -> None:
 
 
 def test_metric_row_rejects_non_finite_value() -> None:
-    row = {
-        "reward_mean": float("nan"),
-        "policy_loss": 0.0,
-        "value_loss": 0.0,
-        "entropy": 1.0,
-        "approx_kl": 0.0,
-        "clip_fraction": 0.0,
-        "grad_norm": 0.0,
-        "root_height_mean": 1.0,
-        "root_height_min": 1.0,
-        "upright_mean": 1.0,
-        "reset_rate": 0.0,
-        "height_reset_rate": 0.0,
-        "tilt_reset_rate": 0.0,
-        "timeout_rate": 0.0,
-        "survival_rate": 1.0,
-        "episode_length_mean": 1.0,
-        "episode_length_min": 1.0,
-        "episode_length_max": 1.0,
-        "completed_episode_length_mean": 0.0,
-        "collect_time_s": 1.0,
-        "collect_env_policy_steps_per_sec": 1.0,
-        "update_time_s": 1.0,
-        "update_samples_per_sec": 1.0,
-        "tensor_device_ok": True,
-    }
+    row = _valid_metric_row()
+    row["reward_mean"] = float("nan")
 
     with pytest.raises(ValueError, match="reward_mean"):
         g1_ppo_smoke.assert_metric_row_ok(row)
+
+
+def test_metric_row_rejects_non_finite_reward_component() -> None:
+    row = _valid_metric_row()
+    row["reward_component_tracking_lin_vel_mean"] = float("inf")
+
+    with pytest.raises(ValueError, match="reward_component_tracking_lin_vel_mean"):
+        g1_ppo_smoke.assert_metric_row_ok(row)
+
+
+def test_profile_stat_helpers_report_distribution_and_saturation() -> None:
+    torch = pytest.importorskip("torch")
+    values = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+
+    stats = g1_ppo_smoke.tensor_profile_stats(values, "observation")
+    saturation = g1_ppo_smoke.action_saturation_ratio(
+        torch.tensor([[-0.96, -0.94], [0.95, 0.0]]),
+        threshold=0.95,
+    )
+
+    assert stats == {
+        "observation_mean": pytest.approx(2.5),
+        "observation_std": pytest.approx(1.118034, rel=1e-5),
+        "observation_min": pytest.approx(1.0),
+        "observation_max": pytest.approx(4.0),
+    }
+    assert saturation == pytest.approx(0.5)
 
 
 def test_rate_handles_empty_totals() -> None:
@@ -148,3 +151,59 @@ def test_seed_final_metric_helpers() -> None:
 
 def argparse_error() -> type[Exception]:
     return Exception
+
+
+def _valid_metric_row() -> dict[str, float | bool]:
+    return {
+        "reward_mean": 0.0,
+        "policy_loss": 0.0,
+        "value_loss": 0.0,
+        "entropy": 1.0,
+        "approx_kl": 0.0,
+        "clip_fraction": 0.0,
+        "grad_norm": 0.0,
+        "root_height_mean": 1.0,
+        "root_height_min": 1.0,
+        "upright_mean": 1.0,
+        "reset_rate": 0.0,
+        "height_reset_rate": 0.0,
+        "tilt_reset_rate": 0.0,
+        "timeout_rate": 0.0,
+        "survival_rate": 1.0,
+        "episode_length_mean": 1.0,
+        "episode_length_min": 1.0,
+        "episode_length_max": 1.0,
+        "completed_episode_length_mean": 0.0,
+        "collect_time_s": 1.0,
+        "collect_env_policy_steps_per_sec": 1.0,
+        "update_time_s": 1.0,
+        "update_samples_per_sec": 1.0,
+        "observation_mean": 0.0,
+        "observation_std": 1.0,
+        "observation_min": -1.0,
+        "observation_max": 1.0,
+        "action_mean": 0.0,
+        "action_std": 1.0,
+        "action_min": -1.0,
+        "action_max": 1.0,
+        "action_saturation_ratio": 0.0,
+        "reward_std": 1.0,
+        "reward_min": -1.0,
+        "reward_max": 1.0,
+        "value_prediction_mean": 0.0,
+        "value_prediction_std": 1.0,
+        "value_prediction_min": -1.0,
+        "value_prediction_max": 1.0,
+        "return_mean": 0.0,
+        "return_std": 1.0,
+        "return_min": -1.0,
+        "return_max": 1.0,
+        "advantage_mean": 0.0,
+        "advantage_std": 1.0,
+        "advantage_min": -1.0,
+        "advantage_max": 1.0,
+        "log_std_mean": -0.5,
+        "log_std_min": -0.5,
+        "log_std_max": -0.5,
+        "tensor_device_ok": True,
+    }

@@ -11,6 +11,15 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+REWARD_COMPONENT_NAMES = (
+    "tracking_lin_vel",
+    "tracking_yaw_rate",
+    "tracking_base_height",
+    "action_rate_penalty",
+    "joint_deviation_penalty",
+    "termination_penalty",
+)
+
 
 @dataclass(frozen=True, slots=True)
 class PPOConfig:
@@ -76,6 +85,7 @@ class RolloutBatch:
     collect_time_s: float
     env_steps: int
     reward_mean: float
+    reward_component_means: dict[str, float]
     done_count: int
     timeout_count: int
     fallen_count: int
@@ -228,6 +238,9 @@ def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -
     completed_episode_lengths: list[Any] = []
     root_height_values: list[Any] = []
     upright_values: list[Any] = []
+    reward_component_values: dict[str, list[Any]] = {
+        name: [] for name in REWARD_COMPONENT_NAMES
+    }
     values: list[Any] = []
     log_probs: list[Any] = []
     reset_count = 0
@@ -263,6 +276,9 @@ def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -
                 root_height_values.append(components["root_height"])
             if "upright" in components:
                 upright_values.append(components["upright"])
+            for name in REWARD_COMPONENT_NAMES:
+                if name in components:
+                    reward_component_values[name].append(components[name])
             values.append(value)
             log_probs.append(log_prob)
             reset_count += int(transition.info.get("reset_count", 0))
@@ -295,6 +311,11 @@ def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -
         collect_time_s=collect_time_s,
         env_steps=env_steps,
         reward_mean=float(reward_tensor.mean().item()),
+        reward_component_means={
+            name: mean_tensors(torch, values)
+            for name, values in reward_component_values.items()
+            if values
+        },
         done_count=int(done_tensor.sum().item()),
         timeout_count=int(torch.stack(truncated_flags).sum().item()),
         fallen_count=int(torch.stack(terminated_flags).sum().item()),

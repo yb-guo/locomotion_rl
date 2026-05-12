@@ -24,6 +24,14 @@ actions, rewards, values, or advantages before changing reward.
 ## Log
 
 - 2026-05-12 Planned.
+- 2026-05-12 Implemented local metrics plumbing for standing PPO profile:
+  observation/action/reward/value/return/advantage distribution stats,
+  action saturation ratio, `log_std` summary, and available reward component
+  means. Local focused tests passed:
+  `PYTHONPATH=src python -m pytest tests/test_ppo_loop.py tests/test_g1_ppo_smoke.py -q -p no:cacheprovider`
+  (`12 passed, 6 skipped`).
+- 2026-05-12 H200 profile artifact not generated in this subtask run; task
+  remains pending H200 execution evidence.
 
 ## Review
 
