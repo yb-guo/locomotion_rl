@@ -20,6 +20,7 @@ def test_parse_args_defaults_to_task015_stable_config() -> None:
     assert args.default_pose == "tall_crouch"
     assert args.termination_height_min == 0.20
     assert args.warmup_steps == 1
+    assert args.stage_names == ""
     assert args.output_root == curriculum.Path("outputs/task015/g1_curriculum_ppo")
 
 
@@ -39,6 +40,23 @@ def test_curriculum_stages_are_explicit_and_ordered() -> None:
     assert stages[2].command_yaw_min < 0.0
     assert stages[3].command_vx_max > 0.0
     assert stages[3].command_yaw_max > 0.0
+
+
+def test_selected_curriculum_stages_defaults_to_full_curriculum() -> None:
+    stages = curriculum.selected_curriculum_stages("")
+
+    assert stages == curriculum.curriculum_stages()
+
+
+def test_selected_curriculum_stages_can_select_standing_only() -> None:
+    stages = curriculum.selected_curriculum_stages("standing")
+
+    assert [stage.name for stage in stages] == ["standing"]
+
+
+def test_selected_curriculum_stages_rejects_unknown_stage() -> None:
+    with pytest.raises(argparse_error(), match="unknown curriculum stage"):
+        curriculum.selected_curriculum_stages("standing,not_a_stage")
 
 
 def test_resolve_run_dir_stays_under_project_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -82,6 +100,12 @@ def test_run_smoke_writes_curriculum_artifacts(monkeypatch: pytest.MonkeyPatch) 
 
     config = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
     assert config["curriculum"]["updates_per_stage"] == 1
+    assert config["curriculum"]["stage_names"] == [
+        "standing",
+        "small_vx",
+        "small_yaw",
+        "small_vxyaw",
+    ]
     assert [stage["name"] for stage in config["curriculum"]["stages"]] == [
         "standing",
         "small_vx",
@@ -105,6 +129,9 @@ def test_run_smoke_writes_curriculum_artifacts(monkeypatch: pytest.MonkeyPatch) 
     assert all(row["env_tensor_device_ok"] for row in rows)
     assert {"reward_mean", "reset_count", "root_height_mean", "tilt_bad_count"} <= rows[0].keys()
     assert {"approx_kl", "policy_loss", "value_loss"} <= rows[0].keys()
+    assert {"action_abs_mean", "action_abs_max", "action_std"} <= rows[0].keys()
+    assert rows[0]["top_action_rms_joints"]
+    assert {"joint", "rms"} <= rows[0]["top_action_rms_joints"][0].keys()
     standing = summary["seeds"][0]["stages"][0]
     assert {
         "first_tilt_update",
@@ -122,9 +149,40 @@ def test_run_smoke_writes_curriculum_artifacts(monkeypatch: pytest.MonkeyPatch) 
         "final_root_height_min",
         "min_upright_mean",
         "final_upright_mean",
+        "final_action_abs_mean",
+        "max_action_abs_max",
+        "final_action_abs_max",
+        "final_action_std",
+        "final_top_action_rms_joints",
     } <= standing.keys()
     assert standing["first_tilt_update"] is None
     assert standing["final_reset_count"] == 0
+    cleanup_test_dir(tmp_path)
+
+
+def test_run_smoke_can_run_standing_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    torch = pytest.importorskip("torch")
+    tmp_path = fresh_test_dir("standing-only")
+    install_fake_runtime(monkeypatch, torch)
+    monkeypatch.setattr(curriculum, "PROJECT_PREFIX", tmp_path)
+    args = small_args(
+        tmp_path,
+        "--run-id",
+        "standing-run",
+        "--stage-names",
+        "standing",
+    )
+
+    summary = curriculum.run_smoke(args)
+
+    run_dir = tmp_path / "outputs" / "standing-run"
+    rows = [
+        json.loads(line)
+        for line in (run_dir / "metrics.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert summary["all_seeds_passed"] is True
+    assert [stage["name"] for stage in summary["stages"]] == ["standing"]
+    assert [row["stage"] for row in rows] == ["standing"]
     cleanup_test_dir(tmp_path)
 
 
@@ -153,6 +211,36 @@ def test_summarize_stage_diagnostics_identifies_reset_wave() -> None:
     assert summary["final_root_height_min"] == pytest.approx(0.94)
     assert summary["min_upright_mean"] == pytest.approx(0.88)
     assert summary["final_upright_mean"] == pytest.approx(0.88)
+    assert summary["final_action_abs_mean"] == pytest.approx(0.2)
+    assert summary["max_action_abs_max"] == pytest.approx(0.5)
+    assert summary["final_action_std"] == pytest.approx(0.1)
+    assert summary["final_top_action_rms_joints"] == [
+        {"joint": "joint_0", "rms": pytest.approx(0.3)}
+    ]
+
+
+def test_normalized_action_stats_reports_top_joint_rms() -> None:
+    torch = pytest.importorskip("torch")
+    actions = torch.tensor(
+        [
+            [[0.0, 0.5, -1.0], [0.0, 0.5, -1.0]],
+            [[0.0, -0.5, 1.0], [0.0, -0.5, 1.0]],
+        ]
+    )
+
+    stats = curriculum.normalized_action_stats(
+        actions,
+        action_joint_names=("zero_joint", "half_joint", "full_joint"),
+        top_k=2,
+    )
+
+    assert stats["action_abs_mean"] == pytest.approx(0.5)
+    assert stats["action_abs_max"] == pytest.approx(1.0)
+    assert stats["action_std"] == pytest.approx(float(actions.std(unbiased=False).item()))
+    assert stats["top_action_rms_joints"] == [
+        {"joint": "full_joint", "rms": pytest.approx(1.0)},
+        {"joint": "half_joint", "rms": pytest.approx(0.5)},
+    ]
 
 
 def test_standing_failure_skips_velocity_stages() -> None:
@@ -184,6 +272,7 @@ def test_standing_failure_skips_velocity_stages() -> None:
         metrics_path=tmp_path / "metrics.jsonl",
         min_collect_env_steps_per_sec=1e12,
         logical_cuda_device="cpu",
+        action_joint_names=FakeProfile.actuator_order,
     )
 
     assert summary["passed"] is False
@@ -277,6 +366,7 @@ class FakeControl:
 
 class FakeProfile:
     action_dim = 27
+    actuator_order = tuple(f"joint_{index}" for index in range(27))
     control = FakeControl()
 
 
@@ -366,4 +456,8 @@ def metric_row(
         "root_height_mean": 1.0 + (stage_update * 0.01),
         "root_height_min": 0.92 + (stage_update * 0.01),
         "upright_mean": 0.90 - (stage_update * 0.01),
+        "action_abs_mean": 0.2,
+        "action_abs_max": 0.3 + (stage_update * 0.1),
+        "action_std": 0.1,
+        "top_action_rms_joints": [{"joint": "joint_0", "rms": 0.3}],
     }
