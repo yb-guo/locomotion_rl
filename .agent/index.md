@@ -23,6 +23,12 @@ H200 Locomotion Lab 的 agent 入口。
 - `task/task008-runtime-profile-foundation/task.md`
 - `task/task009-sonic-action-rollout-matrix/task.md`
 - `task/task014-minimal-ppo-smoke/task.md`
+- `task/task015-g1-curriculum-longer-horizon-ppo/task.md`
+- `task/task016-g1-long-horizon-tilt-reset-ablation/task.md`
+- `task/task017-g1-action-control-semantics-diagnosis/task.md`
+- `task/task018-g1-no-update-ppo-causality-diagnosis/task.md`
+- `task/task019-g1-zero-action-standing-causality-diagnosis/task.md`
+- `task/task020-standing-ppo-stabilization/task.md`
 
 ## Consensus
 

@@ -1,0 +1,152 @@
+# Task 020: Standing PPO Stabilization
+
+## Goal
+
+Stabilize PPO active balance for the current Genesis G1 27DoF no-hand training
+environment in standing mode.
+
+This task is not a walking-quality claim. It does not try to prove passive
+zero-action standing. Task019 already showed the current asset/contact dynamics
+are not a clean passive-standing benchmark. Task020 asks whether PPO can learn a
+stable active standing controller anyway.
+
+## Scope
+
+- Branch: `codex/task020-standing-ppo-stabilization`.
+- Worktree:
+  `../_worktrees/h200-locomotion-lab-task020-standing-ppo-stabilization`.
+- Base: `master` after task014 minimal PPO smoke merge.
+- Current environment: `VectorizedGenesisBackend` + G1 27DoF no-hand asset.
+- Command mode: `standing` only until the standing gate passes.
+- Physical GPU default: `CUDA_VISIBLE_DEVICES=1`,
+  `physical_gpu=1`, `logical_cuda_device=cuda:0`.
+
+## Non-Goals
+
+- No walking-quality claim.
+- No `vx_yaw` training before the readiness gate.
+- No asset replacement.
+- No Menagerie or `scene_mjx.xml` importer work.
+- No MuJoCo reference work.
+- No zero-action passive-standing proof.
+- No LocoFormer.
+- No SONIC.
+- No ONNX.
+- No rendering/GIF/video.
+- No dataset/checkpoint/upstream repo download.
+- No writes/deletes under `/mnt/workspace` or `/mnt/workspace1`.
+
+## H200 Protocol
+
+Remote commands must use:
+
+```bash
+/root/agent_workspace/safe_agent/run_guarded.sh bash -lc 'cd /root/agent_workspace/project/<project> && <command>'
+```
+
+All remote code, outputs, and intermediate files must stay under:
+
+```text
+/root/agent_workspace/project
+```
+
+Remote project:
+
+```text
+/root/agent_workspace/project/h200-locomotion-lab-task020-standing-ppo-stabilization
+```
+
+Default output root:
+
+```text
+outputs/task020/standing_ppo_stabilization/
+```
+
+## Success Metrics Contract
+
+Standing PPO gate passes only if all hold:
+
+- H200 physical GPU 1 evidence.
+- 3 seeds.
+- `command_mode=standing`.
+- no NaN/Inf in obs/action/reward/value/logprob/loss/KL/entropy.
+- actor and value params change.
+- tensors stay on `cuda:0`.
+- collect throughput stays above the task threshold.
+- no full-env reset wave every rollout.
+- `episode_len_mean >= 200` or `episode_len_mean >= 2x` baseline, whichever is
+  easier to satisfy.
+- `height_reset_rate` is near zero after reset-semantics hardening.
+- `tilt_reset_rate` does not increase across training.
+- deterministic standing eval confirms survival improvement or stable survival.
+- read-only review finds no blocking boundary, correctness, or evidence issue.
+
+## Diagnose Loop
+
+Ranked hypotheses:
+
+1. **Reset semantics still poison PPO.**
+   - Prediction: hard height resets dominate even in standing; splitting
+     diagnostic height from hard termination reduces reset noise.
+2. **Reward scale gives weak or hackable balance signal.**
+   - Prediction: reward improves without survival improvement, or one component
+     dominates all others.
+3. **Action energy is too high for early standing.**
+   - Prediction: smaller action scale or lower initial std reduces tilt resets
+     without freezing policy updates.
+4. **Observation/action distributions destabilize value learning.**
+   - Prediction: obs/value target/advantage/action stats are out of scale before
+     reward changes.
+5. **Environment/contact dynamics remain the blocker.**
+   - Prediction: action is not saturated, PPO metrics are finite, but standing
+     deterministic eval still shows repeated tilt/contact-collapse resets.
+
+## Stop Rules
+
+- If baseline has NaN/device/throughput failure, fix PPO loop plumbing before
+  reward or action tuning.
+- If hard height reset dominates, fix reset semantics before training longer.
+- If reward components are not interpretable, stop before action ablation.
+- If all action energy candidates still produce full-env reset waves, classify
+  as environment/contact blocker and do not open yaw/vx.
+- If deterministic standing eval does not improve, do not open yaw/vx.
+- Do not add asset/importer/MuJoCo work to this task.
+- Do not mark passed without H200 evidence and read-only review.
+
+## Route
+
+1. `000-success-metrics-contract.md`
+2. `001-contract-standing-ppo-only.md`
+3. `002-standing-baseline-repro.md`
+4. `003-reset-metrics-hardening.md`
+5. `003b-observation-action-distribution-profile.md`
+6. `004-minimal-standing-reward-pack.md`
+7. `005-action-energy-ablation.md`
+8. `006-three-seed-standing-ppo-gate.md`
+9. `006b-deterministic-standing-eval.md`
+10. `007-standing-to-yaw-readiness.md`
+11. `008-review-and-decision.md`
+
+## Acceptance
+
+- Router creates task/subtask docs before coding.
+- Coding subagents implement scoped code changes.
+- Read-only reviewer reviews boundary, correctness, and evidence.
+- Local focused tests pass.
+- H200 focused tests pass.
+- H200 standing PPO gate evidence is recorded.
+- Deterministic standing eval evidence is recorded.
+- Decision states one of:
+  - standing PPO stable enough for yaw readiness gate;
+  - PPO loop/reward/action still blocked;
+  - environment/contact dynamics block current asset and a new asset/importer
+    task is needed.
+
+## Log
+
+- 2026-05-12 Created after task019 diagnosed current Genesis G1 zero-action
+  instability as foot/contact/ankle dynamics rather than PPO.
+
+## Review
+
+Status: planning only; pending implementation and review.
