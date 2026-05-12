@@ -21,7 +21,11 @@ Lock task020 scope to standing PPO active balance.
 ## Log
 
 - 2026-05-12 Planned.
+- 2026-05-12 Scope locked to current Genesis G1 27DoF no-hand standing PPO.
+  The task020 branch was updated with master task015-019 history before
+  execution. No walking, `vx_yaw`, asset/importer, MuJoCo, or zero-action proof
+  route is opened.
 
 ## Review
 
-Status: pending.
+Status: route accepted; read-only review pending after implementation evidence.

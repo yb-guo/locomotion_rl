@@ -146,7 +146,23 @@ Ranked hypotheses:
 
 - 2026-05-12 Created after task019 diagnosed current Genesis G1 zero-action
   instability as foot/contact/ankle dynamics rather than PPO.
+- 2026-05-12 Updated task020 branch with master task015-019 history before
+  execution; resolved `.agent/index.md` so task015-020 are all listed.
+- 2026-05-12 Local focused tests before H200 baseline:
+  `PYTHONPATH=src python -m pytest tests/test_g1_ppo_smoke.py
+  tests/test_ppo_loop.py -q -p no:cacheprovider` -> 9 passed, 4 skipped.
+- 2026-05-12 H200 focused tests through guarded command:
+  `PYTHONPATH=src python -m pytest tests/test_g1_ppo_smoke.py
+  tests/test_ppo_loop.py -q -p no:cacheprovider` -> 13 passed.
+- 2026-05-12 H200 standing baseline `h200-gpu1-standing-baseline-v1`:
+  `CUDA_VISIBLE_DEVICES=1`, physical GPU 1, logical `cuda:0`,
+  `command_mode=standing`, `action_scale_mult=0.25`, `root_z=1.20`,
+  `termination_height_min=0.20`. Result: status ok, 3 seeds passed, no final
+  reset/height/tilt failures, min collect throughput 35053.92 env-policy
+  steps/s. Baseline shows PPO plumbing is healthy for short standing smoke, but
+  task020 remains in progress because episode-length metrics, reset-rate
+  hardening, deterministic eval, and review are still missing.
 
 ## Review
 
-Status: planning only; pending implementation and review.
+Status: in progress through subtask002 baseline; not passed.

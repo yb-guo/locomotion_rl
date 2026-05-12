@@ -109,9 +109,14 @@ class G1VelocityTrackingVectorizedEnv:
             action=clipped_action,
             previous_action=previous_action,
         )
+        episode_lengths = self._copy_episode_lengths()
         self.last_action = clipped_action
         done_env_ids = self._done_env_ids(done)
         reset_count = self._env_ids_count(done_env_ids)
+        completed_episode_lengths = self._select_episode_lengths(
+            episode_lengths,
+            done_env_ids,
+        )
         if reset_count:
             self.backend.reset(done_env_ids)
             self._reset_bookkeeping(done_env_ids)
@@ -126,6 +131,9 @@ class G1VelocityTrackingVectorizedEnv:
             "observation_dim": self.observation_dim,
             "reset_count": reset_count,
             "components": components,
+            "episode_lengths": episode_lengths,
+            "completed_episode_lengths": completed_episode_lengths,
+            "full_env_reset_wave": reset_count == self.n_envs,
         }
         return G1VelocityTrackingStep(
             observation=observation,
@@ -438,6 +446,16 @@ class G1VelocityTrackingVectorizedEnv:
             self.episode_lengths += 1
             return
         self.episode_lengths = [value + 1 for value in self.episode_lengths]
+
+    def _copy_episode_lengths(self) -> Any:
+        if self.torch is not None and is_tensor_like(self.episode_lengths):
+            return self.episode_lengths.clone()
+        return list(self.episode_lengths)
+
+    def _select_episode_lengths(self, episode_lengths: Any, env_ids: Any) -> Any:
+        if is_tensor_like(episode_lengths):
+            return episode_lengths[env_ids]
+        return [episode_lengths[env_index] for env_index in env_ids]
 
     def _done_env_ids(self, done: Any) -> Any:
         if self.torch is not None and is_tensor_like(done):

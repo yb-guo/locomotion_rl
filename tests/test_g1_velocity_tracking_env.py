@@ -70,6 +70,9 @@ def test_g1_velocity_tracking_env_timeout_resets_only_done_env() -> None:
 
     assert step.truncated == [True, False, False]
     assert step.done == [True, False, False]
+    assert step.info["episode_lengths"] == [2, 1, 1]
+    assert step.info["completed_episode_lengths"] == [2]
+    assert not step.info["full_env_reset_wave"]
     assert env.episode_lengths == [0, 1, 1]
     assert env.backend.previous_action[0] == [0.0] * env.action_dim
     assert env.backend.previous_action[1] == [1.0] * env.action_dim
@@ -90,8 +93,25 @@ def test_g1_velocity_tracking_env_height_done_resets_fallen_env() -> None:
     assert step.info["components"]["termination_height_bad"] == [False, False, True]
     assert step.terminated == [False, False, True]
     assert step.done == [False, False, True]
+    assert step.info["episode_lengths"] == [1, 1, 1]
+    assert step.info["completed_episode_lengths"] == [1]
+    assert not step.info["full_env_reset_wave"]
     assert env.episode_lengths == [1, 1, 0]
     assert env.backend.robot.qpos[2] == pytest.approx(env.backend.config.root_qpos)
+
+
+def test_g1_velocity_tracking_env_reports_full_reset_wave() -> None:
+    env = _make_env(n_envs=3, max_episode_steps=1)
+    env.reset()
+
+    step = env.step([[0.0] * env.action_dim for _ in range(env.n_envs)])
+
+    assert step.done == [True, True, True]
+    assert step.info["reset_count"] == 3
+    assert step.info["episode_lengths"] == [1, 1, 1]
+    assert step.info["completed_episode_lengths"] == [1, 1, 1]
+    assert step.info["full_env_reset_wave"]
+    assert env.episode_lengths == [0, 0, 0]
 
 
 def test_g1_velocity_tracking_env_backend_state_and_step_physics_helpers() -> None:

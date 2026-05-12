@@ -83,6 +83,15 @@ class RolloutBatch:
     height_bad_count: int
     termination_height_bad_count: int
     tilt_bad_count: int
+    height_reset_count: int
+    tilt_reset_count: int
+    full_env_reset_wave: bool
+    full_env_reset_wave_count: int
+    episode_length_mean: float
+    episode_length_min: float
+    episode_length_max: float
+    completed_episode_length_mean: float
+    completed_episode_count: int
     root_height_mean: float
     root_height_min: float
     upright_mean: float
@@ -215,11 +224,14 @@ def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -
     height_bad_flags: list[Any] = []
     termination_height_bad_flags: list[Any] = []
     tilt_bad_flags: list[Any] = []
+    episode_lengths: list[Any] = []
+    completed_episode_lengths: list[Any] = []
     root_height_values: list[Any] = []
     upright_values: list[Any] = []
     values: list[Any] = []
     log_probs: list[Any] = []
     reset_count = 0
+    full_env_reset_wave_count = 0
     synchronize_device(getattr(observation, "device", None))
     started = time.perf_counter()
     with torch.no_grad():
@@ -241,6 +253,12 @@ def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -
                 termination_height_bad_flags.append(components["termination_height_bad"])
             if "tilt_bad" in components:
                 tilt_bad_flags.append(components["tilt_bad"])
+            if "episode_lengths" in transition.info:
+                episode_lengths.append(transition.info["episode_lengths"])
+            if "completed_episode_lengths" in transition.info:
+                completed = transition.info["completed_episode_lengths"]
+                if tensor_length(completed) > 0:
+                    completed_episode_lengths.append(completed)
             if "root_height" in components:
                 root_height_values.append(components["root_height"])
             if "upright" in components:
@@ -248,6 +266,7 @@ def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -
             values.append(value)
             log_probs.append(log_prob)
             reset_count += int(transition.info.get("reset_count", 0))
+            full_env_reset_wave_count += int(bool(transition.info.get("full_env_reset_wave", False)))
             observation = transition.observation
         next_value = model.forward(observation)[1]
     synchronize_device(getattr(observation, "device", None))
@@ -283,6 +302,15 @@ def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -
         height_bad_count=sum_bool_tensors(torch, height_bad_flags),
         termination_height_bad_count=sum_bool_tensors(torch, termination_height_bad_flags),
         tilt_bad_count=sum_bool_tensors(torch, tilt_bad_flags),
+        height_reset_count=sum_bool_tensors(torch, termination_height_bad_flags),
+        tilt_reset_count=sum_bool_tensors(torch, tilt_bad_flags),
+        full_env_reset_wave=full_env_reset_wave_count > 0,
+        full_env_reset_wave_count=full_env_reset_wave_count,
+        episode_length_mean=mean_tensors(torch, episode_lengths),
+        episode_length_min=min_tensors(torch, episode_lengths),
+        episode_length_max=max_tensors(torch, episode_lengths),
+        completed_episode_length_mean=mean_cat_tensors(torch, completed_episode_lengths),
+        completed_episode_count=sum_tensor_lengths(completed_episode_lengths),
         root_height_mean=mean_tensors(torch, root_height_values),
         root_height_min=min_tensors(torch, root_height_values),
         upright_mean=mean_tensors(torch, upright_values),
@@ -430,6 +458,28 @@ def min_tensors(torch: Any, values: list[Any]) -> float:
     if not values:
         return 0.0
     return float(torch.stack(values).float().min().item())
+
+
+def max_tensors(torch: Any, values: list[Any]) -> float:
+    if not values:
+        return 0.0
+    return float(torch.stack(values).float().max().item())
+
+
+def mean_cat_tensors(torch: Any, values: list[Any]) -> float:
+    if not values:
+        return 0.0
+    return float(torch.cat(values).float().mean().item())
+
+
+def sum_tensor_lengths(values: list[Any]) -> int:
+    return sum(tensor_length(value) for value in values)
+
+
+def tensor_length(value: Any) -> int:
+    if hasattr(value, "numel"):
+        return int(value.numel())
+    return len(value)
 
 
 def tensor_device_ok(values: dict[str, Any], expected: str) -> bool:

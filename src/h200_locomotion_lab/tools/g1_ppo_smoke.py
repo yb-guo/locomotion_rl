@@ -235,6 +235,30 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
         ),
         "mean_reward_mean": sum(seed["final_reward_mean"] for seed in seed_summaries)
         / len(seed_summaries),
+        "mean_final_episode_length_mean": mean_seed_final_metric(
+            seed_summaries,
+            "episode_length_mean",
+        ),
+        "mean_final_survival_rate": mean_seed_final_metric(
+            seed_summaries,
+            "survival_rate",
+        ),
+        "max_final_height_reset_rate": max_seed_final_metric(
+            seed_summaries,
+            "height_reset_rate",
+        ),
+        "max_final_tilt_reset_rate": max_seed_final_metric(
+            seed_summaries,
+            "tilt_reset_rate",
+        ),
+        "max_final_timeout_rate": max_seed_final_metric(
+            seed_summaries,
+            "timeout_rate",
+        ),
+        "any_final_full_env_reset_wave": any(
+            bool(seed["final_metrics"].get("full_env_reset_wave", False))
+            for seed in seed_summaries
+        ),
     }
     if not summary["all_seeds_passed"]:
         raise RuntimeError("one or more seeds failed pass criteria")
@@ -323,6 +347,20 @@ def run_seed(
             "height_bad_count": batch.height_bad_count,
             "termination_height_bad_count": batch.termination_height_bad_count,
             "tilt_bad_count": batch.tilt_bad_count,
+            "height_reset_count": batch.height_reset_count,
+            "tilt_reset_count": batch.tilt_reset_count,
+            "reset_rate": rate(batch.reset_count, batch.env_steps),
+            "height_reset_rate": rate(batch.height_reset_count, batch.env_steps),
+            "tilt_reset_rate": rate(batch.tilt_reset_count, batch.env_steps),
+            "timeout_rate": rate(batch.timeout_count, batch.env_steps),
+            "survival_rate": 1.0 - rate(batch.reset_count, batch.env_steps),
+            "full_env_reset_wave": batch.full_env_reset_wave,
+            "full_env_reset_wave_count": batch.full_env_reset_wave_count,
+            "episode_length_mean": batch.episode_length_mean,
+            "episode_length_min": batch.episode_length_min,
+            "episode_length_max": batch.episode_length_max,
+            "completed_episode_length_mean": batch.completed_episode_length_mean,
+            "completed_episode_count": batch.completed_episode_count,
             "root_height_mean": batch.root_height_mean,
             "root_height_min": batch.root_height_min,
             "upright_mean": batch.upright_mean,
@@ -414,6 +452,15 @@ def assert_metric_row_ok(row: dict[str, Any]) -> None:
         "root_height_mean",
         "root_height_min",
         "upright_mean",
+        "reset_rate",
+        "height_reset_rate",
+        "tilt_reset_rate",
+        "timeout_rate",
+        "survival_rate",
+        "episode_length_mean",
+        "episode_length_min",
+        "episode_length_max",
+        "completed_episode_length_mean",
         "collect_time_s",
         "collect_env_policy_steps_per_sec",
         "update_time_s",
@@ -489,6 +536,26 @@ def non_negative_float(value: str) -> float:
     if parsed < 0.0:
         raise argparse.ArgumentTypeError("value must be non-negative")
     return parsed
+
+
+def rate(count: int, total: int) -> float:
+    if total <= 0:
+        return 0.0
+    return float(count) / float(total)
+
+
+def mean_seed_final_metric(seed_summaries: list[dict[str, Any]], key: str) -> float:
+    if not seed_summaries:
+        return 0.0
+    return sum(float(seed["final_metrics"].get(key, 0.0)) for seed in seed_summaries) / len(
+        seed_summaries
+    )
+
+
+def max_seed_final_metric(seed_summaries: list[dict[str, Any]], key: str) -> float:
+    if not seed_summaries:
+        return 0.0
+    return max(float(seed["final_metrics"].get(key, 0.0)) for seed in seed_summaries)
 
 
 def math_is_finite(value: float) -> bool:

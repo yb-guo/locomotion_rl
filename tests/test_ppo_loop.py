@@ -11,6 +11,7 @@ from h200_locomotion_lab.training.ppo_loop import (
     describe_training_plan,
     parameter_l1_sum,
     ppo_update,
+    collect_rollout,
     tanh_gaussian_log_prob_from_action,
 )
 
@@ -48,6 +49,15 @@ def test_compute_gae_known_values() -> None:
         height_bad_count=0,
         termination_height_bad_count=0,
         tilt_bad_count=1,
+        height_reset_count=0,
+        tilt_reset_count=1,
+        full_env_reset_wave=False,
+        full_env_reset_wave_count=0,
+        episode_length_mean=2.0,
+        episode_length_min=1.0,
+        episode_length_max=3.0,
+        completed_episode_length_mean=3.0,
+        completed_episode_count=1,
         root_height_mean=0.8,
         root_height_min=0.4,
         upright_mean=1.0,
@@ -117,6 +127,15 @@ def test_ppo_update_changes_actor_and_value_params() -> None:
         height_bad_count=0,
         termination_height_bad_count=0,
         tilt_bad_count=0,
+        height_reset_count=0,
+        tilt_reset_count=0,
+        full_env_reset_wave=False,
+        full_env_reset_wave_count=0,
+        episode_length_mean=1.0,
+        episode_length_min=1.0,
+        episode_length_max=1.0,
+        completed_episode_length_mean=0.0,
+        completed_episode_count=0,
         root_height_mean=0.8,
         root_height_min=0.8,
         upright_mean=1.0,
@@ -131,3 +150,147 @@ def test_ppo_update_changes_actor_and_value_params() -> None:
     assert parameter_l1_sum(model.value) != pytest.approx(value_before)
     assert diagnostics.update_samples_per_sec > 0.0
     assert diagnostics.entropy > 0.0
+
+
+def test_collect_rollout_reports_episode_length_and_reset_rates_inputs() -> None:
+    torch = pytest.importorskip("torch")
+    config = PPOConfig(n_envs=2, rollout_steps=3, minibatch_size=3)
+    env = _MetricEnv(torch, config)
+    model = _MetricModel(torch, config)
+
+    batch = collect_rollout(
+        env,
+        model,
+        torch.zeros((config.n_envs, config.obs_dim)),
+        config,
+    )
+
+    assert batch.reset_count == 3
+    assert batch.height_bad_count == 2
+    assert batch.termination_height_bad_count == 1
+    assert batch.height_reset_count == 1
+    assert batch.tilt_bad_count == 1
+    assert batch.tilt_reset_count == 1
+    assert batch.timeout_count == 1
+    assert batch.full_env_reset_wave
+    assert batch.full_env_reset_wave_count == 1
+    assert batch.episode_length_mean == pytest.approx(2.0)
+    assert batch.episode_length_min == 1.0
+    assert batch.episode_length_max == 3.0
+    assert batch.completed_episode_count == 2
+    assert batch.completed_episode_length_mean == pytest.approx(2.5)
+
+
+class _MetricModel:
+    def __init__(self, torch: object, config: PPOConfig) -> None:
+        self.torch = torch
+        self.config = config
+
+    def act(self, observation: object) -> tuple[object, object, object, object]:
+        action = self.torch.zeros((self.config.n_envs, self.config.action_dim))
+        log_prob = self.torch.zeros((self.config.n_envs,))
+        value = self.torch.zeros((self.config.n_envs,))
+        entropy = self.torch.zeros((self.config.n_envs,))
+        return action, log_prob, value, entropy
+
+    def forward(self, observation: object) -> tuple[object, object]:
+        return (
+            self.torch.zeros((self.config.n_envs, self.config.action_dim)),
+            self.torch.zeros((self.config.n_envs,)),
+        )
+
+
+class _MetricEnv:
+    def __init__(self, torch: object, config: PPOConfig) -> None:
+        self.torch = torch
+        self.config = config
+        self.step_index = 0
+
+    def step(self, action: object) -> object:
+        self.step_index += 1
+        done = self.torch.tensor(
+            [
+                [False, False],
+                [True, False],
+                [True, True],
+            ][self.step_index - 1]
+        )
+        terminated = self.torch.tensor(
+            [
+                [False, False],
+                [True, False],
+                [False, True],
+            ][self.step_index - 1]
+        )
+        truncated = self.torch.tensor(
+            [
+                [False, False],
+                [False, False],
+                [True, False],
+            ][self.step_index - 1]
+        )
+        height_bad = self.torch.tensor(
+            [
+                [False, False],
+                [True, False],
+                [False, True],
+            ][self.step_index - 1]
+        )
+        termination_height_bad = self.torch.tensor(
+            [
+                [False, False],
+                [True, False],
+                [False, False],
+            ][self.step_index - 1]
+        )
+        tilt_bad = self.torch.tensor(
+            [
+                [False, False],
+                [False, False],
+                [False, True],
+            ][self.step_index - 1]
+        )
+        completed = [
+            self.torch.tensor([], dtype=self.torch.long),
+            self.torch.tensor([2]),
+            self.torch.tensor([3]),
+        ][self.step_index - 1]
+        return _Transition(
+            observation=self.torch.zeros((self.config.n_envs, self.config.obs_dim)),
+            reward=self.torch.ones((self.config.n_envs,)),
+            terminated=terminated,
+            truncated=truncated,
+            done=done,
+            info={
+                "reset_count": int(done.sum().item()),
+                "full_env_reset_wave": bool(done.all().item()),
+                "episode_lengths": self.torch.full((self.config.n_envs,), self.step_index),
+                "completed_episode_lengths": completed,
+                "components": {
+                    "height_bad": height_bad,
+                    "termination_height_bad": termination_height_bad,
+                    "tilt_bad": tilt_bad,
+                    "root_height": self.torch.full((self.config.n_envs,), 0.8),
+                    "upright": self.torch.ones((self.config.n_envs,)),
+                },
+            },
+        )
+
+
+class _Transition:
+    def __init__(
+        self,
+        *,
+        observation: object,
+        reward: object,
+        terminated: object,
+        truncated: object,
+        done: object,
+        info: dict[str, object],
+    ) -> None:
+        self.observation = observation
+        self.reward = reward
+        self.terminated = terminated
+        self.truncated = truncated
+        self.done = done
+        self.info = info

@@ -105,6 +105,15 @@ def test_metric_row_rejects_non_finite_value() -> None:
         "root_height_mean": 1.0,
         "root_height_min": 1.0,
         "upright_mean": 1.0,
+        "reset_rate": 0.0,
+        "height_reset_rate": 0.0,
+        "tilt_reset_rate": 0.0,
+        "timeout_rate": 0.0,
+        "survival_rate": 1.0,
+        "episode_length_mean": 1.0,
+        "episode_length_min": 1.0,
+        "episode_length_max": 1.0,
+        "completed_episode_length_mean": 0.0,
         "collect_time_s": 1.0,
         "collect_env_policy_steps_per_sec": 1.0,
         "update_time_s": 1.0,
@@ -114,6 +123,27 @@ def test_metric_row_rejects_non_finite_value() -> None:
 
     with pytest.raises(ValueError, match="reward_mean"):
         g1_ppo_smoke.assert_metric_row_ok(row)
+
+
+def test_rate_handles_empty_totals() -> None:
+    assert g1_ppo_smoke.rate(3, 6) == pytest.approx(0.5)
+    assert g1_ppo_smoke.rate(3, 0) == 0.0
+
+
+def test_seed_final_metric_helpers() -> None:
+    seed_summaries = [
+        {"final_metrics": {"height_reset_rate": 0.25}},
+        {"final_metrics": {"height_reset_rate": 0.75}},
+    ]
+
+    assert g1_ppo_smoke.mean_seed_final_metric(
+        seed_summaries,
+        "height_reset_rate",
+    ) == pytest.approx(0.5)
+    assert g1_ppo_smoke.max_seed_final_metric(
+        seed_summaries,
+        "height_reset_rate",
+    ) == pytest.approx(0.75)
 
 
 def argparse_error() -> type[Exception]:
