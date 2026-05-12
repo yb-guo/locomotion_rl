@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 
 from h200_locomotion_lab.tools import g1_ppo_smoke
@@ -126,6 +128,40 @@ def test_profile_stat_helpers_report_distribution_and_saturation() -> None:
         "observation_max": pytest.approx(4.0),
     }
     assert saturation == pytest.approx(0.5)
+
+
+def test_reward_contribution_stats_apply_env_scales_and_signs() -> None:
+    stats = g1_ppo_smoke.reward_contribution_stats(
+        {
+            "tracking_lin_vel": 0.5,
+            "tracking_yaw_rate": 0.25,
+            "upright": 0.8,
+            "tracking_base_height": 0.9,
+            "action_rate_penalty": 0.4,
+            "joint_deviation_penalty": 0.2,
+            "termination_penalty": -0.5,
+        },
+        SimpleNamespace(
+            alive_reward=0.05,
+            lin_vel_reward_scale=1.0,
+            yaw_rate_reward_scale=0.5,
+            upright_reward_scale=0.5,
+            base_height_reward_scale=0.0,
+            action_rate_penalty_scale=0.01,
+            joint_deviation_penalty_scale=0.05,
+        ),
+    )
+
+    assert stats == {
+        "reward_contribution_alive_mean": pytest.approx(0.05),
+        "reward_contribution_tracking_lin_vel_mean": pytest.approx(0.5),
+        "reward_contribution_tracking_yaw_rate_mean": pytest.approx(0.125),
+        "reward_contribution_upright_mean": pytest.approx(0.4),
+        "reward_contribution_tracking_base_height_mean": pytest.approx(0.0),
+        "reward_contribution_action_rate_penalty_mean": pytest.approx(-0.004),
+        "reward_contribution_joint_deviation_penalty_mean": pytest.approx(-0.01),
+        "reward_contribution_termination_penalty_mean": pytest.approx(-0.5),
+    }
 
 
 def test_rate_handles_empty_totals() -> None:

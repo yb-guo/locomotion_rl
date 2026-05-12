@@ -325,6 +325,7 @@ def run_seed(
             advantages=advantages,
             returns=returns,
             model=model,
+            env_config=env.config,
             action_saturation_threshold=0.95,
         )
         diagnostics = ppo_update(model, optimizer, batch, advantages, returns, config)
@@ -507,7 +508,10 @@ def assert_metric_row_ok(row: dict[str, Any]) -> None:
         if not math_is_finite(value):
             raise ValueError(f"{key} is not finite: {value}")
     for key, value in row.items():
-        if key.startswith("reward_component_") and not math_is_finite(float(value)):
+        if (
+            key.startswith("reward_component_")
+            or key.startswith("reward_contribution_")
+        ) and not math_is_finite(float(value)):
             raise ValueError(f"{key} is not finite: {value}")
     if not row["tensor_device_ok"]:
         raise ValueError("tensor_device_ok is false")
@@ -519,6 +523,7 @@ def rollout_profile_stats(
     advantages: Any,
     returns: Any,
     model: Any,
+    env_config: Any,
     action_saturation_threshold: float,
 ) -> dict[str, float]:
     stats = {}
@@ -539,6 +544,36 @@ def rollout_profile_stats(
     for name in REWARD_COMPONENT_NAMES:
         if name in batch.reward_component_means:
             stats[f"reward_component_{name}_mean"] = float(batch.reward_component_means[name])
+    stats.update(reward_contribution_stats(batch.reward_component_means, env_config))
+    return stats
+
+
+def reward_contribution_stats(
+    component_means: dict[str, float],
+    env_config: Any,
+) -> dict[str, float]:
+    stats = {
+        "reward_contribution_alive_mean": float(getattr(env_config, "alive_reward", 0.0)),
+    }
+    scale_map = {
+        "tracking_lin_vel": ("lin_vel_reward_scale", 1.0),
+        "tracking_yaw_rate": ("yaw_rate_reward_scale", 1.0),
+        "upright": ("upright_reward_scale", 1.0),
+        "tracking_base_height": ("base_height_reward_scale", 1.0),
+        "action_rate_penalty": ("action_rate_penalty_scale", -1.0),
+        "joint_deviation_penalty": ("joint_deviation_penalty_scale", -1.0),
+    }
+    for name, (scale_attr, sign) in scale_map.items():
+        if name not in component_means:
+            continue
+        scale = float(getattr(env_config, scale_attr, 0.0))
+        stats[f"reward_contribution_{name}_mean"] = (
+            sign * scale * float(component_means[name])
+        )
+    if "termination_penalty" in component_means:
+        stats["reward_contribution_termination_penalty_mean"] = float(
+            component_means["termination_penalty"]
+        )
     return stats
 
 

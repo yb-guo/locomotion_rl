@@ -14,6 +14,7 @@ from typing import Any
 REWARD_COMPONENT_NAMES = (
     "tracking_lin_vel",
     "tracking_yaw_rate",
+    "upright",
     "tracking_base_height",
     "action_rate_penalty",
     "joint_deviation_penalty",
