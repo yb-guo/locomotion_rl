@@ -210,7 +210,18 @@ Ranked hypotheses:
   early near 2.216 per seed but ended around 1.48-1.50 with low final root
   height, so task020 remains blocked at the standing gate and yaw/vx remains
   closed.
+- 2026-05-12 Subtask006a added training-wide reset metrics to avoid reading
+  only the final rollout. Local related tests passed 48/48 with 10 skipped;
+  H200 related tests passed 58/58. H200 gate rerun
+  `h200-gpu1-standing-gate-v2` kept the same blocked conclusion:
+  final mean episode_length_mean 67.291992, max training episode_length_mean
+  71.383545, min collect throughput 44088.53 env-policy steps/s, and all
+  plumbing checks passed. The new metrics show no single-step full-env reset
+  wave (`training_full_env_reset_wave_count=0`), but every seed has
+  rollout-window tilt reset sweeps at updates 2, 5, 8, 11, 14, and 17
+  (`reset_count=1024`, `tilt_reset_count=1024`, max training reset/tilt reset
+  rate 0.03125). The task remains blocked in standing; yaw/vx remains closed.
 
 ## Review
 
-Status: in progress through subtask006 standing PPO gate; not passed.
+Status: in progress through subtask006a training reset-wave metrics; not passed.

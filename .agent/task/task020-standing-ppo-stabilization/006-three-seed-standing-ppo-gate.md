@@ -54,8 +54,19 @@ Run the standing PPO stabilization gate with selected config.
   hard resets but does not meet the standing-stabilization episode-length gate.
   Artifacts copied locally under
   `.agent/task/task020-standing-ppo-stabilization/artifacts/h200-gpu1-standing-gate-v1/`.
+- 2026-05-12 After subtask006a added training-wide reset metrics, re-ran the
+  same gate as `h200-gpu1-standing-gate-v2`. Result stayed blocked:
+  `mean_final_episode_length_mean=67.291992`, max training episode length
+  71.383545, min collect throughput 44088.53 env-policy steps/s, and all
+  plumbing checks passed. There were no single-step full-env reset waves
+  (`training_full_env_reset_wave_count=0`), but every seed had rollout-window
+  tilt reset sweeps at updates 2, 5, 8, 11, 14, and 17
+  (`reset_count=1024`, `tilt_reset_count=1024`, max reset/tilt reset rate
+  0.03125). Artifacts copied locally under
+  `.agent/task/task020-standing-ppo-stabilization/artifacts/h200-gpu1-standing-gate-v2/`.
 
 ## Review
 
-Status: pending review. Training plumbing passed, but the standing PPO gate did
-not meet the episode-length acceptance threshold.
+Status: complete. Training plumbing passed, but the standing PPO gate did not
+meet the episode-length acceptance threshold and showed repeated rollout-window
+tilt reset sweeps.
