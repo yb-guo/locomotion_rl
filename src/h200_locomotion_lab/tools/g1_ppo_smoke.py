@@ -264,6 +264,7 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
             for seed in seed_summaries
         ),
     }
+    summary.update(summarize_run_training_metrics(seed_summaries))
     if not summary["all_seeds_passed"]:
         raise RuntimeError("one or more seeds failed pass criteria")
     write_json(run_dir / "summary.json", summary)
@@ -319,6 +320,7 @@ def run_seed(
     min_collect_rate = float("inf")
     final_reward_mean = 0.0
     final_metrics: dict[str, Any] = {}
+    training_rows: list[dict[str, Any]] = []
     for update in range(config.ppo_updates):
         batch = collect_rollout(env, model, observation, config)
         observation = batch.next_observation
@@ -391,6 +393,7 @@ def run_seed(
         row.update(profile_stats)
         assert_metric_row_ok(row)
         append_jsonl(metrics_path, row)
+        training_rows.append(row)
         final_reward_mean = batch.reward_mean
         final_metrics = row
     final_actor_l1 = parameter_l1_sum(model.actor)
@@ -412,6 +415,7 @@ def run_seed(
         "final_reward_mean": final_reward_mean,
         "final_metrics": final_metrics,
     }
+    summary.update(summarize_seed_training_metrics(training_rows))
     if not passed:
         raise RuntimeError(f"seed {seed} failed pass criteria: {summary}")
     checkpoint = {
@@ -420,6 +424,63 @@ def run_seed(
         "summary": summary,
     }
     return summary, checkpoint
+
+
+def summarize_seed_training_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    full_env_reset_wave_updates = [
+        int(row["update"]) for row in rows if bool(row.get("full_env_reset_wave", False))
+    ]
+    full_env_reset_wave_count = sum(
+        int(row.get("full_env_reset_wave_count", 0)) for row in rows
+    )
+    return {
+        "any_training_full_env_reset_wave": bool(full_env_reset_wave_updates),
+        "training_full_env_reset_wave_updates": full_env_reset_wave_updates,
+        "training_full_env_reset_wave_count": full_env_reset_wave_count,
+        "max_training_reset_rate": max_row_metric(rows, "reset_rate"),
+        "max_training_tilt_reset_rate": max_row_metric(rows, "tilt_reset_rate"),
+        "max_training_height_reset_rate": max_row_metric(rows, "height_reset_rate"),
+        "max_training_episode_length_mean": max_row_metric(rows, "episode_length_mean"),
+        "max_training_reward_mean": max_row_metric(rows, "reward_mean"),
+    }
+
+
+def summarize_run_training_metrics(seed_summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "any_training_full_env_reset_wave": any(
+            bool(seed.get("any_training_full_env_reset_wave", False))
+            for seed in seed_summaries
+        ),
+        "training_full_env_reset_wave_seed_count": sum(
+            1
+            for seed in seed_summaries
+            if bool(seed.get("any_training_full_env_reset_wave", False))
+        ),
+        "training_full_env_reset_wave_count": sum(
+            int(seed.get("training_full_env_reset_wave_count", 0))
+            for seed in seed_summaries
+        ),
+        "max_training_reset_rate": max_seed_metric(
+            seed_summaries,
+            "max_training_reset_rate",
+        ),
+        "max_training_tilt_reset_rate": max_seed_metric(
+            seed_summaries,
+            "max_training_tilt_reset_rate",
+        ),
+        "max_training_height_reset_rate": max_seed_metric(
+            seed_summaries,
+            "max_training_height_reset_rate",
+        ),
+        "max_training_episode_length_mean": max_seed_metric(
+            seed_summaries,
+            "max_training_episode_length_mean",
+        ),
+        "max_training_reward_mean": max_seed_metric(
+            seed_summaries,
+            "max_training_reward_mean",
+        ),
+    }
 
 
 def verify_cuda_isolation(
@@ -680,6 +741,18 @@ def max_seed_final_metric(seed_summaries: list[dict[str, Any]], key: str) -> flo
     if not seed_summaries:
         return 0.0
     return max(float(seed["final_metrics"].get(key, 0.0)) for seed in seed_summaries)
+
+
+def max_seed_metric(seed_summaries: list[dict[str, Any]], key: str) -> float:
+    if not seed_summaries:
+        return 0.0
+    return max(float(seed.get(key, 0.0)) for seed in seed_summaries)
+
+
+def max_row_metric(rows: list[dict[str, Any]], key: str) -> float:
+    if not rows:
+        return 0.0
+    return max(float(row.get(key, 0.0)) for row in rows)
 
 
 def math_is_finite(value: float) -> bool:

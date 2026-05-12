@@ -123,9 +123,10 @@ Ranked hypotheses:
 6. `004-minimal-standing-reward-pack.md`
 7. `005-action-energy-ablation.md`
 8. `006-three-seed-standing-ppo-gate.md`
-9. `006b-deterministic-standing-eval.md`
-10. `007-standing-to-yaw-readiness.md`
-11. `008-review-and-decision.md`
+9. `006a-training-reset-wave-metrics.md`
+10. `006b-deterministic-standing-eval.md`
+11. `007-standing-to-yaw-readiness.md`
+12. `008-review-and-decision.md`
 
 ## Acceptance
 

@@ -191,6 +191,105 @@ def test_seed_final_metric_helpers() -> None:
     ) == pytest.approx(0.75)
 
 
+def test_summarize_seed_training_metrics_reports_full_training_window() -> None:
+    rows = [
+        _training_metric_row(
+            update=0,
+            full_env_reset_wave=False,
+            reset_rate=0.10,
+            tilt_reset_rate=0.0,
+            height_reset_rate=0.10,
+            episode_length_mean=16.0,
+            reward_mean=0.25,
+        ),
+        _training_metric_row(
+            update=1,
+            full_env_reset_wave=True,
+            full_env_reset_wave_count=3,
+            reset_rate=1.0,
+            tilt_reset_rate=1.0,
+            height_reset_rate=0.0,
+            episode_length_mean=2.0,
+            reward_mean=-1.0,
+        ),
+        _training_metric_row(
+            update=2,
+            full_env_reset_wave=True,
+            reset_rate=0.75,
+            tilt_reset_rate=0.25,
+            height_reset_rate=0.50,
+            episode_length_mean=24.0,
+            reward_mean=0.75,
+        ),
+    ]
+
+    summary = g1_ppo_smoke.summarize_seed_training_metrics(rows)
+
+    assert summary == {
+        "any_training_full_env_reset_wave": True,
+        "training_full_env_reset_wave_updates": [1, 2],
+        "training_full_env_reset_wave_count": 4,
+        "max_training_reset_rate": pytest.approx(1.0),
+        "max_training_tilt_reset_rate": pytest.approx(1.0),
+        "max_training_height_reset_rate": pytest.approx(0.50),
+        "max_training_episode_length_mean": pytest.approx(24.0),
+        "max_training_reward_mean": pytest.approx(0.75),
+    }
+
+
+def test_summarize_seed_training_metrics_handles_empty_rows() -> None:
+    summary = g1_ppo_smoke.summarize_seed_training_metrics([])
+
+    assert summary == {
+        "any_training_full_env_reset_wave": False,
+        "training_full_env_reset_wave_updates": [],
+        "training_full_env_reset_wave_count": 0,
+        "max_training_reset_rate": pytest.approx(0.0),
+        "max_training_tilt_reset_rate": pytest.approx(0.0),
+        "max_training_height_reset_rate": pytest.approx(0.0),
+        "max_training_episode_length_mean": pytest.approx(0.0),
+        "max_training_reward_mean": pytest.approx(0.0),
+    }
+
+
+def test_summarize_run_training_metrics_aggregates_across_seeds() -> None:
+    seed_summaries = [
+        {
+            "seed": 0,
+            "any_training_full_env_reset_wave": True,
+            "training_full_env_reset_wave_count": 2,
+            "max_training_reset_rate": 1.0,
+            "max_training_tilt_reset_rate": 1.0,
+            "max_training_height_reset_rate": 0.25,
+            "max_training_episode_length_mean": 24.0,
+            "max_training_reward_mean": 0.75,
+        },
+        {
+            "seed": 1,
+            "any_training_full_env_reset_wave": False,
+            "training_full_env_reset_wave_count": 0,
+            "max_training_reset_rate": 0.5,
+            "max_training_tilt_reset_rate": 0.0,
+            "max_training_height_reset_rate": 0.5,
+            "max_training_episode_length_mean": 32.0,
+            "max_training_reward_mean": 1.25,
+        },
+    ]
+
+    summary = g1_ppo_smoke.summarize_run_training_metrics(seed_summaries)
+
+    assert summary == {
+        "any_training_full_env_reset_wave": True,
+        "training_full_env_reset_wave_seed_count": 1,
+        "training_full_env_reset_wave_count": 2,
+        "max_training_reset_rate": pytest.approx(1.0),
+        "max_training_tilt_reset_rate": pytest.approx(1.0),
+        "max_training_height_reset_rate": pytest.approx(0.5),
+        "max_training_episode_length_mean": pytest.approx(32.0),
+        "max_training_reward_mean": pytest.approx(1.25),
+    }
+
+
 def argparse_error() -> type[Exception]:
     return Exception
 
@@ -248,4 +347,27 @@ def _valid_metric_row() -> dict[str, float | bool]:
         "log_std_min": -0.5,
         "log_std_max": -0.5,
         "tensor_device_ok": True,
+    }
+
+
+def _training_metric_row(
+    *,
+    update: int,
+    full_env_reset_wave: bool,
+    reset_rate: float,
+    tilt_reset_rate: float,
+    height_reset_rate: float,
+    episode_length_mean: float,
+    reward_mean: float,
+    full_env_reset_wave_count: int = 1,
+) -> dict[str, float | int | bool]:
+    return {
+        "update": update,
+        "full_env_reset_wave": full_env_reset_wave,
+        "full_env_reset_wave_count": full_env_reset_wave_count if full_env_reset_wave else 0,
+        "reset_rate": reset_rate,
+        "tilt_reset_rate": tilt_reset_rate,
+        "height_reset_rate": height_reset_rate,
+        "episode_length_mean": episode_length_mean,
+        "reward_mean": reward_mean,
     }
