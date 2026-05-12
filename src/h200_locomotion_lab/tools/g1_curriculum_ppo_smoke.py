@@ -479,6 +479,7 @@ def run_stage(
     min_collect_rate = float("inf")
     final_reward_mean = 0.0
     final_metrics: dict[str, Any] = {}
+    stage_rows: list[dict[str, Any]] = []
     updates_completed = 0
     stage_env_steps = 0
     blocker = ""
@@ -511,6 +512,7 @@ def run_stage(
             )
             assert_metric_row_ok(row)
             append_jsonl(metrics_path, row)
+            stage_rows.append(row)
             final_reward_mean = batch.reward_mean
             final_metrics = row
             updates_completed += 1
@@ -552,29 +554,92 @@ def run_stage(
     if not tensor_ok:
         failure_reasons.append("tensor_device_ok is false")
 
+    stage_summary = {
+        "seed": seed,
+        "stage": stage.name,
+        "stage_index": stage_index,
+        "status": "passed" if passed else "failed",
+        "passed": passed,
+        "blocker": "; ".join(failure_reasons),
+        "updates_completed": updates_completed,
+        "env_steps": stage_env_steps,
+        "global_update_start": global_update - updates_completed,
+        "global_update_end": global_update - 1 if updates_completed else None,
+        "actor_params_changed": actor_changed,
+        "value_params_changed": value_changed,
+        "min_collect_env_policy_steps_per_sec": (
+            min_collect_rate if min_collect_rate != float("inf") else 0.0
+        ),
+        "final_reward_mean": final_reward_mean,
+        "final_metrics": final_metrics,
+    }
+    stage_summary.update(summarize_stage_diagnostics(stage_rows))
     return (
-        {
-            "seed": seed,
-            "stage": stage.name,
-            "stage_index": stage_index,
-            "status": "passed" if passed else "failed",
-            "passed": passed,
-            "blocker": "; ".join(failure_reasons),
-            "updates_completed": updates_completed,
-            "env_steps": stage_env_steps,
-            "global_update_start": global_update - updates_completed,
-            "global_update_end": global_update - 1 if updates_completed else None,
-            "actor_params_changed": actor_changed,
-            "value_params_changed": value_changed,
-            "min_collect_env_policy_steps_per_sec": (
-                min_collect_rate if min_collect_rate != float("inf") else 0.0
-            ),
-            "final_reward_mean": final_reward_mean,
-            "final_metrics": final_metrics,
-        },
+        stage_summary,
         total_env_steps,
         global_update,
     )
+
+
+def summarize_stage_diagnostics(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    if not rows:
+        return empty_stage_diagnostics()
+
+    final_row = rows[-1]
+    reset_counts = [int(row["reset_count"]) for row in rows]
+    tilt_bad_counts = [int(row["tilt_bad_count"]) for row in rows]
+    approx_kls = [float(row["approx_kl"]) for row in rows]
+    root_height_mins = [float(row["root_height_min"]) for row in rows]
+    upright_means = [float(row["upright_mean"]) for row in rows]
+    first_tilt_update = next(
+        (
+            int(row["stage_update"])
+            for row in rows
+            if int(row["tilt_bad_count"]) > 0
+        ),
+        None,
+    )
+    return {
+        "first_tilt_update": first_tilt_update,
+        "max_reset_count": max(reset_counts),
+        "mean_reset_count": sum(reset_counts) / len(reset_counts),
+        "final_reset_count": int(final_row["reset_count"]),
+        "max_tilt_bad_count": max(tilt_bad_counts),
+        "final_tilt_bad_count": int(final_row["tilt_bad_count"]),
+        "final_termination_height_bad_count": int(
+            final_row["termination_height_bad_count"]
+        ),
+        "max_approx_kl": max(approx_kls),
+        "final_approx_kl": float(final_row["approx_kl"]),
+        "final_entropy": float(final_row["entropy"]),
+        "final_reward_mean": float(final_row["reward_mean"]),
+        "min_root_height_min": min(root_height_mins),
+        "final_root_height_mean": float(final_row["root_height_mean"]),
+        "final_root_height_min": float(final_row["root_height_min"]),
+        "min_upright_mean": min(upright_means),
+        "final_upright_mean": float(final_row["upright_mean"]),
+    }
+
+
+def empty_stage_diagnostics() -> dict[str, Any]:
+    return {
+        "first_tilt_update": None,
+        "max_reset_count": 0,
+        "mean_reset_count": 0.0,
+        "final_reset_count": 0,
+        "max_tilt_bad_count": 0,
+        "final_tilt_bad_count": 0,
+        "final_termination_height_bad_count": 0,
+        "max_approx_kl": 0.0,
+        "final_approx_kl": 0.0,
+        "final_entropy": 0.0,
+        "final_reward_mean": 0.0,
+        "min_root_height_min": 0.0,
+        "final_root_height_mean": 0.0,
+        "final_root_height_min": 0.0,
+        "min_upright_mean": 0.0,
+        "final_upright_mean": 0.0,
+    }
 
 
 def build_metric_row(
@@ -653,8 +718,9 @@ def skipped_stage_summary(
     start_index: int,
     blocker: str,
 ) -> list[dict[str, Any]]:
-    return [
-        {
+    skipped = []
+    for index, stage in enumerate(stages[start_index:], start=start_index):
+        stage_summary = {
             "seed": seed,
             "stage": stage.name,
             "stage_index": index,
@@ -671,8 +737,9 @@ def skipped_stage_summary(
             "final_reward_mean": 0.0,
             "final_metrics": {},
         }
-        for index, stage in enumerate(stages[start_index:], start=start_index)
-    ]
+        stage_summary.update(empty_stage_diagnostics())
+        skipped.append(stage_summary)
+    return skipped
 
 
 def verify_cuda_isolation(
