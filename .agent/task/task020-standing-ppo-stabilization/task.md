@@ -177,7 +177,15 @@ Ranked hypotheses:
   about -0.499. Reward contributions show base_height contributes 0.0 under
   current config, while lin/yaw/upright dominate. No normalization or std clamp
   is justified before reward-pack work.
+- 2026-05-12 Subtask004 minimal reward pack committed in `a68575f` and verified
+  locally/on H200. H200 run `h200-gpu1-standing-reward-pack-v1`: status ok,
+  3 seeds passed, physical GPU 1, logical `cuda:0`, `base_height_reward_scale=0.20`,
+  `joint_velocity_penalty_scale=0.001`, `termination_penalty=-1.0`, min collect
+  throughput 16598.49 env-policy steps/s, mean final reward 1.82327, mean final
+  survival_rate 1.0, height/tilt/timeout reset rates 0.0, action saturation
+  about 0.0026, no final full-env reset wave. Reward improved without survival
+  regression.
 
 ## Review
 
-Status: in progress through subtask003b distribution profile; not passed.
+Status: in progress through subtask004 reward pack; not passed.
