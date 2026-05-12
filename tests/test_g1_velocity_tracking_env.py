@@ -52,6 +52,7 @@ def test_g1_velocity_tracking_env_step_returns_reward_done_and_components() -> N
         "root_height",
         "upright",
         "action_rate_penalty",
+        "joint_velocity_penalty",
         "joint_deviation_penalty",
         "termination_penalty",
         "height_bad",
@@ -59,6 +60,26 @@ def test_g1_velocity_tracking_env_step_returns_reward_done_and_components() -> N
         "tilt_bad",
         "timeout",
     }
+
+
+def test_g1_velocity_tracking_env_joint_velocity_penalty_is_opt_in() -> None:
+    unscaled_env = _make_env(n_envs=1)
+    scaled_env = _make_env(
+        n_envs=1,
+        config=G1VelocityTrackingConfig(joint_velocity_penalty_scale=0.5),
+    )
+    unscaled_env.reset()
+    scaled_env.reset()
+    for env in (unscaled_env, scaled_env):
+        for index in env.backend.motor_dof_indices:
+            env.backend.robot.velocities[0][index] = 2.0
+
+    unscaled = unscaled_env.step([[0.0] * unscaled_env.action_dim])
+    scaled = scaled_env.step([[0.0] * scaled_env.action_dim])
+
+    assert unscaled.info["components"]["joint_velocity_penalty"] == pytest.approx([4.0])
+    assert scaled.info["components"]["joint_velocity_penalty"] == pytest.approx([4.0])
+    assert scaled.reward[0] == pytest.approx(unscaled.reward[0] - 2.0)
 
 
 def test_g1_velocity_tracking_env_timeout_resets_only_done_env() -> None:
@@ -155,7 +176,11 @@ def test_g1_velocity_tracking_env_device_report_is_non_cuda_for_fake_backend() -
     }
 
 
-def _make_env(n_envs: int, max_episode_steps: int = 1000) -> G1VelocityTrackingVectorizedEnv:
+def _make_env(
+    n_envs: int,
+    max_episode_steps: int = 1000,
+    config: G1VelocityTrackingConfig | None = None,
+) -> G1VelocityTrackingVectorizedEnv:
     backend = VectorizedGenesisBackend(
         VectorizedGenesisConfig(
             n_envs=n_envs,
@@ -168,7 +193,7 @@ def _make_env(n_envs: int, max_episode_steps: int = 1000) -> G1VelocityTrackingV
     )
     return G1VelocityTrackingVectorizedEnv(
         backend,
-        G1VelocityTrackingConfig(max_episode_steps=max_episode_steps),
+        config or G1VelocityTrackingConfig(max_episode_steps=max_episode_steps),
     )
 
 

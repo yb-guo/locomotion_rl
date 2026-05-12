@@ -148,6 +148,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--base-height-sigma", type=positive_float, default=0.10)
     parser.add_argument("--base-height-reward-scale", type=non_negative_float, default=0.0)
     parser.add_argument("--action-rate-penalty-scale", type=non_negative_float, default=0.01)
+    parser.add_argument("--joint-velocity-penalty-scale", type=non_negative_float, default=0.0)
     parser.add_argument("--joint-deviation-penalty-scale", type=non_negative_float, default=0.05)
     parser.add_argument("--termination-penalty", type=float, default=0.0)
     parser.add_argument(
@@ -343,6 +344,7 @@ def build_run_config(
             "base_height_sigma": args.base_height_sigma,
             "base_height_reward_scale": args.base_height_reward_scale,
             "action_rate_penalty_scale": args.action_rate_penalty_scale,
+            "joint_velocity_penalty_scale": args.joint_velocity_penalty_scale,
             "joint_deviation_penalty_scale": args.joint_deviation_penalty_scale,
             "termination_penalty": args.termination_penalty,
             "warmup_steps": args.warmup_steps,
@@ -373,6 +375,7 @@ def build_stage_env_config(
         base_height_sigma=args.base_height_sigma,
         base_height_reward_scale=args.base_height_reward_scale,
         action_rate_penalty_scale=args.action_rate_penalty_scale,
+        joint_velocity_penalty_scale=args.joint_velocity_penalty_scale,
         joint_deviation_penalty_scale=args.joint_deviation_penalty_scale,
         termination_penalty=args.termination_penalty,
     )

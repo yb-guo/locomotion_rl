@@ -94,6 +94,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--base-height-sigma", type=positive_float, default=0.10)
     parser.add_argument("--base-height-reward-scale", type=non_negative_float, default=0.0)
     parser.add_argument("--action-rate-penalty-scale", type=non_negative_float, default=0.01)
+    parser.add_argument("--joint-velocity-penalty-scale", type=non_negative_float, default=0.0)
     parser.add_argument("--joint-deviation-penalty-scale", type=non_negative_float, default=0.05)
     parser.add_argument("--termination-penalty", type=float, default=0.0)
     parser.add_argument(
@@ -161,6 +162,7 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 "base_height_sigma": args.base_height_sigma,
                 "base_height_reward_scale": args.base_height_reward_scale,
                 "action_rate_penalty_scale": args.action_rate_penalty_scale,
+                "joint_velocity_penalty_scale": args.joint_velocity_penalty_scale,
                 "joint_deviation_penalty_scale": args.joint_deviation_penalty_scale,
                 "termination_penalty": args.termination_penalty,
                 "warmup_steps": args.warmup_steps,
@@ -200,6 +202,7 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
             base_height_sigma=args.base_height_sigma,
             base_height_reward_scale=args.base_height_reward_scale,
             action_rate_penalty_scale=args.action_rate_penalty_scale,
+            joint_velocity_penalty_scale=args.joint_velocity_penalty_scale,
             joint_deviation_penalty_scale=args.joint_deviation_penalty_scale,
             termination_penalty=args.termination_penalty,
         ),
@@ -561,6 +564,7 @@ def reward_contribution_stats(
         "upright": ("upright_reward_scale", 1.0),
         "tracking_base_height": ("base_height_reward_scale", 1.0),
         "action_rate_penalty": ("action_rate_penalty_scale", -1.0),
+        "joint_velocity_penalty": ("joint_velocity_penalty_scale", -1.0),
         "joint_deviation_penalty": ("joint_deviation_penalty_scale", -1.0),
     }
     for name, (scale_attr, sign) in scale_map.items():

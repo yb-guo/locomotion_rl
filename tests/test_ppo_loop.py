@@ -183,6 +183,7 @@ def test_collect_rollout_reports_episode_length_and_reset_rates_inputs() -> None
     assert batch.completed_episode_length_mean == pytest.approx(2.5)
     assert batch.reward_component_means["tracking_lin_vel"] == pytest.approx(2.0)
     assert batch.reward_component_means["action_rate_penalty"] == pytest.approx(-0.2)
+    assert batch.reward_component_means["joint_velocity_penalty"] == pytest.approx(0.3)
 
 
 class _MetricModel:
@@ -281,6 +282,7 @@ class _MetricEnv:
                         float(self.step_index),
                     ),
                     "action_rate_penalty": self.torch.full((self.config.n_envs,), -0.2),
+                    "joint_velocity_penalty": self.torch.full((self.config.n_envs,), 0.3),
                 },
             },
         )

@@ -17,6 +17,7 @@ REWARD_COMPONENT_NAMES = (
     "upright",
     "tracking_base_height",
     "action_rate_penalty",
+    "joint_velocity_penalty",
     "joint_deviation_penalty",
     "termination_penalty",
 )

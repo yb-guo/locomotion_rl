@@ -33,6 +33,8 @@ def test_parse_args_accepts_log_std_init(monkeypatch: pytest.MonkeyPatch) -> Non
             "standing",
             "--base-height-reward-scale",
             "0.5",
+            "--joint-velocity-penalty-scale",
+            "0.02",
             "--termination-penalty",
             "-5.0",
             "--warmup-steps",
@@ -51,6 +53,7 @@ def test_parse_args_accepts_log_std_init(monkeypatch: pytest.MonkeyPatch) -> Non
     assert args.action_joint_group == "legs"
     assert args.command_mode == "standing"
     assert args.base_height_reward_scale == 0.5
+    assert args.joint_velocity_penalty_scale == 0.02
     assert args.termination_penalty == -5.0
     assert args.warmup_steps == 2
 
@@ -138,6 +141,7 @@ def test_reward_contribution_stats_apply_env_scales_and_signs() -> None:
             "upright": 0.8,
             "tracking_base_height": 0.9,
             "action_rate_penalty": 0.4,
+            "joint_velocity_penalty": 0.3,
             "joint_deviation_penalty": 0.2,
             "termination_penalty": -0.5,
         },
@@ -148,6 +152,7 @@ def test_reward_contribution_stats_apply_env_scales_and_signs() -> None:
             upright_reward_scale=0.5,
             base_height_reward_scale=0.0,
             action_rate_penalty_scale=0.01,
+            joint_velocity_penalty_scale=0.02,
             joint_deviation_penalty_scale=0.05,
         ),
     )
@@ -159,6 +164,7 @@ def test_reward_contribution_stats_apply_env_scales_and_signs() -> None:
         "reward_contribution_upright_mean": pytest.approx(0.4),
         "reward_contribution_tracking_base_height_mean": pytest.approx(0.0),
         "reward_contribution_action_rate_penalty_mean": pytest.approx(-0.004),
+        "reward_contribution_joint_velocity_penalty_mean": pytest.approx(-0.006),
         "reward_contribution_joint_deviation_penalty_mean": pytest.approx(-0.01),
         "reward_contribution_termination_penalty_mean": pytest.approx(-0.5),
     }
