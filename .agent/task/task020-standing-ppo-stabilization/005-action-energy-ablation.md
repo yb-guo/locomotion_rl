@@ -82,8 +82,27 @@ waves.
   subprocess failure, even when another completed viable candidate is selected.
   Completed but non-viable candidates can still coexist with a selected
   candidate.
+- 2026-05-12 H200 focused verification after subprocess and evidence-integrity
+  fixes:
+  `PYTHONPATH=src python -m pytest tests/test_g1_action_energy_ablation.py tests/test_g1_velocity_tracking_env.py tests/test_g1_curriculum_ppo_smoke.py tests/test_g1_policy_action_safety_probe.py tests/test_g1_ppo_smoke.py tests/test_ppo_loop.py -q -p no:cacheprovider`
+  -> 55 passed.
+- 2026-05-12 H200 matrix `h200-gpu1-action-energy-v2` used
+  `CUDA_VISIBLE_DEVICES=1`, physical GPU 1, logical `cuda:0`, and the bounded
+  standing-only matrix. Result: parent status `passed`, `candidate_count=12`,
+  no candidate runtime/subprocess failures, and no yaw/vx. Selected candidate:
+  `scale_0p1_logstd_neg2p0` (`action_scale_mult=0.10`,
+  `log_std_init=-2.0`), reward 1.943375, episode_length_mean 51.659180,
+  survival_rate 1.0, reset_rate 0.0, tilt_reset_rate 0.0,
+  action_saturation_ratio 0.0, min collect throughput 18182.11 env-policy
+  steps/s. Artifacts copied locally under
+  `.agent/task/task020-standing-ppo-stabilization/artifacts/h200-gpu1-action-energy-v2/`.
+- 2026-05-12 Matrix readout: all 12 candidates completed. The largest-energy
+  candidate `scale_0p35_logstd_neg1p0` showed one small tilt/reset event
+  (`reset_rate=3.0517578125e-05`, survival_rate 0.999969482421875) and was not
+  selected. The selected low-energy candidate had zero final reset and zero
+  action saturation while changing actor/value parameters.
 
 ## Review
 
-Status: Genesis reinitialization blocker fixed locally; H200 matrix evidence must
-be rerun because previous multi-candidate process evidence was invalid.
+Status: complete. Read-only reviewer found no blocking issue after the
+evidence-integrity fix. H200 v2 matrix evidence is complete for the subtask.

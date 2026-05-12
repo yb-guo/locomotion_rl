@@ -185,7 +185,19 @@ Ranked hypotheses:
   survival_rate 1.0, height/tilt/timeout reset rates 0.0, action saturation
   about 0.0026, no final full-env reset wave. Reward improved without survival
   regression.
+- 2026-05-12 Subtask005 action-energy ablation tooling committed through
+  `fa67354` after read-only review. H200 focused verification passed
+  55 tests. H200 matrix `h200-gpu1-action-energy-v2` ran the bounded
+  standing-only matrix on physical GPU 1 (`CUDA_VISIBLE_DEVICES=1`, logical
+  `cuda:0`): 12/12 candidates completed, no subprocess/runtime failures, parent
+  summary status `passed`. Selected candidate is `scale_0p1_logstd_neg2p0`
+  (`action_scale_mult=0.10`, `log_std_init=-2.0`) with reward 1.943375,
+  episode_length_mean 51.659180, survival_rate 1.0, reset_rate 0.0,
+  tilt_reset_rate 0.0, action_saturation_ratio 0.0, and min collect throughput
+  18182.11 env-policy steps/s. This completes the one-seed action-energy
+  selection step; task020 remains in progress because the 3-seed standing PPO
+  gate and deterministic eval are still pending.
 
 ## Review
 
-Status: in progress through subtask004 reward pack; not passed.
+Status: in progress through subtask005 action-energy ablation; not passed.
