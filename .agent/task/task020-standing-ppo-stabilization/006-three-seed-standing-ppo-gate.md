@@ -29,7 +29,33 @@ Run the standing PPO stabilization gate with selected config.
 ## Log
 
 - 2026-05-12 Planned.
+- 2026-05-12 Ran H200 gate `h200-gpu1-standing-gate-v1` through the guarded
+  remote protocol with `CUDA_VISIBLE_DEVICES=1`, physical GPU 1, logical
+  `cuda:0`, 3 seeds, `command_mode=standing`, `ppo_updates=20`, `n_envs=1024`,
+  `rollout_steps=32`, `epochs=2`, and `minibatch_size=8192`.
+- 2026-05-12 Config used the subtask005 selected action-energy candidate and
+  subtask004 reward/reset pack: `action_scale_mult=0.10`,
+  `log_std_init=-2.0`, `base_height_reward_scale=0.20`,
+  `joint_velocity_penalty_scale=0.001`, `termination_penalty=-1.0`,
+  `termination_height_min=0.20`, and `root_z=1.20`.
+- 2026-05-12 Run result: `status=ok`, `all_seeds_passed=true`,
+  `mean_final_survival_rate=1.0`, max final height/tilt/timeout reset rates all
+  0.0, no final full-env reset wave, and min collect throughput 44411.12
+  env-policy steps/s. Actor and value parameters changed for all 3 seeds.
+- 2026-05-12 Gate failure: final `mean_final_episode_length_mean=67.295247`.
+  The subtask003 baseline was 51.9209, so the task contract's easier threshold
+  is about 103.84 (`2x` baseline). Per-seed final episode means were 66.956,
+  67.403, and 67.526, with per-seed maximum episode means during training only
+  about 71.34, 71.38, and 71.26.
+- 2026-05-12 Additional signal: reward peaked early near 2.216 per seed but
+  ended at 1.502876, 1.488745, and 1.480386. Root height also ended low
+  (`root_height_mean` 0.745323, 0.742941, 0.741399; `root_height_min` 0.550936,
+  0.528411, 0.512587). This indicates the selected low-energy PPO run avoids
+  hard resets but does not meet the standing-stabilization episode-length gate.
+  Artifacts copied locally under
+  `.agent/task/task020-standing-ppo-stabilization/artifacts/h200-gpu1-standing-gate-v1/`.
 
 ## Review
 
-Status: pending.
+Status: pending review. Training plumbing passed, but the standing PPO gate did
+not meet the episode-length acceptance threshold.

@@ -197,7 +197,19 @@ Ranked hypotheses:
   18182.11 env-policy steps/s. This completes the one-seed action-energy
   selection step; task020 remains in progress because the 3-seed standing PPO
   gate and deterministic eval are still pending.
+- 2026-05-12 Subtask006 H200 3-seed standing PPO gate
+  `h200-gpu1-standing-gate-v1` ran with the selected subtask005 config
+  (`action_scale_mult=0.10`, `log_std_init=-2.0`) and subtask004 reward/reset
+  pack. Result: smoke status ok, all 3 seeds passed PPO plumbing checks,
+  physical GPU 1, logical `cuda:0`, no final height/tilt/timeout resets, no
+  final full-env reset wave, actor/value params changed, and min collect
+  throughput 44411.12 env-policy steps/s. Gate did not meet the task episode
+  threshold: final mean episode_length_mean was 67.295247 versus baseline
+  51.9209 and the easier `2x` baseline threshold of about 103.84. Reward peaked
+  early near 2.216 per seed but ended around 1.48-1.50 with low final root
+  height, so task020 remains blocked at the standing gate and yaw/vx remains
+  closed.
 
 ## Review
 
-Status: in progress through subtask005 action-energy ablation; not passed.
+Status: in progress through subtask006 standing PPO gate; not passed.
