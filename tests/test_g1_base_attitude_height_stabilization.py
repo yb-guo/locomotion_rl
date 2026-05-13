@@ -1,6 +1,8 @@
+from dataclasses import dataclass
 import inspect
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -239,11 +241,289 @@ def test_genesis_command_uses_guarded_wrapper_without_running_h200() -> None:
 
     assert command.startswith("/root/agent_workspace/safe_agent/run_guarded.sh bash -lc ")
     assert "h200-locomotion-lab-task023-base-attitude-height-stabilization" in command
+    assert "CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src" in command
     assert "h200_locomotion_lab.tools.g1_base_attitude_height_stabilization" in command
     assert "--runner genesis" in command
+    assert "--physical-gpu 1 --logical-cuda-device cuda:0" in command
+
+
+def test_genesis_runner_uses_fake_vectorized_backend_and_asset_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = fresh_test_dir("genesis_fake")
+    instances: list[FakeGenesisBackend] = []
+
+    class RuntimeFakeGenesisBackend(FakeGenesisBackend):
+        def __init__(self, config: object, *, profile: object) -> None:
+            super().__init__(config=config, profile=profile, with_contact=True)
+            instances.append(self)
+
+    monkeypatch.setattr(
+        probe,
+        "load_genesis_runtime",
+        lambda: (RuntimeFakeGenesisBackend, FakeGenesisConfig, FakeTorch()),
+    )
+    monkeypatch.setattr(probe, "load_g1_27dof_nohand_profile", fake_profile)
+    args = probe.parse_args(
+        [
+            "--runner",
+            "genesis",
+            "--backend",
+            "cpu",
+            "--logical-cuda-device",
+            "cpu",
+            "--n-envs",
+            "2",
+            "--mode",
+            "attitude_height",
+            "--steps",
+            "4",
+            "--asset-path",
+            "/tmp/override-g1.xml",
+            "--asset-variant-label",
+            "source",
+            "--output-root",
+            str(root),
+            "--run-name",
+            "fake",
+        ]
+    )
+
+    summary = probe.run_probe(args)
+
+    assert len(instances) == 2
+    backend = instances[0]
+    assert backend.config.n_envs == 2
+    assert backend.config.backend == "cpu"
+    assert backend.profile.asset.path == "/tmp/override-g1.xml"
+    assert summary["status"] == "completed"
+    assert summary["runner"] == "genesis"
+    assert summary["effective_asset_path"] == "/tmp/override-g1.xml"
+    assert summary["asset_metadata"]["effective_path"] == "/tmp/override-g1.xml"
+    assert summary["genesis"]["n_envs"] == 2
+    assert summary["genesis"]["profile"]["asset_path"] == "/tmp/override-g1.xml"
+    assert summary["hardware_metadata"]["physical_gpu"] == "1"
+    assert summary["hardware_metadata"]["logical_cuda_device"] == "cpu"
+    assert summary["stabilizer"]["mode"] == "attitude_height"
+    assert summary["stabilizer"]["clipping"]["max_abs_delta"] <= args.max_joint_delta
+    assert summary["contact_trace_summary"]["ankle_roll"]["available"] is True
+    assert summary["contact_trace_summary"]["ankle_pitch"]["available"] is True
+    assert summary["contact_trace_summary"]["ankle_roll"]["max_force"] > 0.0
+    assert summary["top_joint_errors"]
+    assert (root / "fake" / "metrics.jsonl").is_file()
+    assert (root / "fake" / "baseline_metrics.jsonl").is_file()
+    assert any(
+        abs(value) > 0.0
+        for action in backend.actions
+        for row in action
+        for value in row
+    )
+    assert all(
+        abs(value) <= 1.0
+        for action in backend.actions
+        for row in action
+        for value in row
+    )
+
+
+def test_genesis_contact_schema_reports_unavailable_without_crashing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = fresh_test_dir("genesis_no_contact")
+
+    class RuntimeNoContactBackend(FakeGenesisBackend):
+        def __init__(self, config: object, *, profile: object) -> None:
+            super().__init__(config=config, profile=profile, with_contact=False)
+
+    monkeypatch.setattr(
+        probe,
+        "load_genesis_runtime",
+        lambda: (RuntimeNoContactBackend, FakeGenesisConfig, FakeTorch()),
+    )
+    monkeypatch.setattr(probe, "load_g1_27dof_nohand_profile", fake_profile)
+    args = probe.parse_args(
+        [
+            "--runner",
+            "genesis",
+            "--backend",
+            "cpu",
+            "--logical-cuda-device",
+            "cpu",
+            "--mode",
+            "none",
+            "--steps",
+            "2",
+            "--output-root",
+            str(root),
+            "--run-name",
+            "fake",
+        ]
+    )
+
+    summary = probe.run_probe(args)
+
+    assert summary["status"] == "completed"
+    assert summary["contact_trace_summary"]["ankle_roll"]["available"] is False
+    assert summary["contact_trace_summary"]["ankle_pitch"]["available"] is False
+    assert summary["contact_trace_summary"]["ankle_roll"]["missing"]
 
 
 def fresh_test_dir(name: str) -> Path:
     root = (Path.cwd() / "outputs" / "task023" / ".test_tmp" / f"{name}_{uuid4().hex}").resolve()
     root.mkdir(parents=True)
     return root
+
+
+@dataclass(frozen=True)
+class FakeAsset:
+    path: str = "default-g1.xml"
+    format: str = "mjcf"
+    genesis_morph: str = "MJCF"
+    usage: str = "test"
+
+
+@dataclass(frozen=True)
+class FakeControl:
+    default_angles_rad: tuple[float, ...]
+    action_scales_rad: tuple[float, ...]
+
+
+@dataclass(frozen=True)
+class FakeProfile:
+    asset: FakeAsset
+    control: FakeControl
+    actuator_order: tuple[str, ...]
+    action_dim: int = 27
+    name: str = "fake-g1"
+    family: str = "unitree_g1"
+    route: str = "VectorizedGenesisBackend"
+    source_path: Path | None = None
+
+
+def fake_profile() -> FakeProfile:
+    return FakeProfile(
+        asset=FakeAsset(),
+        control=FakeControl(
+            default_angles_rad=(0.0,) * 27,
+            action_scales_rad=(0.2,) * 27,
+        ),
+        actuator_order=probe.G1_27DOF_NOHAND_ACTUATOR_ORDER,
+    )
+
+
+@dataclass
+class FakeGenesisConfig:
+    n_envs: int
+    backend: str = "cpu"
+    logical_cuda_device: str = "cpu"
+
+
+class FakeTorch:
+    def manual_seed(self, seed: int) -> None:
+        self.seed = seed
+
+    class cuda:
+        @staticmethod
+        def is_available() -> bool:
+            return False
+
+
+class FakeLink:
+    def __init__(self, index: int) -> None:
+        self.idx_local = index
+
+
+class FakeContactRobot:
+    link_indices = {
+        "left_ankle_roll_link": 0,
+        "right_ankle_roll_link": 1,
+        "left_ankle_pitch_link": 2,
+        "right_ankle_pitch_link": 3,
+    }
+
+    def __init__(self, *, with_contact: bool) -> None:
+        self.with_contact = with_contact
+
+    def get_link(self, name: str) -> FakeLink:
+        if not self.with_contact:
+            raise KeyError(name)
+        return FakeLink(self.link_indices[name])
+
+    def get_links_net_contact_force(
+        self,
+        links_idx_local: tuple[int, ...] | None = None,
+    ) -> list[list[list[float]]]:
+        if not self.with_contact:
+            raise RuntimeError("contact unavailable")
+        indices = links_idx_local or tuple(self.link_indices.values())
+        return [
+            [[float(index + 1), 0.0, 0.0] for index in indices],
+            [[float(index + 2), 0.0, 0.0] for index in indices],
+        ]
+
+
+class FakeGenesisBackend:
+    def __init__(self, config: object, *, profile: object, with_contact: bool) -> None:
+        self.config = config
+        self.profile = profile
+        self.n_envs = config.n_envs
+        self.action_dim = 27
+        self.default_positions_values = tuple(profile.control.default_angles_rad)
+        self.robot = FakeContactRobot(with_contact=with_contact)
+        self.step_count = 0
+        self.actions: list[list[list[float]]] = []
+        self.dof_pos = [list(self.default_positions_values) for _ in range(self.n_envs)]
+
+    def reset(self) -> list[list[float]]:
+        self.step_count = 0
+        self.dof_pos = [list(self.default_positions_values) for _ in range(self.n_envs)]
+        return [[0.0] * 90 for _ in range(self.n_envs)]
+
+    def state(self) -> SimpleNamespace:
+        height = 0.72 + (0.01 * self.step_count)
+        roll = 0.10 if self.step_count == 0 else 0.03
+        pitch = -0.08 if self.step_count == 0 else -0.02
+        quat = normalized_small_quat(roll=roll, pitch=pitch)
+        return SimpleNamespace(
+            root_pos=[[0.0, 0.0, height] for _ in range(self.n_envs)],
+            root_quat=[list(quat) for _ in range(self.n_envs)],
+            root_vel=[[0.0, 0.0, 0.0] for _ in range(self.n_envs)],
+            root_ang_vel=[[0.0, 0.0, 0.0] for _ in range(self.n_envs)],
+            dof_pos=[row[:] for row in self.dof_pos],
+        )
+
+    def step_physics(self, action: list[list[float]]) -> list[list[float]]:
+        clipped = [[max(-1.0, min(1.0, value)) for value in row] for row in action]
+        self.actions.append(clipped)
+        scales = self.profile.control.action_scales_rad
+        self.dof_pos = [
+            [
+                default + normalized * scale
+                for default, normalized, scale in zip(
+                    self.default_positions_values,
+                    row,
+                    scales,
+                )
+            ]
+            for row in clipped
+        ]
+        self.step_count += 1
+        return clipped
+
+    def tensor_device_report(self) -> dict[str, str]:
+        return {"fake": self.config.logical_cuda_device}
+
+    def tensor_device_ok(self) -> bool:
+        return True
+
+    def contact_solver_config_report(self) -> dict[str, object]:
+        return {"configured": False}
+
+
+def normalized_small_quat(*, roll: float, pitch: float) -> tuple[float, float, float, float]:
+    w = 1.0
+    x = roll / 2.0
+    y = pitch / 2.0
+    z = 0.0
+    norm = (w * w + x * x + y * y + z * z) ** 0.5
+    return (w / norm, x / norm, y / norm, z / norm)

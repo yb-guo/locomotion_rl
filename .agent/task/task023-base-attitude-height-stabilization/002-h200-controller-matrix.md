@@ -43,7 +43,33 @@
 ## Log
 
 - 2026-05-13 Created with task023.
+- 2026-05-13 Coding subagent implemented the subtask002 local prerequisite for
+  `--runner genesis` in
+  `src/h200_locomotion_lab/tools/g1_base_attitude_height_stabilization.py`.
+  Genesis/torch imports remain delayed to the Genesis runner path, the runner
+  builds `VectorizedGenesisBackend`/`VectorizedGenesisConfig` with the G1
+  profile, supports `--asset-path` profile asset replacement, generates bounded
+  normalized fixed-controller actions for `none`, `attitude`, `height`, and
+  `attitude_height`, and writes Genesis summaries with hardware metadata and
+  contact availability/missing reasons.
+- 2026-05-13 Extended
+  `tests/test_g1_base_attitude_height_stabilization.py` with fake backend
+  coverage for the Genesis runner path, asset override, bounded normalized
+  actions, contact schema, and guarded command CUDA env construction. Local
+  focused verification:
+  `$env:PYTHONPATH='src'; python -m pytest tests/test_g1_base_attitude_height_stabilization.py -p no:cacheprovider`
+  passed with 9 tests.
 
 ## Review
 
-Status: pending.
+Status: reviewed_no_blocking_for_h200_matrix.
+
+- 2026-05-13 Read-only reviewer found no blocking findings and allowed Router
+  to execute the guarded H200 matrix. Reviewer confirmed that `--runner genesis`
+  is implemented, Genesis/torch imports are delayed, asset override/backend/
+  n-envs/logical-device/modes are supported, actions are bounded and clipped,
+  and no PPO/training path or stop-rule violation was introduced.
+- Non-blocking carry-forward for H200 execution: use explicit
+  `--physical-gpu 1 --logical-cuda-device cuda:0`; stop and diagnose if real
+  Genesis exposes contact force only through an API not covered by the current
+  link reader.

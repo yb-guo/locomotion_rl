@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 import math
+import os
 from pathlib import Path
 import random
 import shlex
@@ -31,6 +32,8 @@ DEFAULT_MAX_JOINT_DELTA = 0.08
 TOP_JOINT_COUNT = 6
 ANKLE_ROLL_JOINTS = ("left_ankle_roll_joint", "right_ankle_roll_joint")
 ANKLE_PITCH_JOINTS = ("left_ankle_pitch_joint", "right_ankle_pitch_joint")
+ANKLE_ROLL_LINKS = ("left_ankle_roll_link", "right_ankle_roll_link")
+ANKLE_PITCH_LINKS = ("left_ankle_pitch_link", "right_ankle_pitch_link")
 ATTITUDE_JOINTS = (
     "left_hip_roll_joint",
     "left_ankle_roll_joint",
@@ -118,6 +121,8 @@ def main(argv: list[str] | None = None) -> None:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runner", choices=RUNNERS, default="local_toy")
+    parser.add_argument("--backend", default="cuda")
+    parser.add_argument("--n-envs", type=positive_int, default=1)
     parser.add_argument("--mode", choices=STABILIZER_MODES, default="none")
     parser.add_argument("--steps", type=positive_int, default=240)
     parser.add_argument("--seed", type=int, default=0)
@@ -482,13 +487,285 @@ def build_run_config(
 
 
 def run_genesis_probe(args: argparse.Namespace) -> dict[str, Any]:
-    # The actual Genesis path is intentionally delayed to subtask 002.
-    from h200_locomotion_lab.envs import vectorized_genesis_backend as _genesis_backend  # noqa: F401
+    VectorizedGenesisBackend, VectorizedGenesisConfig, torch = load_genesis_runtime()
+    if hasattr(torch, "manual_seed"):
+        torch.manual_seed(int(args.seed))
+    if hasattr(torch, "cuda") and torch.cuda.is_available():
+        torch.cuda.manual_seed_all(int(args.seed))
 
-    raise NotImplementedError(
-        "Genesis runner entry is reserved for task023 subtask 002; "
-        f"use guarded H200 command: {build_h200_genesis_command(args)}"
+    base_profile = load_g1_27dof_nohand_profile()
+    profile = profile_with_asset_path(base_profile, args.asset_path)
+    asset_path = str(profile.asset.path)
+    run_dir = resolve_run_dir(args.output_root, args.run_name)
+    run_dir.mkdir(parents=True, exist_ok=False)
+
+    requested_gains = StabilizerGains(
+        attitude_kp=float(args.attitude_kp),
+        attitude_kd=float(args.attitude_kd),
+        height_kp=float(args.height_kp),
+        height_kd=float(args.height_kd),
+        max_joint_delta=float(args.max_joint_delta),
     )
+    gains = clip_gains(requested_gains, max_gain=float(args.max_gain))
+    config = build_run_config(
+        args=args,
+        run_dir=run_dir,
+        effective_asset_path=asset_path,
+        requested_gains=requested_gains,
+        effective_gains=gains,
+    )
+    config["hardware_metadata"] = hardware_metadata(args)
+    config["genesis"] = {
+        "backend": args.backend,
+        "n_envs": int(args.n_envs),
+        "profile": profile_metadata(profile),
+    }
+    write_json(run_dir / "config.json", config)
+
+    backend = VectorizedGenesisBackend(
+        VectorizedGenesisConfig(
+            n_envs=int(args.n_envs),
+            backend=args.backend,
+            logical_cuda_device=args.logical_cuda_device,
+        ),
+        profile=profile,
+    )
+    rows = run_genesis_rollout(
+        args=args,
+        backend=backend,
+        gains=gains,
+        mode=args.mode,
+    )
+    metrics_path = run_dir / "metrics.jsonl"
+    for row in rows:
+        append_jsonl(metrics_path, row)
+
+    baseline_rows = rows
+    if args.mode != "none":
+        baseline_backend = VectorizedGenesisBackend(
+            VectorizedGenesisConfig(
+                n_envs=int(args.n_envs),
+                backend=args.backend,
+                logical_cuda_device=args.logical_cuda_device,
+            ),
+            profile=profile,
+        )
+        baseline_rows = run_genesis_rollout(
+            args=args,
+            backend=baseline_backend,
+            gains=gains,
+            mode="none",
+        )
+        baseline_metrics_path = run_dir / "baseline_metrics.jsonl"
+        for row in baseline_rows:
+            append_jsonl(baseline_metrics_path, row)
+
+    summary = summarize_rollout(
+        args=args,
+        run_dir=run_dir,
+        effective_asset_path=asset_path,
+        requested_gains=requested_gains,
+        effective_gains=gains,
+        rows=rows,
+        baseline_rows=baseline_rows,
+    )
+    summary["hardware_metadata"] = hardware_metadata(args)
+    summary["genesis"] = {
+        "backend": args.backend,
+        "n_envs": int(args.n_envs),
+        "profile": profile_metadata(profile),
+        "tensor_device_report": optional_call(backend, "tensor_device_report"),
+        "tensor_device_ok": optional_call(backend, "tensor_device_ok"),
+        "contact_solver_config_report": optional_call(backend, "contact_solver_config_report"),
+    }
+    write_json(run_dir / "summary.json", summary)
+    if args.summary_json is not None:
+        write_json(resolve_output_file(args.summary_json), summary)
+    return summary
+
+
+def load_genesis_runtime() -> tuple[Any, Any, Any]:
+    from h200_locomotion_lab.envs.vectorized_genesis_backend import (  # noqa: PLC0415
+        VectorizedGenesisBackend,
+        VectorizedGenesisConfig,
+    )
+
+    try:
+        import torch  # type: ignore[import-not-found]  # noqa: PLC0415
+    except Exception as exc:  # pragma: no cover - H200 environment path.
+        raise RuntimeError(f"torch import failed for Genesis runner: {exc}") from exc
+    return VectorizedGenesisBackend, VectorizedGenesisConfig, torch
+
+
+def profile_with_asset_path(profile: Any, asset_path: Path | None) -> Any:
+    if asset_path is None:
+        return profile
+    asset_path_value = path_cli(asset_path)
+    try:
+        return replace(profile, asset=replace(profile.asset, path=asset_path_value))
+    except TypeError:
+        profile.asset.path = asset_path_value
+        return profile
+
+
+def run_genesis_rollout(
+    *,
+    args: argparse.Namespace,
+    backend: Any,
+    gains: StabilizerGains,
+    mode: str,
+) -> list[dict[str, Any]]:
+    backend.reset()
+    contact_reader = build_contact_reader(backend.robot)
+    rows: list[dict[str, Any]] = []
+    for step in range(int(args.steps)):
+        pre_state = backend.state()
+        action, controller_rows = genesis_action_rows(
+            args=args,
+            backend=backend,
+            state=pre_state,
+            gains=gains,
+            mode=mode,
+        )
+        clipped_action = rows_from_tensorlike(backend.step_physics(action))
+        post_state = backend.state()
+        row = genesis_metric_row(
+            args=args,
+            backend=backend,
+            state=post_state,
+            controller_rows=controller_rows,
+            clipped_action=clipped_action,
+            contact_reader=contact_reader,
+            mode=mode,
+            step=step,
+        )
+        rows.append(row)
+    return rows
+
+
+def genesis_action_rows(
+    *,
+    args: argparse.Namespace,
+    backend: Any,
+    state: Any,
+    gains: StabilizerGains,
+    mode: str,
+) -> tuple[list[list[float]], list[dict[str, Any]]]:
+    root_rows = rows_from_tensorlike(state.root_pos)
+    quat_rows = rows_from_tensorlike(state.root_quat)
+    root_vel_rows = rows_from_tensorlike(getattr(state, "root_vel", []))
+    root_ang_vel_rows = rows_from_tensorlike(getattr(state, "root_ang_vel", []))
+    action_scales = tuple(float(value) for value in backend.profile.control.action_scales_rad)
+    rows: list[list[float]] = []
+    controller_rows: list[dict[str, Any]] = []
+    for env_index in range(backend.n_envs):
+        roll, pitch = roll_pitch_from_quat(quat_rows[env_index])
+        root_vel = root_vel_rows[env_index] if root_vel_rows else [0.0, 0.0, 0.0]
+        root_ang_vel = root_ang_vel_rows[env_index] if root_ang_vel_rows else [0.0, 0.0, 0.0]
+        control = compute_controller_output(
+            mode=mode,
+            gains=gains,
+            state=ToyState(
+                step=0,
+                root_height=float(root_rows[env_index][2]),
+                root_height_velocity=float(root_vel[2]) if len(root_vel) > 2 else 0.0,
+                roll=roll,
+                pitch=pitch,
+                roll_velocity=float(root_ang_vel[0]) if root_ang_vel else 0.0,
+                pitch_velocity=float(root_ang_vel[1]) if len(root_ang_vel) > 1 else 0.0,
+            ),
+            target_height=float(args.target_height),
+        )
+        joint_deltas = genesis_joint_deltas(control)
+        action_row = []
+        for joint_name, scale in zip(backend.profile.actuator_order, action_scales):
+            delta = joint_deltas.get(joint_name, 0.0)
+            normalized = 0.0 if scale == 0.0 else delta / scale
+            action_row.append(clamp(normalized, -1.0, 1.0))
+        clipped_by_normalization = any(abs(value) >= 1.0 for value in action_row)
+        rows.append(action_row)
+        controller_rows.append(
+            {
+                "roll_delta": control.roll_delta,
+                "pitch_delta": control.pitch_delta,
+                "height_delta": control.height_delta,
+                "max_abs_delta": control.max_abs_delta,
+                "clipped": control.clipped or clipped_by_normalization,
+                "max_abs_normalized_action": max((abs(value) for value in action_row), default=0.0),
+            }
+        )
+    return rows, controller_rows
+
+
+def genesis_joint_deltas(control: ControllerOutput) -> dict[str, float]:
+    values = {joint_name: 0.0 for joint_name in G1_27DOF_NOHAND_ACTUATOR_ORDER}
+    for joint_name in ANKLE_ROLL_JOINTS:
+        values[joint_name] += control.roll_delta
+    for joint_name in ANKLE_PITCH_JOINTS:
+        values[joint_name] += control.pitch_delta + (0.5 * control.height_delta)
+    for joint_name in ("left_knee_joint", "right_knee_joint"):
+        values[joint_name] += control.height_delta
+    for joint_name in ("left_hip_roll_joint", "right_hip_roll_joint"):
+        values[joint_name] += 0.5 * control.roll_delta
+    for joint_name in ("left_hip_pitch_joint", "right_hip_pitch_joint"):
+        values[joint_name] += 0.5 * control.pitch_delta + 0.25 * control.height_delta
+    return values
+
+
+def genesis_metric_row(
+    *,
+    args: argparse.Namespace,
+    backend: Any,
+    state: Any,
+    controller_rows: Sequence[dict[str, Any]],
+    clipped_action: Sequence[Sequence[float]],
+    contact_reader: dict[str, Any],
+    mode: str,
+    step: int,
+) -> dict[str, Any]:
+    root_rows = rows_from_tensorlike(state.root_pos)
+    quat_rows = rows_from_tensorlike(state.root_quat)
+    dof_rows = rows_from_tensorlike(state.dof_pos)
+    default_positions = tuple(float(value) for value in backend.default_positions_values)
+    heights = [float(row[2]) for row in root_rows]
+    attitudes = [attitude_from_quat(row) for row in quat_rows]
+    tilts = [row["tilt"] for row in attitudes]
+    uprights = [row["upright"] for row in attitudes]
+    joint_errors = aggregate_joint_errors(dof_rows, default_positions, backend.profile.actuator_order)
+    contacts = read_contact_metrics(backend.robot, contact_reader)
+    tilt_bad = any(value < float(args.min_upright) for value in uprights)
+    height_bad = any(
+        value < float(args.termination_height_min)
+        or value > float(args.termination_height_max)
+        for value in heights
+    )
+    action_max = max(
+        (abs(value) for row in clipped_action for value in row),
+        default=0.0,
+    )
+    controller = aggregate_controller_rows(controller_rows)
+    controller["max_abs_normalized_action"] = max(
+        float(controller["max_abs_normalized_action"]),
+        action_max,
+    )
+    return {
+        "step": step,
+        "mode": mode,
+        "root_height": min(heights),
+        "upright": min(uprights),
+        "tilt": max(tilts),
+        "roll": max((abs(row["roll"]) for row in attitudes), default=0.0),
+        "pitch": max((abs(row["pitch"]) for row in attitudes), default=0.0),
+        "controller": controller,
+        "tilt_bad": tilt_bad,
+        "height_bad": height_bad,
+        "reset": tilt_bad or height_bad,
+        "reset_reason": reset_reason(tilt_bad=tilt_bad, height_bad=height_bad),
+        "joint_errors": joint_errors,
+        "ankle_roll_contact_force": contacts["ankle_roll"]["max_force"],
+        "ankle_pitch_contact_force": contacts["ankle_pitch"]["max_force"],
+        "contact_metrics": contacts,
+    }
 
 
 def build_h200_genesis_command(args: argparse.Namespace) -> str:
@@ -499,6 +776,10 @@ def build_h200_genesis_command(args: argparse.Namespace) -> str:
         "h200_locomotion_lab.tools.g1_base_attitude_height_stabilization",
         "--runner",
         "genesis",
+        "--backend",
+        args.backend,
+        "--n-envs",
+        str(args.n_envs),
         "--mode",
         args.mode,
         "--steps",
@@ -508,22 +789,289 @@ def build_h200_genesis_command(args: argparse.Namespace) -> str:
         "--asset-variant-label",
         args.asset_variant_label,
         "--output-root",
-        str(args.output_root),
+        path_cli(args.output_root),
         "--run-name",
         args.run_name or time.strftime("%Y%m%d-%H%M%S"),
         "--physical-gpu",
         str(args.physical_gpu),
         "--logical-cuda-device",
         args.logical_cuda_device,
+        "--attitude-kp",
+        str(args.attitude_kp),
+        "--attitude-kd",
+        str(args.attitude_kd),
+        "--height-kp",
+        str(args.height_kp),
+        "--height-kd",
+        str(args.height_kd),
+        "--max-gain",
+        str(args.max_gain),
+        "--max-joint-delta",
+        str(args.max_joint_delta),
+        "--target-height",
+        str(args.target_height),
+        "--min-upright",
+        str(args.min_upright),
+        "--termination-height-min",
+        str(args.termination_height_min),
+        "--termination-height-max",
+        str(args.termination_height_max),
     ]
     if args.asset_path is not None:
-        command.extend(["--asset-path", str(args.asset_path)])
+        command.extend(["--asset-path", path_cli(args.asset_path)])
     if args.asset_source_path is not None:
-        command.extend(["--asset-source-path", str(args.asset_source_path)])
-    inner = "cd /root/agent_workspace/project/" + project + " && " + " ".join(
-        shlex.quote(part) for part in command
+        command.extend(["--asset-source-path", path_cli(args.asset_source_path)])
+    command_text = " ".join(shlex.quote(part) for part in command)
+    env_prefix = (
+        f"CUDA_VISIBLE_DEVICES={shlex.quote(str(args.physical_gpu))} "
+        "PYTHONPATH=src "
     )
+    inner = "cd /root/agent_workspace/project/" + project + " && " + env_prefix + command_text
     return "/root/agent_workspace/safe_agent/run_guarded.sh bash -lc " + shlex.quote(inner)
+
+
+def aggregate_controller_rows(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "roll_delta": max((abs(float(row["roll_delta"])) for row in rows), default=0.0),
+        "pitch_delta": max((abs(float(row["pitch_delta"])) for row in rows), default=0.0),
+        "height_delta": max((abs(float(row["height_delta"])) for row in rows), default=0.0),
+        "max_abs_delta": max((float(row["max_abs_delta"]) for row in rows), default=0.0),
+        "max_abs_normalized_action": max(
+            (float(row.get("max_abs_normalized_action", 0.0)) for row in rows),
+            default=0.0,
+        ),
+        "clipped": any(bool(row["clipped"]) for row in rows),
+    }
+
+
+def aggregate_joint_errors(
+    dof_rows: Sequence[Sequence[float]],
+    default_positions: Sequence[float],
+    joint_names: Sequence[str],
+) -> dict[str, float]:
+    values: dict[str, float] = {}
+    for joint_index, joint_name in enumerate(joint_names):
+        values[joint_name] = max(
+            (
+                abs(float(row[joint_index]) - float(default_positions[joint_index]))
+                for row in dof_rows
+            ),
+            default=0.0,
+        )
+    return values
+
+
+def attitude_from_quat(quat: Sequence[float]) -> dict[str, float]:
+    roll, pitch = roll_pitch_from_quat(quat)
+    tilt = math.sqrt(roll * roll + pitch * pitch)
+    return {
+        "roll": roll,
+        "pitch": pitch,
+        "tilt": tilt,
+        "upright": clamp(1.0 - tilt, 0.0, 1.0),
+    }
+
+
+def roll_pitch_from_quat(quat: Sequence[float]) -> tuple[float, float]:
+    if len(quat) < 4:
+        return 0.0, 0.0
+    w, x, y, z = (float(quat[0]), float(quat[1]), float(quat[2]), float(quat[3]))
+    sinr_cosp = 2.0 * (w * x + y * z)
+    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
+    roll = math.atan2(sinr_cosp, cosr_cosp)
+    sinp = 2.0 * (w * y - z * x)
+    if abs(sinp) >= 1.0:
+        pitch = math.copysign(math.pi / 2.0, sinp)
+    else:
+        pitch = math.asin(sinp)
+    return roll, pitch
+
+
+def build_contact_reader(robot: Any) -> dict[str, Any]:
+    return {
+        "ankle_roll": build_contact_group(robot, ANKLE_ROLL_LINKS),
+        "ankle_pitch": build_contact_group(robot, ANKLE_PITCH_LINKS),
+    }
+
+
+def build_contact_group(robot: Any, link_names: Sequence[str]) -> dict[str, Any]:
+    links = []
+    missing = []
+    for link_name in link_names:
+        link_index = resolve_link_index(robot, link_name)
+        if link_index is None:
+            missing.append({"link": link_name, "reason": "link_index_unavailable"})
+        links.append({"name": link_name, "index": link_index})
+    return {"links": links, "missing": missing}
+
+
+def read_contact_metrics(robot: Any, reader: dict[str, Any]) -> dict[str, Any]:
+    return {
+        group_name: read_contact_group(robot, group)
+        for group_name, group in reader.items()
+    }
+
+
+def read_contact_group(robot: Any, group: dict[str, Any]) -> dict[str, Any]:
+    link_forces = []
+    missing = list(group["missing"])
+    for link in group["links"]:
+        link_name = str(link["name"])
+        link_index = link["index"]
+        if link_index is None:
+            link_forces.append({"link": link_name, "index": None, "force": None})
+            continue
+        force = read_link_contact_force(robot, int(link_index))
+        if force is None:
+            missing.append({"link": link_name, "reason": "contact_force_unavailable"})
+        link_forces.append({"link": link_name, "index": int(link_index), "force": force})
+    forces = [
+        float(row["force"])
+        for row in link_forces
+        if row["force"] is not None
+    ]
+    return {
+        "available": bool(forces),
+        "missing": missing,
+        "links": link_forces,
+        "max_force": max(forces) if forces else None,
+        "mean_force": (sum(forces) / len(forces)) if forces else None,
+        "active_links": sum(1 for value in forces if value > 0.0),
+    }
+
+
+def resolve_link_index(robot: Any, link_name: str) -> int | None:
+    if not hasattr(robot, "get_link"):
+        return None
+    try:
+        link = robot.get_link(link_name)
+    except Exception:
+        return None
+    for attr in ("idx_local", "idx", "link_idx", "id"):
+        if not hasattr(link, attr):
+            continue
+        value = getattr(link, attr)
+        if isinstance(value, (list, tuple)):
+            if not value:
+                continue
+            value = value[0]
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def read_link_contact_force(robot: Any, link_index: int) -> float | None:
+    if not hasattr(robot, "get_links_net_contact_force"):
+        return None
+    try:
+        selected = robot.get_links_net_contact_force(links_idx_local=(link_index,))
+        force = max_vector_norm(selected)
+        if force is not None:
+            return force
+    except TypeError:
+        pass
+    except Exception:
+        return None
+    try:
+        forces = rows_from_tensorlike(robot.get_links_net_contact_force())
+    except Exception:
+        return None
+    flat = [float(value) for row in forces for value in row]
+    start = link_index * 3
+    if len(flat) < start + 3:
+        return None
+    fx, fy, fz = flat[start : start + 3]
+    return math.sqrt(fx * fx + fy * fy + fz * fz)
+
+
+def max_vector_norm(value: Any) -> float | None:
+    flat = flatten_numeric(value)
+    if len(flat) < 3:
+        return None
+    norms = []
+    for index in range(0, len(flat) - 2, 3):
+        fx, fy, fz = flat[index : index + 3]
+        norms.append(math.sqrt(fx * fx + fy * fy + fz * fz))
+    return max(norms) if norms else None
+
+
+def flatten_numeric(value: Any) -> list[float]:
+    if hasattr(value, "detach"):
+        value = value.detach()
+    if hasattr(value, "cpu"):
+        value = value.cpu()
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if isinstance(value, (int, float, bool)):
+        return [float(value)]
+    flattened: list[float] = []
+    for item in value:
+        if isinstance(item, (list, tuple)):
+            flattened.extend(flatten_numeric(item))
+        else:
+            flattened.append(float(item))
+    return flattened
+
+
+def rows_from_tensorlike(value: Any) -> list[list[float]]:
+    if hasattr(value, "detach"):
+        value = value.detach()
+    if hasattr(value, "cpu"):
+        value = value.cpu()
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if isinstance(value, (int, float, bool)):
+        return [[float(value)]]
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        value = list(value)
+    if not value:
+        return []
+    if all(isinstance(item, (int, float, bool)) for item in value):
+        return [[float(item) for item in value]]
+    rows: list[list[float]] = []
+    for row in value:
+        if hasattr(row, "tolist"):
+            row = row.tolist()
+        rows.append([float(item) for item in row])
+    return rows
+
+
+def hardware_metadata(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "physical_gpu": str(args.physical_gpu),
+        "logical_cuda_device": args.logical_cuda_device,
+        "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES", "not_set"),
+        "guarded_command_cuda_visible_devices": str(args.physical_gpu),
+    }
+
+
+def profile_metadata(profile: Any) -> dict[str, Any]:
+    asset = getattr(profile, "asset", None)
+    return {
+        "name": getattr(profile, "name", None),
+        "family": getattr(profile, "family", None),
+        "route": getattr(profile, "route", None),
+        "asset_path": getattr(asset, "path", None),
+        "asset_format": getattr(asset, "format", None),
+        "asset_genesis_morph": getattr(asset, "genesis_morph", None),
+        "asset_usage": getattr(asset, "usage", None),
+        "source_path": None
+        if getattr(profile, "source_path", None) is None
+        else str(profile.source_path),
+    }
+
+
+def optional_call(target: Any, method_name: str) -> Any:
+    if not hasattr(target, method_name):
+        return None
+    try:
+        return getattr(target, method_name)()
+    except Exception as exc:
+        return {"unavailable": True, "reason": f"{exc.__class__.__name__}:{exc}"}
 
 
 def initial_toy_state(*, seed: int) -> ToyState:
@@ -607,14 +1155,32 @@ def top_joint_errors(rows: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def contact_summary(rows: Sequence[dict[str, Any]], key: str) -> dict[str, Any]:
-    values = [float(row[key]) for row in rows]
+    values = [
+        float(row[key])
+        for row in rows
+        if row.get(key) is not None
+    ]
     if not values:
-        return {"max_force": 0.0, "mean_force": 0.0, "active_steps": 0, "samples": []}
+        group_name = "ankle_roll" if "roll" in key else "ankle_pitch"
+        missing = []
+        if rows and "contact_metrics" in rows[0]:
+            missing = rows[0]["contact_metrics"].get(group_name, {}).get("missing", [])
+        return {
+            "available": False,
+            "missing": missing
+            or [{"path": key, "reason": "no_contact_force_values"}],
+            "max_force": None,
+            "mean_force": None,
+            "active_steps": 0,
+            "samples": sample_optional_timeline(rows, key),
+        }
     return {
+        "available": True,
+        "missing": [],
         "max_force": max(values),
         "mean_force": sum(values) / len(values),
         "active_steps": sum(1 for value in values if value > 0.0),
-        "samples": sample_timeline(rows, key),
+        "samples": sample_optional_timeline(rows, key),
     }
 
 
@@ -669,13 +1235,34 @@ def max_contact_force(rows: Sequence[dict[str, Any]]) -> float:
     return max(
         (
             max(
-                float(row["ankle_roll_contact_force"]),
-                float(row["ankle_pitch_contact_force"]),
+                float(row["ankle_roll_contact_force"] or 0.0),
+                float(row["ankle_pitch_contact_force"] or 0.0),
             )
             for row in rows
         ),
         default=0.0,
     )
+
+
+def sample_optional_timeline(
+    rows: Sequence[dict[str, Any]],
+    key: str,
+    count: int = 6,
+) -> list[dict[str, Any]]:
+    if not rows:
+        return []
+    if len(rows) <= count:
+        selected = list(rows)
+    else:
+        indexes = sorted({round(index * (len(rows) - 1) / (count - 1)) for index in range(count)})
+        selected = [rows[index] for index in indexes]
+    return [
+        {
+            "step": int(row["step"]),
+            "value": None if row.get(key) is None else float(row[key]),
+        }
+        for row in selected
+    ]
 
 
 def asset_instability_factor(label: str) -> float:
@@ -689,9 +1276,13 @@ def asset_instability_factor(label: str) -> float:
 
 def effective_asset_path(asset_path: Path | None) -> str:
     if asset_path is not None:
-        return str(asset_path)
+        return path_cli(asset_path)
     profile = load_g1_27dof_nohand_profile()
     return str(profile.asset.path)
+
+
+def path_cli(path: Path) -> str:
+    return path.as_posix()
 
 
 def resolve_run_dir(output_root: Path, run_name: str) -> Path:
