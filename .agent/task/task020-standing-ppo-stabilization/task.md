@@ -233,5 +233,5 @@ Ranked hypotheses:
 
 ## Review
 
-Status: blocked at standing PPO gate; final review pending. Task020 is not
-passed.
+Status: final read-only review passed with no blocking findings. Task020 remains
+blocked at the standing PPO gate and is not passed.

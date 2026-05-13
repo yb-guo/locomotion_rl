@@ -48,7 +48,11 @@ Close task020 with evidence and a narrow decision.
   were skipped. No walking, `vx_yaw`, asset/importer, MuJoCo, LocoFormer,
   SONIC, ONNX, rendering, datasets, checkpoints, or upstream downloads were
   introduced.
+- 2026-05-13 Final read-only review found no blocking findings. Task020 is
+  acceptable to merge as a blocked diagnostic task because it explicitly does
+  not claim a standing PPO pass.
 
 ## Review
 
-Status: pending final read-only review.
+Status: passed with no blocking findings. Task020 remains blocked/not passed at
+the standing PPO gate.
