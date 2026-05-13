@@ -28,6 +28,7 @@ H200 Locomotion Lab 的 agent 入口。
 - `task/task017-g1-action-control-semantics-diagnosis/task.md`
 - `task/task018-g1-no-update-ppo-causality-diagnosis/task.md`
 - `task/task019-g1-zero-action-standing-causality-diagnosis/task.md`
+- `task/task021-genesis-alignment-bundle/task.md`
 
 ## Consensus
 
