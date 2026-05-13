@@ -185,6 +185,18 @@ remains localized and large, or patch causes earlier height/upright collapse
   tests/test_g1_failure_onset_trace.py
   tests/test_g1_ankle_foot_asset_contact_audit.py -q -p no:cacheprovider`
   -> 37 passed, 4 skipped.
+- 2026-05-13 H200 patch import hit a generator blocker before ablation:
+  Genesis tried to open generated-XML-relative
+  `assets/meshes/right_ankle_roll_link.STL` because the source MJCF used a
+  relative `compiler.meshdir` and the generated XML moved away from the source
+  XML directory. Local fix updates `g1_ankle_roll_contact_patch` to rewrite an
+  existing relative `compiler meshdir` to the absolute source-resolved meshdir
+  in generated variants, while preserving the source XML and leaving absent
+  compiler tags absent. Summary evidence now records source meshdir, resolved
+  source meshdir, output meshdir, and whether rewrite happened. Focused local
+  verification passed: `PYTHONPATH=src python -m pytest
+  tests/test_g1_ankle_roll_contact_patch.py -q -p no:cacheprovider` -> 5
+  passed. No H200 rerun performed.
 
 ## Review
 

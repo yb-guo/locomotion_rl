@@ -48,6 +48,14 @@ Initial patch variants:
   fixture tests. Verification: `PYTHONPATH=src python -m pytest
   tests/test_g1_ankle_roll_contact_patch.py -p no:cacheprovider` passed
   locally with 4 tests.
+- 2026-05-13 H200 import of generated patched XML exposed that relative
+  `compiler.meshdir` was still being interpreted from the generated output
+  directory. The generator now rewrites an existing relative `compiler meshdir`
+  to the absolute mesh directory resolved from the source XML directory, records
+  meshdir handling in `summary.json`, preserves the source XML, and does not add
+  a compiler tag when the source lacks one. Focused verification:
+  `PYTHONPATH=src python -m pytest tests/test_g1_ankle_roll_contact_patch.py -q
+  -p no:cacheprovider` -> 5 passed.
 
 ## Review
 

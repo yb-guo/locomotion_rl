@@ -76,12 +76,18 @@ def run_patch_generation(args: argparse.Namespace) -> dict[str, Any]:
         )
 
     source_after = source_asset.read_bytes()
+    meshdir_reports = [
+        report["meshdir_handling"] for report in variant_reports.values()
+    ]
     summary = {
         "status": "completed",
         "source_path": str(source_asset),
         "source_unchanged": source_before == source_after,
         "run_dir": str(run_dir),
         "assets_dir": str(assets_dir),
+        "meshdir_handling": meshdir_reports[0]
+        if meshdir_reports
+        else inspect_compiler_meshdir(source_asset),
         "target_bodies": targets,
         "variants": variant_reports,
         "missing": [
@@ -112,6 +118,10 @@ def write_variant(
     missing: list[dict[str, str]] = []
     errors: list[dict[str, str]] = []
     changed_bodies: dict[str, Any] = {}
+    meshdir_handling = rewrite_relative_compiler_meshdir(
+        root=root,
+        source_asset=source_asset,
+    )
 
     for body_name in target_bodies:
         body = find_body(root, body_name)
@@ -162,6 +172,7 @@ def write_variant(
     return {
         "path": str(output_path),
         "target_bodies": target_bodies,
+        "meshdir_handling": meshdir_handling,
         "changed_bodies": changed_bodies,
         "changed_geom_count": sum(
             len(body_report.get("changed_geoms", []))
@@ -170,6 +181,57 @@ def write_variant(
         "missing": missing,
         "errors": errors,
     }
+
+
+def rewrite_relative_compiler_meshdir(
+    *,
+    root: ElementTree.Element,
+    source_asset: Path,
+) -> dict[str, Any]:
+    compiler = root.find("compiler")
+    if compiler is None:
+        return {
+            "compiler_present": False,
+            "source_meshdir": None,
+            "resolved_source_meshdir": None,
+            "output_meshdir": None,
+            "rewritten": False,
+        }
+
+    source_meshdir = compiler.get("meshdir")
+    if source_meshdir is None:
+        return {
+            "compiler_present": True,
+            "source_meshdir": None,
+            "resolved_source_meshdir": None,
+            "output_meshdir": None,
+            "rewritten": False,
+        }
+
+    source_meshdir_path = Path(source_meshdir)
+    if source_meshdir_path.is_absolute():
+        resolved_source_meshdir = source_meshdir_path.resolve()
+        rewritten = False
+    else:
+        resolved_source_meshdir = (source_asset.parent / source_meshdir_path).resolve()
+        compiler.set("meshdir", str(resolved_source_meshdir))
+        rewritten = True
+
+    return {
+        "compiler_present": True,
+        "source_meshdir": source_meshdir,
+        "resolved_source_meshdir": str(resolved_source_meshdir),
+        "output_meshdir": compiler.get("meshdir"),
+        "rewritten": rewritten,
+    }
+
+
+def inspect_compiler_meshdir(source_asset: Path) -> dict[str, Any]:
+    tree = ElementTree.parse(source_asset)
+    return rewrite_relative_compiler_meshdir(
+        root=tree.getroot(),
+        source_asset=source_asset,
+    )
 
 
 def apply_friction_attrs(

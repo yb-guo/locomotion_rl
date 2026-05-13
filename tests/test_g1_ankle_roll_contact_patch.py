@@ -61,6 +61,8 @@ def test_patch_generation_writes_all_variants_and_preserves_source_and_visual() 
     written_summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
     assert source.read_text(encoding="utf-8") == source_before
     assert written_summary["source_unchanged"] is True
+    assert written_summary["meshdir_handling"]["compiler_present"] is False
+    assert written_summary["meshdir_handling"]["rewritten"] is False
     assert set(written_summary["variants"]) == set(patcher.VARIANTS)
 
     friction_xml = parse_variant(summary, "ankle_roll_friction_attrs")
@@ -68,6 +70,7 @@ def test_patch_generation_writes_all_variants_and_preserves_source_and_visual() 
     box_xml = parse_variant(summary, "ankle_roll_box_support")
 
     for root in (friction_xml, larger_xml, box_xml):
+        assert root.find("compiler") is None
         for body_name in TARGETS:
             visual = geom_by_name(root, f"{body_name}_visual")
             assert visual.attrib == {
@@ -154,6 +157,48 @@ def test_missing_target_body_and_support_geoms_are_reported() -> None:
     assert summary["variants"]["ankle_roll_friction_attrs"]["changed_geom_count"] == 0
 
 
+def test_relative_compiler_meshdir_is_rewritten_without_mutating_source() -> None:
+    root = fresh_test_dir("relative_meshdir")
+    source = write_fixture_xml(root / "robot" / "g1.xml", meshdir="../meshes")
+    source_before = source.read_text(encoding="utf-8")
+    expected_meshdir = str((source.parent / "../meshes").resolve())
+    args = patcher.parse_args(
+        [
+            "--source-asset",
+            str(source),
+            "--output-root",
+            str(root / "outputs"),
+            "--run-id",
+            "patch",
+            "--variants",
+            "ankle_roll_friction_attrs",
+        ]
+    )
+
+    summary = patcher.run_patch_generation(args)
+
+    assert source.read_text(encoding="utf-8") == source_before
+    assert summary["source_unchanged"] is True
+    assert summary["meshdir_handling"] == {
+        "compiler_present": True,
+        "source_meshdir": "../meshes",
+        "resolved_source_meshdir": expected_meshdir,
+        "output_meshdir": expected_meshdir,
+        "rewritten": True,
+    }
+    variant = summary["variants"]["ankle_roll_friction_attrs"]
+    assert variant["meshdir_handling"] == summary["meshdir_handling"]
+    output_root = ElementTree.parse(variant["path"]).getroot()
+    output_compiler = output_root.find("compiler")
+    assert output_compiler is not None
+    assert output_compiler.get("meshdir") == expected_meshdir
+
+    source_root = ElementTree.parse(source).getroot()
+    source_compiler = source_root.find("compiler")
+    assert source_compiler is not None
+    assert source_compiler.get("meshdir") == "../meshes"
+
+
 def test_unknown_variant_is_rejected() -> None:
     root = fresh_test_dir("unknown")
     source = write_fixture_xml(root / "g1.xml")
@@ -174,10 +219,12 @@ def test_unknown_variant_is_rejected() -> None:
         patcher.run_patch_generation(args)
 
 
-def write_fixture_xml(path: Path) -> Path:
+def write_fixture_xml(path: Path, *, meshdir: str | None = None) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    compiler = f'  <compiler meshdir="{meshdir}" />\n' if meshdir is not None else ""
     path.write_text(
-        """<mujoco>
-  <asset>
+        f"""<mujoco>
+{compiler}  <asset>
     <mesh name="left_ankle_roll_link_mesh" file="left.obj" />
     <mesh name="right_ankle_roll_link_mesh" file="right.obj" />
   </asset>
