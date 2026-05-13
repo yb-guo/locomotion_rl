@@ -1,6 +1,7 @@
 import inspect
 import json
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -27,6 +28,18 @@ def test_parse_args_defaults_to_task019_contract() -> None:
     assert args.physical_gpu == "1"
     assert args.logical_cuda_device == "cuda:0"
     assert args.output_root == probe.DEFAULT_OUTPUT_ROOT
+    assert args.asset_path is None
+
+
+def test_profile_with_asset_path_replaces_nested_asset_without_mutating_original() -> None:
+    profile = DataclassProfile(asset=DataclassAsset(path="/source/g1_27dof_nohand.xml"))
+
+    overridden = probe.profile_with_asset_path(profile, Path("/patched/variant.xml"))
+
+    assert overridden is not profile
+    assert overridden.asset is not profile.asset
+    assert profile.asset.path == "/source/g1_27dof_nohand.xml"
+    assert overridden.asset.path == "/patched/variant.xml"
 
 
 def test_parse_args_warmup_policy_steps_must_be_nonnegative() -> None:
@@ -424,6 +437,7 @@ def test_run_probe_writes_artifacts_with_fake_backend(monkeypatch: pytest.Monkey
     assert config["gain_profile"] == "global_kv_2x"
     assert config["pre_eval_reset"] is False
     assert config["pre_eval_reset_scope"] == "full"
+    assert config["asset_path"] == "default.xml"
     assert config["gain_values"]["left_knee_joint"]["kv"] == pytest.approx(2.0)
     rows = [
         json.loads(line)
@@ -432,6 +446,7 @@ def test_run_probe_writes_artifacts_with_fake_backend(monkeypatch: pytest.Monkey
     assert [row["chunk_index"] for row in rows] == [0, 1]
     assert rows[0]["gain_profile"] == "global_kv_2x"
     assert summary["gain_profile"] == "global_kv_2x"
+    assert summary["asset_path"] == "default.xml"
     assert summary["pre_eval_reset"] is False
     assert summary["pre_eval_reset_scope"] == "full"
     assert {"joint_position_error_rms", "joint_velocity_rms", "control_rms"} <= rows[0].keys()
@@ -697,7 +712,18 @@ class FakeControl:
 class FakeProfile:
     action_dim = 27
     actuator_order = G1_27DOF_NOHAND_ACTUATOR_ORDER
+    asset = SimpleNamespace(path="default.xml")
     control = FakeControl()
+
+
+@dataclass(frozen=True)
+class DataclassAsset:
+    path: str
+
+
+@dataclass(frozen=True)
+class DataclassProfile:
+    asset: DataclassAsset
 
 
 class FakeScene:

@@ -155,6 +155,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--logical-cuda-device", default="cuda:0")
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--run-id", default="")
+    parser.add_argument("--asset-path", type=Path, default=None)
     parser.add_argument("--scenario-timeout-s", type=zero_action.positive_float, default=300.0)
     parser.add_argument(
         "--scenarios",
@@ -190,6 +191,7 @@ def run_trace(args: argparse.Namespace) -> dict[str, Any]:
         "physical_gpu": str(args.physical_gpu),
         "logical_cuda_device": args.logical_cuda_device,
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", "not_set"),
+        "asset_path": None if args.asset_path is None else args.asset_path.as_posix(),
     }
     write_json(run_dir / "summary.json", summary)
     return summary
@@ -296,6 +298,8 @@ def build_zero_action_command(
     ]
     if args.pre_eval_reset:
         command.extend(["--pre-eval-reset", "--pre-eval-reset-scope", args.pre_eval_reset_scope])
+    if args.asset_path is not None:
+        command.extend(["--asset-path", args.asset_path.as_posix()])
     command.extend(scenario.args)
     return command
 

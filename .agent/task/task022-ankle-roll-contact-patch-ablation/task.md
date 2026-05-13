@@ -174,6 +174,17 @@ remains localized and large, or patch causes earlier height/upright collapse
 - 2026-05-13 Subtask001 read-only review passed with no blocking findings.
   Remaining risk is intentionally narrow support-geom matching; H200 ablation
   must inspect generated real-asset XML before runtime comparison.
+- 2026-05-13 Subtask002 local preparation added generated-asset override
+  plumbing to zero-action, failure-onset, and contact-audit link trace tools.
+  No H200 run performed. Initial review found a blocking compatibility
+  regression in `build_run_config`; it was fixed and re-reviewed. Router
+  verification passed:
+  `PYTHONPATH=src python -m pytest
+  tests/test_g1_rigid_options_standing_ablation.py
+  tests/test_g1_zero_action_standing_causality.py
+  tests/test_g1_failure_onset_trace.py
+  tests/test_g1_ankle_foot_asset_contact_audit.py -q -p no:cacheprovider`
+  -> 37 passed, 4 skipped.
 
 ## Review
 

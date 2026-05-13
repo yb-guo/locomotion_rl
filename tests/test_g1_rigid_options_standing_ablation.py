@@ -129,6 +129,24 @@ def test_run_scenario_passes_rigid_config_into_vectorized_config(
     )
 
 
+def test_build_zero_action_run_config_keeps_default_asset_path_compatible() -> None:
+    args = probe.parse_args([])
+    gains = probe.zero_action.DiagnosticGainProfile(
+        name="fake",
+        kp=FakeControl.kp,
+        kv=FakeControl.kv,
+        force_limits=FakeControl.force_limits,
+    )
+
+    config = probe.build_zero_action_run_config(
+        args=args,
+        default_pose=FakeControl.default_angles_rad,
+        gains=gains,
+    )
+
+    assert config["asset_path"] == ""
+
+
 def test_run_ablation_captures_scenario_error_and_continues(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

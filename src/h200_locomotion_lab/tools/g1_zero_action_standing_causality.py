@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 import os
 import time
@@ -126,6 +126,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--logical-cuda-device", default="cuda:0")
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--run-id", default="")
+    parser.add_argument("--asset-path", type=Path, default=None)
     return parser.parse_args(argv)
 
 
@@ -140,12 +141,19 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
 
-    profile = load_g1_27dof_nohand_profile()
+    base_profile = load_g1_27dof_nohand_profile()
+    profile = profile_with_asset_path(base_profile, args.asset_path)
+    effective_asset_path = str(profile.asset.path)
     pose = pose_profile_values(args.pose_profile, profile.control.default_angles_rad)
     gains = gain_profile_values(args.gain_profile, profile.control)
     run_dir = resolve_run_dir(args.output_root, args.run_id)
     run_dir.mkdir(parents=True, exist_ok=False)
-    config_payload = build_run_config(args=args, default_pose=pose, gains=gains)
+    config_payload = build_run_config(
+        args=args,
+        default_pose=pose,
+        gains=gains,
+        asset_path=effective_asset_path,
+    )
     write_json(run_dir / "config.json", config_payload)
 
     backend = VectorizedGenesisBackend(
@@ -191,9 +199,16 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
         args=args,
         run_dir=run_dir,
         warmup_diagnostics=warmup_diagnostics,
+        asset_path=effective_asset_path,
     )
     write_json(run_dir / "summary.json", summary)
     return summary
+
+
+def profile_with_asset_path(profile: Any, asset_path: Path | None) -> Any:
+    if asset_path is None:
+        return profile
+    return replace(profile, asset=replace(profile.asset, path=asset_path.as_posix()))
 
 
 def reset_before_eval(
@@ -729,6 +744,7 @@ def build_run_config(
     args: argparse.Namespace,
     default_pose: Sequence[float],
     gains: DiagnosticGainProfile,
+    asset_path: str = "",
 ) -> dict[str, Any]:
     return {
         "task": "task019-g1-zero-action-standing-causality-diagnosis",
@@ -754,6 +770,7 @@ def build_run_config(
         "physical_gpu": str(args.physical_gpu),
         "logical_cuda_device": args.logical_cuda_device,
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", "not_set"),
+        "asset_path": asset_path,
     }
 
 
@@ -763,6 +780,7 @@ def summarize_run(
     args: argparse.Namespace,
     run_dir: Path,
     warmup_diagnostics: dict[str, Any] | None = None,
+    asset_path: str = "",
 ) -> dict[str, Any]:
     warmup = warmup_diagnostics or empty_warmup_diagnostics()
     diagnostics = summarize_chunk_diagnostics(rows)
@@ -803,6 +821,7 @@ def summarize_run(
         "physical_gpu": str(args.physical_gpu),
         "logical_cuda_device": args.logical_cuda_device,
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", "not_set"),
+        "asset_path": asset_path,
         **diagnostics,
     }
 
