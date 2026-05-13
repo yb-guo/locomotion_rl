@@ -19,6 +19,7 @@ def test_parse_args_defaults_to_task015_stable_config() -> None:
     assert args.root_z == 1.20
     assert args.default_pose == "tall_crouch"
     assert args.termination_height_min == 0.20
+    assert args.joint_velocity_penalty_scale == 0.0
     assert args.warmup_steps == 1
     assert args.stage_names == ""
     assert args.output_root == curriculum.Path("outputs/task015/g1_curriculum_ppo")
@@ -57,6 +58,17 @@ def test_selected_curriculum_stages_can_select_standing_only() -> None:
 def test_selected_curriculum_stages_rejects_unknown_stage() -> None:
     with pytest.raises(argparse_error(), match="unknown curriculum stage"):
         curriculum.selected_curriculum_stages("standing,not_a_stage")
+
+
+def test_build_stage_env_config_forwards_joint_velocity_penalty_scale() -> None:
+    args = curriculum.parse_args(["--joint-velocity-penalty-scale", "0.02"])
+
+    config = curriculum.build_stage_env_config(
+        args=args,
+        stage=curriculum.curriculum_stages()[0],
+    )
+
+    assert config.joint_velocity_penalty_scale == pytest.approx(0.02)
 
 
 def test_resolve_run_dir_stays_under_project_prefix(monkeypatch: pytest.MonkeyPatch) -> None:

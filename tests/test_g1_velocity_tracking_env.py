@@ -52,6 +52,7 @@ def test_g1_velocity_tracking_env_step_returns_reward_done_and_components() -> N
         "root_height",
         "upright",
         "action_rate_penalty",
+        "joint_velocity_penalty",
         "joint_deviation_penalty",
         "termination_penalty",
         "height_bad",
@@ -59,6 +60,26 @@ def test_g1_velocity_tracking_env_step_returns_reward_done_and_components() -> N
         "tilt_bad",
         "timeout",
     }
+
+
+def test_g1_velocity_tracking_env_joint_velocity_penalty_is_opt_in() -> None:
+    unscaled_env = _make_env(n_envs=1)
+    scaled_env = _make_env(
+        n_envs=1,
+        config=G1VelocityTrackingConfig(joint_velocity_penalty_scale=0.5),
+    )
+    unscaled_env.reset()
+    scaled_env.reset()
+    for env in (unscaled_env, scaled_env):
+        for index in env.backend.motor_dof_indices:
+            env.backend.robot.velocities[0][index] = 2.0
+
+    unscaled = unscaled_env.step([[0.0] * unscaled_env.action_dim])
+    scaled = scaled_env.step([[0.0] * scaled_env.action_dim])
+
+    assert unscaled.info["components"]["joint_velocity_penalty"] == pytest.approx([4.0])
+    assert scaled.info["components"]["joint_velocity_penalty"] == pytest.approx([4.0])
+    assert scaled.reward[0] == pytest.approx(unscaled.reward[0] - 2.0)
 
 
 def test_g1_velocity_tracking_env_timeout_resets_only_done_env() -> None:
@@ -70,6 +91,9 @@ def test_g1_velocity_tracking_env_timeout_resets_only_done_env() -> None:
 
     assert step.truncated == [True, False, False]
     assert step.done == [True, False, False]
+    assert step.info["episode_lengths"] == [2, 1, 1]
+    assert step.info["completed_episode_lengths"] == [2]
+    assert not step.info["full_env_reset_wave"]
     assert env.episode_lengths == [0, 1, 1]
     assert env.backend.previous_action[0] == [0.0] * env.action_dim
     assert env.backend.previous_action[1] == [1.0] * env.action_dim
@@ -90,8 +114,25 @@ def test_g1_velocity_tracking_env_height_done_resets_fallen_env() -> None:
     assert step.info["components"]["termination_height_bad"] == [False, False, True]
     assert step.terminated == [False, False, True]
     assert step.done == [False, False, True]
+    assert step.info["episode_lengths"] == [1, 1, 1]
+    assert step.info["completed_episode_lengths"] == [1]
+    assert not step.info["full_env_reset_wave"]
     assert env.episode_lengths == [1, 1, 0]
     assert env.backend.robot.qpos[2] == pytest.approx(env.backend.config.root_qpos)
+
+
+def test_g1_velocity_tracking_env_reports_full_reset_wave() -> None:
+    env = _make_env(n_envs=3, max_episode_steps=1)
+    env.reset()
+
+    step = env.step([[0.0] * env.action_dim for _ in range(env.n_envs)])
+
+    assert step.done == [True, True, True]
+    assert step.info["reset_count"] == 3
+    assert step.info["episode_lengths"] == [1, 1, 1]
+    assert step.info["completed_episode_lengths"] == [1, 1, 1]
+    assert step.info["full_env_reset_wave"]
+    assert env.episode_lengths == [0, 0, 0]
 
 
 def test_g1_velocity_tracking_env_backend_state_and_step_physics_helpers() -> None:
@@ -135,7 +176,11 @@ def test_g1_velocity_tracking_env_device_report_is_non_cuda_for_fake_backend() -
     }
 
 
-def _make_env(n_envs: int, max_episode_steps: int = 1000) -> G1VelocityTrackingVectorizedEnv:
+def _make_env(
+    n_envs: int,
+    max_episode_steps: int = 1000,
+    config: G1VelocityTrackingConfig | None = None,
+) -> G1VelocityTrackingVectorizedEnv:
     backend = VectorizedGenesisBackend(
         VectorizedGenesisConfig(
             n_envs=n_envs,
@@ -148,7 +193,7 @@ def _make_env(n_envs: int, max_episode_steps: int = 1000) -> G1VelocityTrackingV
     )
     return G1VelocityTrackingVectorizedEnv(
         backend,
-        G1VelocityTrackingConfig(max_episode_steps=max_episode_steps),
+        config or G1VelocityTrackingConfig(max_episode_steps=max_episode_steps),
     )
 
 

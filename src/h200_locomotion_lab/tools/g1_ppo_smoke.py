@@ -27,6 +27,7 @@ from h200_locomotion_lab.envs.vectorized_genesis_backend import (
 from h200_locomotion_lab.robots import load_g1_27dof_nohand_profile
 from h200_locomotion_lab.training.ppo_loop import (
     PPOConfig,
+    REWARD_COMPONENT_NAMES,
     build_actor_critic,
     collect_rollout,
     compute_gae,
@@ -93,6 +94,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--base-height-sigma", type=positive_float, default=0.10)
     parser.add_argument("--base-height-reward-scale", type=non_negative_float, default=0.0)
     parser.add_argument("--action-rate-penalty-scale", type=non_negative_float, default=0.01)
+    parser.add_argument("--joint-velocity-penalty-scale", type=non_negative_float, default=0.0)
     parser.add_argument("--joint-deviation-penalty-scale", type=non_negative_float, default=0.05)
     parser.add_argument("--termination-penalty", type=float, default=0.0)
     parser.add_argument(
@@ -160,6 +162,7 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 "base_height_sigma": args.base_height_sigma,
                 "base_height_reward_scale": args.base_height_reward_scale,
                 "action_rate_penalty_scale": args.action_rate_penalty_scale,
+                "joint_velocity_penalty_scale": args.joint_velocity_penalty_scale,
                 "joint_deviation_penalty_scale": args.joint_deviation_penalty_scale,
                 "termination_penalty": args.termination_penalty,
                 "warmup_steps": args.warmup_steps,
@@ -199,6 +202,7 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
             base_height_sigma=args.base_height_sigma,
             base_height_reward_scale=args.base_height_reward_scale,
             action_rate_penalty_scale=args.action_rate_penalty_scale,
+            joint_velocity_penalty_scale=args.joint_velocity_penalty_scale,
             joint_deviation_penalty_scale=args.joint_deviation_penalty_scale,
             termination_penalty=args.termination_penalty,
         ),
@@ -235,7 +239,32 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
         ),
         "mean_reward_mean": sum(seed["final_reward_mean"] for seed in seed_summaries)
         / len(seed_summaries),
+        "mean_final_episode_length_mean": mean_seed_final_metric(
+            seed_summaries,
+            "episode_length_mean",
+        ),
+        "mean_final_survival_rate": mean_seed_final_metric(
+            seed_summaries,
+            "survival_rate",
+        ),
+        "max_final_height_reset_rate": max_seed_final_metric(
+            seed_summaries,
+            "height_reset_rate",
+        ),
+        "max_final_tilt_reset_rate": max_seed_final_metric(
+            seed_summaries,
+            "tilt_reset_rate",
+        ),
+        "max_final_timeout_rate": max_seed_final_metric(
+            seed_summaries,
+            "timeout_rate",
+        ),
+        "any_final_full_env_reset_wave": any(
+            bool(seed["final_metrics"].get("full_env_reset_wave", False))
+            for seed in seed_summaries
+        ),
     }
+    summary.update(summarize_run_training_metrics(seed_summaries))
     if not summary["all_seeds_passed"]:
         raise RuntimeError("one or more seeds failed pass criteria")
     write_json(run_dir / "summary.json", summary)
@@ -291,10 +320,19 @@ def run_seed(
     min_collect_rate = float("inf")
     final_reward_mean = 0.0
     final_metrics: dict[str, Any] = {}
+    training_rows: list[dict[str, Any]] = []
     for update in range(config.ppo_updates):
         batch = collect_rollout(env, model, observation, config)
         observation = batch.next_observation
         advantages, returns = compute_gae(batch, config)
+        profile_stats = rollout_profile_stats(
+            batch=batch,
+            advantages=advantages,
+            returns=returns,
+            model=model,
+            env_config=env.config,
+            action_saturation_threshold=0.95,
+        )
         diagnostics = ppo_update(model, optimizer, batch, advantages, returns, config)
         collect_rate = (
             batch.env_steps / batch.collect_time_s if batch.collect_time_s > 0.0 else 0.0
@@ -323,6 +361,20 @@ def run_seed(
             "height_bad_count": batch.height_bad_count,
             "termination_height_bad_count": batch.termination_height_bad_count,
             "tilt_bad_count": batch.tilt_bad_count,
+            "height_reset_count": batch.height_reset_count,
+            "tilt_reset_count": batch.tilt_reset_count,
+            "reset_rate": rate(batch.reset_count, batch.env_steps),
+            "height_reset_rate": rate(batch.height_reset_count, batch.env_steps),
+            "tilt_reset_rate": rate(batch.tilt_reset_count, batch.env_steps),
+            "timeout_rate": rate(batch.timeout_count, batch.env_steps),
+            "survival_rate": 1.0 - rate(batch.reset_count, batch.env_steps),
+            "full_env_reset_wave": batch.full_env_reset_wave,
+            "full_env_reset_wave_count": batch.full_env_reset_wave_count,
+            "episode_length_mean": batch.episode_length_mean,
+            "episode_length_min": batch.episode_length_min,
+            "episode_length_max": batch.episode_length_max,
+            "completed_episode_length_mean": batch.completed_episode_length_mean,
+            "completed_episode_count": batch.completed_episode_count,
             "root_height_mean": batch.root_height_mean,
             "root_height_min": batch.root_height_min,
             "upright_mean": batch.upright_mean,
@@ -338,8 +390,10 @@ def run_seed(
             "update_samples_per_sec": diagnostics.update_samples_per_sec,
             "tensor_device_ok": device_ok,
         }
+        row.update(profile_stats)
         assert_metric_row_ok(row)
         append_jsonl(metrics_path, row)
+        training_rows.append(row)
         final_reward_mean = batch.reward_mean
         final_metrics = row
     final_actor_l1 = parameter_l1_sum(model.actor)
@@ -361,6 +415,7 @@ def run_seed(
         "final_reward_mean": final_reward_mean,
         "final_metrics": final_metrics,
     }
+    summary.update(summarize_seed_training_metrics(training_rows))
     if not passed:
         raise RuntimeError(f"seed {seed} failed pass criteria: {summary}")
     checkpoint = {
@@ -369,6 +424,63 @@ def run_seed(
         "summary": summary,
     }
     return summary, checkpoint
+
+
+def summarize_seed_training_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    full_env_reset_wave_updates = [
+        int(row["update"]) for row in rows if bool(row.get("full_env_reset_wave", False))
+    ]
+    full_env_reset_wave_count = sum(
+        int(row.get("full_env_reset_wave_count", 0)) for row in rows
+    )
+    return {
+        "any_training_full_env_reset_wave": bool(full_env_reset_wave_updates),
+        "training_full_env_reset_wave_updates": full_env_reset_wave_updates,
+        "training_full_env_reset_wave_count": full_env_reset_wave_count,
+        "max_training_reset_rate": max_row_metric(rows, "reset_rate"),
+        "max_training_tilt_reset_rate": max_row_metric(rows, "tilt_reset_rate"),
+        "max_training_height_reset_rate": max_row_metric(rows, "height_reset_rate"),
+        "max_training_episode_length_mean": max_row_metric(rows, "episode_length_mean"),
+        "max_training_reward_mean": max_row_metric(rows, "reward_mean"),
+    }
+
+
+def summarize_run_training_metrics(seed_summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "any_training_full_env_reset_wave": any(
+            bool(seed.get("any_training_full_env_reset_wave", False))
+            for seed in seed_summaries
+        ),
+        "training_full_env_reset_wave_seed_count": sum(
+            1
+            for seed in seed_summaries
+            if bool(seed.get("any_training_full_env_reset_wave", False))
+        ),
+        "training_full_env_reset_wave_count": sum(
+            int(seed.get("training_full_env_reset_wave_count", 0))
+            for seed in seed_summaries
+        ),
+        "max_training_reset_rate": max_seed_metric(
+            seed_summaries,
+            "max_training_reset_rate",
+        ),
+        "max_training_tilt_reset_rate": max_seed_metric(
+            seed_summaries,
+            "max_training_tilt_reset_rate",
+        ),
+        "max_training_height_reset_rate": max_seed_metric(
+            seed_summaries,
+            "max_training_height_reset_rate",
+        ),
+        "max_training_episode_length_mean": max_seed_metric(
+            seed_summaries,
+            "max_training_episode_length_mean",
+        ),
+        "max_training_reward_mean": max_seed_metric(
+            seed_summaries,
+            "max_training_reward_mean",
+        ),
+    }
 
 
 def verify_cuda_isolation(
@@ -414,17 +526,137 @@ def assert_metric_row_ok(row: dict[str, Any]) -> None:
         "root_height_mean",
         "root_height_min",
         "upright_mean",
+        "reset_rate",
+        "height_reset_rate",
+        "tilt_reset_rate",
+        "timeout_rate",
+        "survival_rate",
+        "episode_length_mean",
+        "episode_length_min",
+        "episode_length_max",
+        "completed_episode_length_mean",
         "collect_time_s",
         "collect_env_policy_steps_per_sec",
         "update_time_s",
         "update_samples_per_sec",
+        "observation_mean",
+        "observation_std",
+        "observation_min",
+        "observation_max",
+        "action_mean",
+        "action_std",
+        "action_min",
+        "action_max",
+        "action_saturation_ratio",
+        "reward_std",
+        "reward_min",
+        "reward_max",
+        "value_prediction_mean",
+        "value_prediction_std",
+        "value_prediction_min",
+        "value_prediction_max",
+        "return_mean",
+        "return_std",
+        "return_min",
+        "return_max",
+        "advantage_mean",
+        "advantage_std",
+        "advantage_min",
+        "advantage_max",
+        "log_std_mean",
+        "log_std_min",
+        "log_std_max",
     )
     for key in finite_keys:
         value = float(row[key])
         if not math_is_finite(value):
             raise ValueError(f"{key} is not finite: {value}")
+    for key, value in row.items():
+        if (
+            key.startswith("reward_component_")
+            or key.startswith("reward_contribution_")
+        ) and not math_is_finite(float(value)):
+            raise ValueError(f"{key} is not finite: {value}")
     if not row["tensor_device_ok"]:
         raise ValueError("tensor_device_ok is false")
+
+
+def rollout_profile_stats(
+    *,
+    batch: Any,
+    advantages: Any,
+    returns: Any,
+    model: Any,
+    env_config: Any,
+    action_saturation_threshold: float,
+) -> dict[str, float]:
+    stats = {}
+    stats.update(tensor_profile_stats(batch.observations, "observation"))
+    stats.update(tensor_profile_stats(batch.actions, "action"))
+    stats.update(tensor_profile_stats(batch.rewards, "reward"))
+    stats.update(tensor_profile_stats(batch.values, "value_prediction"))
+    stats.update(tensor_profile_stats(returns, "return"))
+    stats.update(tensor_profile_stats(advantages, "advantage"))
+    stats["action_saturation_ratio"] = action_saturation_ratio(
+        batch.actions,
+        threshold=action_saturation_threshold,
+    )
+    log_std = model.log_std.detach()
+    stats["log_std_mean"] = float(log_std.float().mean().item())
+    stats["log_std_min"] = float(log_std.float().min().item())
+    stats["log_std_max"] = float(log_std.float().max().item())
+    for name in REWARD_COMPONENT_NAMES:
+        if name in batch.reward_component_means:
+            stats[f"reward_component_{name}_mean"] = float(batch.reward_component_means[name])
+    stats.update(reward_contribution_stats(batch.reward_component_means, env_config))
+    return stats
+
+
+def reward_contribution_stats(
+    component_means: dict[str, float],
+    env_config: Any,
+) -> dict[str, float]:
+    stats = {
+        "reward_contribution_alive_mean": float(getattr(env_config, "alive_reward", 0.0)),
+    }
+    scale_map = {
+        "tracking_lin_vel": ("lin_vel_reward_scale", 1.0),
+        "tracking_yaw_rate": ("yaw_rate_reward_scale", 1.0),
+        "upright": ("upright_reward_scale", 1.0),
+        "tracking_base_height": ("base_height_reward_scale", 1.0),
+        "action_rate_penalty": ("action_rate_penalty_scale", -1.0),
+        "joint_velocity_penalty": ("joint_velocity_penalty_scale", -1.0),
+        "joint_deviation_penalty": ("joint_deviation_penalty_scale", -1.0),
+    }
+    for name, (scale_attr, sign) in scale_map.items():
+        if name not in component_means:
+            continue
+        scale = float(getattr(env_config, scale_attr, 0.0))
+        stats[f"reward_contribution_{name}_mean"] = (
+            sign * scale * float(component_means[name])
+        )
+    if "termination_penalty" in component_means:
+        stats["reward_contribution_termination_penalty_mean"] = float(
+            component_means["termination_penalty"]
+        )
+    return stats
+
+
+def tensor_profile_stats(tensor: Any, prefix: str) -> dict[str, float]:
+    values = tensor.detach().float().reshape(-1)
+    return {
+        f"{prefix}_mean": float(values.mean().item()),
+        f"{prefix}_std": float(values.std(unbiased=False).item()),
+        f"{prefix}_min": float(values.min().item()),
+        f"{prefix}_max": float(values.max().item()),
+    }
+
+
+def action_saturation_ratio(actions: Any, *, threshold: float) -> float:
+    if threshold <= 0.0:
+        raise ValueError("threshold must be positive")
+    saturated = actions.detach().abs() >= threshold
+    return float(saturated.float().mean().item())
 
 
 def parse_seeds(raw: str) -> list[int]:
@@ -489,6 +721,38 @@ def non_negative_float(value: str) -> float:
     if parsed < 0.0:
         raise argparse.ArgumentTypeError("value must be non-negative")
     return parsed
+
+
+def rate(count: int, total: int) -> float:
+    if total <= 0:
+        return 0.0
+    return float(count) / float(total)
+
+
+def mean_seed_final_metric(seed_summaries: list[dict[str, Any]], key: str) -> float:
+    if not seed_summaries:
+        return 0.0
+    return sum(float(seed["final_metrics"].get(key, 0.0)) for seed in seed_summaries) / len(
+        seed_summaries
+    )
+
+
+def max_seed_final_metric(seed_summaries: list[dict[str, Any]], key: str) -> float:
+    if not seed_summaries:
+        return 0.0
+    return max(float(seed["final_metrics"].get(key, 0.0)) for seed in seed_summaries)
+
+
+def max_seed_metric(seed_summaries: list[dict[str, Any]], key: str) -> float:
+    if not seed_summaries:
+        return 0.0
+    return max(float(seed.get(key, 0.0)) for seed in seed_summaries)
+
+
+def max_row_metric(rows: list[dict[str, Any]], key: str) -> float:
+    if not rows:
+        return 0.0
+    return max(float(row.get(key, 0.0)) for row in rows)
 
 
 def math_is_finite(value: float) -> bool:
