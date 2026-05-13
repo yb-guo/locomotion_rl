@@ -92,6 +92,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def run_audit(args: argparse.Namespace) -> dict[str, Any]:
     profile = load_g1_27dof_nohand_profile()
     asset_path = args.asset_path if args.asset_path is not None else Path(profile.asset.path)
+    effective_asset_path = asset_path.as_posix()
     targets = parse_targets(args.target_bodies)
     run_dir = resolve_run_dir(args.output_root, args.run_id)
     run_dir.mkdir(parents=True, exist_ok=False)
@@ -103,7 +104,7 @@ def run_audit(args: argparse.Namespace) -> dict[str, Any]:
     if args.run_link_trace:
         link_trace_summary = run_link_trace(
             args=args,
-            profile=profile,
+            profile=zero_action.profile_with_asset_path(profile, asset_path),
             targets=targets,
             output_path=run_dir / "link_trace.jsonl",
         )
@@ -113,6 +114,7 @@ def run_audit(args: argparse.Namespace) -> dict[str, Any]:
         "blocker": "",
         "run_dir": str(run_dir),
         "asset_audit_path": str(run_dir / "asset_audit.json"),
+        "asset_path": effective_asset_path,
         "link_trace_path": None if link_trace_summary is None else str(run_dir / "link_trace.jsonl"),
         "asset_present": asset_audit["asset_present"],
         "target_bodies": targets,
@@ -253,6 +255,7 @@ def run_link_trace(
         torch.cuda.manual_seed_all(args.seed)
     pose = zero_action.pose_profile_values(args.pose_profile, profile.control.default_angles_rad)
     gains = zero_action.gain_profile_values(args.gain_profile, profile.control)
+    profile = zero_action.profile_with_asset_path(profile, args.asset_path)
     backend = VectorizedGenesisBackend(
         VectorizedGenesisConfig(
             n_envs=args.n_envs,

@@ -1,4 +1,5 @@
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -85,6 +86,42 @@ def test_run_audit_writes_asset_and_summary_without_trace(monkeypatch) -> None:
     assert (run_dir / "summary.json").is_file()
     payload = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
     assert payload["missing_count"] >= 1
+    assert payload["asset_path"] == xml_path.as_posix()
+
+
+def test_run_audit_passes_asset_override_to_link_trace(monkeypatch) -> None:
+    source_xml_path = write_fixture_xml()
+    patched_xml_path = write_fixture_xml()
+    run_root = fresh_test_dir("run_audit_trace")
+    captured_profile_paths: list[str] = []
+    monkeypatch.setattr(
+        probe,
+        "load_g1_27dof_nohand_profile",
+        lambda: DataclassProfile(asset=DataclassAsset(path=str(source_xml_path))),
+    )
+
+    def fake_run_link_trace(*, args, profile, targets, output_path):
+        captured_profile_paths.append(profile.asset.path)
+        return {"steps": 0, "links": {}}
+
+    monkeypatch.setattr(probe, "run_link_trace", fake_run_link_trace)
+    args = probe.parse_args(
+        [
+            "--asset-path",
+            str(patched_xml_path),
+            "--output-root",
+            str(run_root),
+            "--run-id",
+            "audit",
+            "--run-link-trace",
+        ]
+    )
+
+    summary = probe.run_audit(args)
+
+    assert captured_profile_paths == [patched_xml_path.as_posix()]
+    assert summary["asset_path"] == patched_xml_path.as_posix()
+    assert summary["link_trace"] == {"steps": 0, "links": {}}
 
 
 def test_link_sample_and_trace_summary_use_fake_robot_arrays() -> None:
@@ -195,6 +232,16 @@ def fresh_test_dir(name: str) -> Path:
 
 class FakeLink:
     idx_local = 2
+
+
+@dataclass(frozen=True)
+class DataclassAsset:
+    path: str
+
+
+@dataclass(frozen=True)
+class DataclassProfile:
+    asset: DataclassAsset
 
 
 class FakeRobot:

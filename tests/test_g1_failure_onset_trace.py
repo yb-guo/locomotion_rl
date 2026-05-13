@@ -34,6 +34,8 @@ def test_build_zero_action_command_adds_combo_args() -> None:
             "128",
             "--chunk-steps",
             "1",
+            "--asset-path",
+            "outputs/task022/assets/patched.xml",
         ]
     )
 
@@ -51,6 +53,7 @@ def test_build_zero_action_command_adds_combo_args() -> None:
     assert command[command.index("--chunks") + 1] == "128"
     assert command[command.index("--chunk-steps") + 1] == "1"
     assert command[command.index("--run-id") + 1] == "trace-combo"
+    assert command[command.index("--asset-path") + 1] == "outputs/task022/assets/patched.xml"
     assert command[-4:] == [
         "--control-mode",
         "custom_pd_torque",
