@@ -23,6 +23,7 @@ TASK_NAME = "task023-base-attitude-height-stabilization"
 DEFAULT_OUTPUT_ROOT = Path("outputs/task023/base_attitude_height_stabilization")
 STABILIZER_MODES = ("none", "attitude", "height", "attitude_height")
 RUNNERS = ("local_toy", "genesis")
+POSE_PROFILES = ("current", "unitree_gym")
 DEFAULT_TARGET_HEIGHT = 0.78
 DEFAULT_MIN_UPRIGHT = 0.30
 DEFAULT_TERMINATION_HEIGHT_MIN = 0.20
@@ -54,6 +55,14 @@ HEIGHT_JOINTS = (
     "right_knee_joint",
     "right_ankle_pitch_joint",
 )
+CURRENT_POSE_LEG_VALUES = {
+    "left_hip_pitch_joint": -0.06,
+    "right_hip_pitch_joint": -0.06,
+    "left_knee_joint": 0.12,
+    "right_knee_joint": 0.12,
+    "left_ankle_pitch_joint": -0.07,
+    "right_ankle_pitch_joint": -0.07,
+}
 
 
 @dataclass(frozen=True)
@@ -124,6 +133,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--backend", default="cuda")
     parser.add_argument("--n-envs", type=positive_int, default=1)
     parser.add_argument("--mode", choices=STABILIZER_MODES, default="none")
+    parser.add_argument("--pose-profile", choices=POSE_PROFILES, default="current")
     parser.add_argument("--steps", type=positive_int, default=240)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--asset-path", type=Path, default=None)
@@ -398,6 +408,10 @@ def summarize_rollout(
     rows: list[dict[str, Any]],
     baseline_rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    pose = pose_profile_values(
+        args.pose_profile,
+        load_g1_27dof_nohand_profile().control.default_angles_rad,
+    )
     first_tilt = first_step(rows, "tilt_bad")
     first_reset = first_step(rows, "reset")
     baseline_first_tilt = first_step(baseline_rows, "tilt_bad")
@@ -409,6 +423,8 @@ def summarize_rollout(
         "runner": args.runner,
         "run_dir": str(run_dir),
         "seed": int(args.seed),
+        "pose_profile": args.pose_profile,
+        "pose_leg_values_rad": leg_value_summary(pose),
         "steps_requested": int(args.steps),
         "steps_completed": len(rows),
         "effective_asset_path": effective_asset_path,
@@ -459,11 +475,17 @@ def build_run_config(
     requested_gains: StabilizerGains,
     effective_gains: StabilizerGains,
 ) -> dict[str, Any]:
+    pose = pose_profile_values(
+        args.pose_profile,
+        load_g1_27dof_nohand_profile().control.default_angles_rad,
+    )
     return {
         "task": TASK_NAME,
         "runner": args.runner,
         "run_dir": str(run_dir),
         "mode": args.mode,
+        "pose_profile": args.pose_profile,
+        "pose_leg_values_rad": leg_value_summary(pose),
         "steps": int(args.steps),
         "seed": int(args.seed),
         "effective_asset_path": effective_asset_path,
@@ -495,6 +517,7 @@ def run_genesis_probe(args: argparse.Namespace) -> dict[str, Any]:
 
     base_profile = load_g1_27dof_nohand_profile()
     profile = profile_with_asset_path(base_profile, args.asset_path)
+    pose = pose_profile_values(args.pose_profile, profile.control.default_angles_rad)
     asset_path = str(profile.asset.path)
     run_dir = resolve_run_dir(args.output_root, args.run_name)
     run_dir.mkdir(parents=True, exist_ok=False)
@@ -527,6 +550,7 @@ def run_genesis_probe(args: argparse.Namespace) -> dict[str, Any]:
             n_envs=int(args.n_envs),
             backend=args.backend,
             logical_cuda_device=args.logical_cuda_device,
+            default_positions_rad=pose,
         ),
         profile=profile,
     )
@@ -547,6 +571,7 @@ def run_genesis_probe(args: argparse.Namespace) -> dict[str, Any]:
                 n_envs=int(args.n_envs),
                 backend=args.backend,
                 logical_cuda_device=args.logical_cuda_device,
+                default_positions_rad=pose,
             ),
             profile=profile,
         )
@@ -782,6 +807,8 @@ def build_h200_genesis_command(args: argparse.Namespace) -> str:
         str(args.n_envs),
         "--mode",
         args.mode,
+        "--pose-profile",
+        args.pose_profile,
         "--steps",
         str(args.steps),
         "--seed",
@@ -1378,6 +1405,58 @@ def gains_to_dict(gains: StabilizerGains) -> dict[str, float]:
         "height_kp": float(gains.height_kp),
         "height_kd": float(gains.height_kd),
         "max_joint_delta": float(gains.max_joint_delta),
+    }
+
+
+def pose_profile_values(name: str, current_pose: Sequence[float]) -> tuple[float, ...]:
+    if name == "current":
+        values = task018_tall_crouch_pose_values(current_pose)
+    elif name == "unitree_gym":
+        values = unitree_gym_pose_values()
+    else:
+        raise ValueError(f"unknown pose profile: {name}")
+    if len(values) != 27:
+        raise ValueError("pose profile must have 27 values")
+    return values
+
+
+def task018_tall_crouch_pose_values(current_pose: Sequence[float]) -> tuple[float, ...]:
+    values = [float(value) for value in current_pose]
+    for joint_name, value in CURRENT_POSE_LEG_VALUES.items():
+        values[G1_27DOF_NOHAND_ACTUATOR_ORDER.index(joint_name)] = value
+    return tuple(values)
+
+
+def unitree_gym_pose_values() -> tuple[float, ...]:
+    values = dict.fromkeys(G1_27DOF_NOHAND_ACTUATOR_ORDER, 0.0)
+    values.update(
+        {
+            "left_hip_pitch_joint": -0.1,
+            "left_knee_joint": 0.3,
+            "left_ankle_pitch_joint": -0.2,
+            "right_hip_pitch_joint": -0.1,
+            "right_knee_joint": 0.3,
+            "right_ankle_pitch_joint": -0.2,
+            "left_shoulder_pitch_joint": 0.2,
+            "left_shoulder_roll_joint": 0.2,
+            "left_elbow_joint": 0.6,
+            "right_shoulder_pitch_joint": 0.2,
+            "right_shoulder_roll_joint": -0.2,
+            "right_elbow_joint": 0.6,
+        }
+    )
+    return tuple(float(values[joint_name]) for joint_name in G1_27DOF_NOHAND_ACTUATOR_ORDER)
+
+
+def leg_value_summary(pose: Sequence[float]) -> dict[str, float]:
+    return {
+        "hip_pitch": float(
+            pose[G1_27DOF_NOHAND_ACTUATOR_ORDER.index("left_hip_pitch_joint")]
+        ),
+        "knee": float(pose[G1_27DOF_NOHAND_ACTUATOR_ORDER.index("left_knee_joint")]),
+        "ankle_pitch": float(
+            pose[G1_27DOF_NOHAND_ACTUATOR_ORDER.index("left_ankle_pitch_joint")]
+        ),
     }
 
 

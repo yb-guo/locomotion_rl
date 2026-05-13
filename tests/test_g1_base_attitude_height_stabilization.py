@@ -36,6 +36,7 @@ def test_parse_args_exposes_task023_modes_and_metadata() -> None:
     assert set(probe.STABILIZER_MODES) == {"none", "attitude", "height", "attitude_height"}
     assert args.runner == "local_toy"
     assert args.mode == "attitude_height"
+    assert args.pose_profile == "current"
     assert args.steps == 32
     assert args.seed == 7
     assert args.asset_path == Path("outputs/task023/assets/g1.xml")
@@ -245,6 +246,7 @@ def test_genesis_command_uses_guarded_wrapper_without_running_h200() -> None:
     assert "CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src" in command
     assert "h200_locomotion_lab.tools.g1_base_attitude_height_stabilization" in command
     assert "--runner genesis" in command
+    assert "--pose-profile current" in command
     assert "--physical-gpu 1 --logical-cuda-device cuda:0" in command
 
 
@@ -328,11 +330,21 @@ def test_genesis_runner_uses_fake_vectorized_backend_and_asset_override(
     backend = instances[0]
     assert backend.config.n_envs == 2
     assert backend.config.backend == "cpu"
+    assert backend.config.default_positions_rad == probe.pose_profile_values(
+        "current",
+        fake_profile().control.default_angles_rad,
+    )
     assert backend.profile.asset.path == "/tmp/override-g1.xml"
     assert summary["status"] == "completed"
     assert summary["runner"] == "genesis"
     assert summary["effective_asset_path"] == "/tmp/override-g1.xml"
     assert summary["asset_metadata"]["effective_path"] == "/tmp/override-g1.xml"
+    assert summary["pose_profile"] == "current"
+    assert summary["pose_leg_values_rad"] == {
+        "hip_pitch": -0.06,
+        "knee": 0.12,
+        "ankle_pitch": -0.07,
+    }
     assert summary["genesis"]["n_envs"] == 2
     assert summary["genesis"]["profile"]["asset_path"] == "/tmp/override-g1.xml"
     assert summary["hardware_metadata"]["physical_gpu"] == "1"
@@ -357,6 +369,36 @@ def test_genesis_runner_uses_fake_vectorized_backend_and_asset_override(
         for row in action
         for value in row
     )
+
+
+def test_current_pose_profile_matches_zero_action_tall_crouch_semantics() -> None:
+    base_pose = tuple(0.5 for _ in probe.G1_27DOF_NOHAND_ACTUATOR_ORDER)
+
+    pose = probe.pose_profile_values("current", base_pose)
+
+    index = probe.G1_27DOF_NOHAND_ACTUATOR_ORDER.index
+    assert pose[index("left_hip_pitch_joint")] == pytest.approx(-0.06)
+    assert pose[index("right_hip_pitch_joint")] == pytest.approx(-0.06)
+    assert pose[index("left_knee_joint")] == pytest.approx(0.12)
+    assert pose[index("right_knee_joint")] == pytest.approx(0.12)
+    assert pose[index("left_ankle_pitch_joint")] == pytest.approx(-0.07)
+    assert pose[index("right_ankle_pitch_joint")] == pytest.approx(-0.07)
+    assert pose[index("left_hip_roll_joint")] == pytest.approx(0.5)
+    assert probe.leg_value_summary(pose) == {
+        "hip_pitch": -0.06,
+        "knee": 0.12,
+        "ankle_pitch": -0.07,
+    }
+
+
+def test_unitree_gym_pose_profile_matches_zero_action_semantics() -> None:
+    pose = probe.pose_profile_values("unitree_gym", (0.5,) * 27)
+
+    index = probe.G1_27DOF_NOHAND_ACTUATOR_ORDER.index
+    assert pose[index("left_hip_pitch_joint")] == pytest.approx(-0.1)
+    assert pose[index("left_knee_joint")] == pytest.approx(0.3)
+    assert pose[index("left_ankle_pitch_joint")] == pytest.approx(-0.2)
+    assert pose[index("right_shoulder_roll_joint")] == pytest.approx(-0.2)
 
 
 def test_genesis_contact_schema_reports_unavailable_without_crashing(
@@ -490,6 +532,7 @@ class FakeGenesisConfig:
     n_envs: int
     backend: str = "cpu"
     logical_cuda_device: str = "cpu"
+    default_positions_rad: tuple[float, ...] | None = None
 
 
 class FakeTorch:
@@ -563,7 +606,9 @@ class FakeGenesisBackend:
         self.profile = profile
         self.n_envs = config.n_envs
         self.action_dim = 27
-        self.default_positions_values = tuple(profile.control.default_angles_rad)
+        self.default_positions_values = tuple(
+            config.default_positions_rad or profile.control.default_angles_rad
+        )
         self.robot = FakeContactRobot(with_contact=with_contact)
         self.step_count = 0
         self.actions: list[list[list[float]]] = []

@@ -74,6 +74,21 @@
   Local focused verification:
   `$env:PYTHONPATH='src'; python -m pytest tests/test_g1_base_attitude_height_stabilization.py -p no:cacheprovider`
   passed with 12 tests. No H200 command was run.
+- 2026-05-13 Coding subagent fixed the reset/default pose prerequisite before
+  rerunning H200. `g1_base_attitude_height_stabilization` now supports
+  `--pose-profile` with default `current` and `unitree_gym` alternative, using
+  the same task018 tall-crouch leg values as
+  `g1_zero_action_standing_causality`: hip_pitch `-0.06`, knee `0.12`, and
+  ankle_pitch `-0.07` for the `current` profile. The Genesis runner now passes
+  `default_positions_rad=pose` into `VectorizedGenesisConfig` for both candidate
+  and baseline/no-stabilizer backend construction, so `mode none` starts from
+  the same default pose as the old zero-action probe. Config and summary JSON
+  now record `pose_profile` and `pose_leg_values_rad`; local_toy records this
+  metadata but does not use it for physics. Added fake Genesis coverage proving
+  the config receives `default_positions_rad`, plus direct pose-profile
+  semantics tests for `current` and `unitree_gym`. Local focused verification:
+  `$env:PYTHONPATH='src'; python -m pytest tests/test_g1_base_attitude_height_stabilization.py -p no:cacheprovider`
+  passed with 14 tests. No H200 command was run.
 
 ## Review
 
@@ -88,3 +103,8 @@ Status: reviewed_no_blocking_for_h200_matrix.
   `--physical-gpu 1 --logical-cuda-device cuda:0`; stop and diagnose if real
   Genesis exposes contact force only through an API not covered by the current
   link reader.
+- 2026-05-13 Read-only reviewer found no blocking findings for the reset-pose
+  fix and allowed Router to submit, sync remote, and rerun only the
+  source/no-stabilizer baseline. Reviewer confirmed that `current` pose
+  semantics match the old zero-action probe and that the H200 command path
+  includes `--pose-profile current`.
