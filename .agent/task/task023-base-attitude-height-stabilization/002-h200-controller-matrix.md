@@ -59,6 +59,21 @@
   focused verification:
   `$env:PYTHONPATH='src'; python -m pytest tests/test_g1_base_attitude_height_stabilization.py -p no:cacheprovider`
   passed with 9 tests.
+- 2026-05-13 Coding subagent fixed the subtask002 prerequisite issues found by
+  Router before H200 matrix execution. `attitude_from_quat` now normalizes wxyz
+  quaternions and reports upright with the same projected-gravity semantics as
+  `g1_zero_action_standing_causality.projected_gravity_torch`/
+  `standing_flags`: `projected_gravity_z = -1 + 2 * (x^2 + y^2)` and
+  `upright = clamp(-projected_gravity_z, 0, 1)`. Euler roll/pitch remain
+  available for the fixed controller. The contact reader now tries both
+  `get_links_net_contact_force` and `get_links_net_contact_forces`, first with
+  `links_idx_local=(idx,)` and then with no-arg full contact-force fallback.
+  Added deterministic tests covering projected-gravity upright equivalence, the
+  H200 baseline semantic discrepancy fixture (`Euler first_tilt_step=64` vs
+  `projected-gravity first_tilt_step=88`), and plural contact API availability.
+  Local focused verification:
+  `$env:PYTHONPATH='src'; python -m pytest tests/test_g1_base_attitude_height_stabilization.py -p no:cacheprovider`
+  passed with 12 tests. No H200 command was run.
 
 ## Review
 

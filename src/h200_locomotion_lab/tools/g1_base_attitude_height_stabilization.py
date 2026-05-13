@@ -862,14 +862,28 @@ def aggregate_joint_errors(
 
 
 def attitude_from_quat(quat: Sequence[float]) -> dict[str, float]:
-    roll, pitch = roll_pitch_from_quat(quat)
+    normalized = normalize_quat_wxyz(quat)
+    roll, pitch = roll_pitch_from_quat(normalized)
     tilt = math.sqrt(roll * roll + pitch * pitch)
+    projected_gravity_z = -1.0 + 2.0 * (
+        normalized[1] * normalized[1] + normalized[2] * normalized[2]
+    )
     return {
         "roll": roll,
         "pitch": pitch,
         "tilt": tilt,
-        "upright": clamp(1.0 - tilt, 0.0, 1.0),
+        "upright": clamp(-projected_gravity_z, 0.0, 1.0),
     }
+
+
+def normalize_quat_wxyz(quat: Sequence[float]) -> tuple[float, float, float, float]:
+    if len(quat) < 4:
+        return (1.0, 0.0, 0.0, 0.0)
+    w, x, y, z = (float(quat[0]), float(quat[1]), float(quat[2]), float(quat[3]))
+    norm = math.sqrt((w * w) + (x * x) + (y * y) + (z * z))
+    if norm < 1e-6:
+        return (1.0, 0.0, 0.0, 0.0)
+    return (w / norm, x / norm, y / norm, z / norm)
 
 
 def roll_pitch_from_quat(quat: Sequence[float]) -> tuple[float, float]:
@@ -963,27 +977,89 @@ def resolve_link_index(robot: Any, link_name: str) -> int | None:
 
 
 def read_link_contact_force(robot: Any, link_index: int) -> float | None:
-    if not hasattr(robot, "get_links_net_contact_force"):
+    for method_name in ("get_links_net_contact_force", "get_links_net_contact_forces"):
+        if not hasattr(robot, method_name):
+            continue
+        method = getattr(robot, method_name)
+        try:
+            selected = method(links_idx_local=(link_index,))
+            force = max_vector_norm(selected)
+            if force is not None:
+                return force
+        except TypeError:
+            pass
+        except Exception:
+            pass
+        try:
+            full = method()
+            force = indexed_contact_force(full, link_index)
+            if force is not None:
+                return force
+        except Exception:
+            continue
+    return None
+
+
+def indexed_contact_force(value: Any, link_index: int) -> float | None:
+    vectors = contact_vectors_for_link(value, link_index)
+    if not vectors:
         return None
-    try:
-        selected = robot.get_links_net_contact_force(links_idx_local=(link_index,))
-        force = max_vector_norm(selected)
-        if force is not None:
-            return force
-    except TypeError:
-        pass
-    except Exception:
-        return None
-    try:
-        forces = rows_from_tensorlike(robot.get_links_net_contact_force())
-    except Exception:
-        return None
-    flat = [float(value) for row in forces for value in row]
-    start = link_index * 3
-    if len(flat) < start + 3:
-        return None
-    fx, fy, fz = flat[start : start + 3]
-    return math.sqrt(fx * fx + fy * fy + fz * fz)
+    norms = [
+        math.sqrt(
+            (float(row[0]) * float(row[0]))
+            + (float(row[1]) * float(row[1]))
+            + (float(row[2]) * float(row[2]))
+        )
+        for row in vectors
+    ]
+    return max(norms) if norms else None
+
+
+def contact_vectors_for_link(value: Any, link_index: int) -> list[list[float]]:
+    if hasattr(value, "detach"):
+        value = value.detach()
+    if hasattr(value, "cpu"):
+        value = value.cpu()
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        value = list(value)
+    if not value:
+        return []
+    if all(isinstance(item, (int, float, bool)) for item in value):
+        start = link_index * 3
+        if len(value) < start + 3:
+            return []
+        return [[float(item) for item in value[start : start + 3]]]
+    if all(
+        isinstance(row, list)
+        and all(isinstance(item, (int, float, bool)) for item in row)
+        for row in value
+    ):
+        if all(len(row) == 3 for row in value):
+            if len(value) <= link_index:
+                return []
+            return [[float(item) for item in value[link_index]]]
+        start = link_index * 3
+        return [
+            [float(item) for item in row[start : start + 3]]
+            for row in value
+            if len(row) >= start + 3
+        ]
+    vectors = []
+    for env_row in value:
+        if hasattr(env_row, "tolist"):
+            env_row = env_row.tolist()
+        if not isinstance(env_row, list) or len(env_row) <= link_index:
+            continue
+        vector = env_row[link_index]
+        if hasattr(vector, "tolist"):
+            vector = vector.tolist()
+        if isinstance(vector, list) and len(vector) >= 3:
+            vectors.append([float(item) for item in vector[:3]])
+    return vectors
 
 
 def max_vector_norm(value: Any) -> float | None:

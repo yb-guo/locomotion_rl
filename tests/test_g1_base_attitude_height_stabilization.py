@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import inspect
 import json
+import math
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -247,6 +248,38 @@ def test_genesis_command_uses_guarded_wrapper_without_running_h200() -> None:
     assert "--physical-gpu 1 --logical-cuda-device cuda:0" in command
 
 
+def test_attitude_upright_matches_projected_gravity_semantics() -> None:
+    quat = (2.0, 0.6, -0.8, 0.2)
+    norm = math.sqrt(sum(value * value for value in quat))
+    _, x, y, _ = (value / norm for value in quat)
+    projected_gravity_z = -1.0 + 2.0 * ((x * x) + (y * y))
+
+    attitude = probe.attitude_from_quat(quat)
+
+    assert attitude["upright"] == pytest.approx(probe.clamp(-projected_gravity_z, 0.0, 1.0))
+
+
+def test_projected_gravity_upright_explains_h200_baseline_step_not_euler_step() -> None:
+    quats = []
+    for step in range(100):
+        if step < 64:
+            roll = 0.69
+        elif step < 88:
+            roll = 0.80
+        else:
+            roll = 1.30
+        quats.append(exact_roll_quat(roll))
+
+    euler_first_tilt = first_tilt_step_with_euler_upright(quats, min_upright=0.30)
+    projected_gravity_first_tilt = first_tilt_step_with_probe_upright(
+        quats,
+        min_upright=0.30,
+    )
+
+    assert euler_first_tilt == 64
+    assert projected_gravity_first_tilt == 88
+
+
 def test_genesis_runner_uses_fake_vectorized_backend_and_asset_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -368,10 +401,51 @@ def test_genesis_contact_schema_reports_unavailable_without_crashing(
     assert summary["contact_trace_summary"]["ankle_roll"]["missing"]
 
 
+def test_plural_contact_api_is_used_and_reports_available() -> None:
+    robot = FakePluralContactRobot()
+    reader = probe.build_contact_reader(robot)
+
+    metrics = probe.read_contact_metrics(robot, reader)
+
+    assert robot.selected_calls == [0, 1, 2, 3]
+    assert metrics["ankle_roll"]["available"] is True
+    assert metrics["ankle_pitch"]["available"] is True
+    assert metrics["ankle_roll"]["max_force"] == pytest.approx(3.0)
+    assert metrics["ankle_pitch"]["max_force"] == pytest.approx(5.0)
+
+
 def fresh_test_dir(name: str) -> Path:
     root = (Path.cwd() / "outputs" / "task023" / ".test_tmp" / f"{name}_{uuid4().hex}").resolve()
     root.mkdir(parents=True)
     return root
+
+
+def first_tilt_step_with_euler_upright(
+    quats: list[tuple[float, float, float, float]],
+    *,
+    min_upright: float,
+) -> int | None:
+    for step, quat in enumerate(quats):
+        roll, pitch = probe.roll_pitch_from_quat(quat)
+        tilt = math.sqrt((roll * roll) + (pitch * pitch))
+        if probe.clamp(1.0 - tilt, 0.0, 1.0) < min_upright:
+            return step
+    return None
+
+
+def first_tilt_step_with_probe_upright(
+    quats: list[tuple[float, float, float, float]],
+    *,
+    min_upright: float,
+) -> int | None:
+    for step, quat in enumerate(quats):
+        if probe.attitude_from_quat(quat)["upright"] < min_upright:
+            return step
+    return None
+
+
+def exact_roll_quat(roll: float) -> tuple[float, float, float, float]:
+    return (math.cos(roll / 2.0), math.sin(roll / 2.0), 0.0, 0.0)
 
 
 @dataclass(frozen=True)
@@ -456,6 +530,27 @@ class FakeContactRobot:
         if not self.with_contact:
             raise RuntimeError("contact unavailable")
         indices = links_idx_local or tuple(self.link_indices.values())
+        return [
+            [[float(index + 1), 0.0, 0.0] for index in indices],
+            [[float(index + 2), 0.0, 0.0] for index in indices],
+        ]
+
+
+class FakePluralContactRobot:
+    link_indices = FakeContactRobot.link_indices
+
+    def __init__(self) -> None:
+        self.selected_calls: list[int] = []
+
+    def get_link(self, name: str) -> FakeLink:
+        return FakeLink(self.link_indices[name])
+
+    def get_links_net_contact_forces(
+        self,
+        links_idx_local: tuple[int, ...] | None = None,
+    ) -> list[list[list[float]]]:
+        indices = links_idx_local or tuple(self.link_indices.values())
+        self.selected_calls.extend(indices)
         return [
             [[float(index + 1), 0.0, 0.0] for index in indices],
             [[float(index + 2), 0.0, 0.0] for index in indices],
