@@ -89,10 +89,53 @@
   semantics tests for `current` and `unitree_gym`. Local focused verification:
   `$env:PYTHONPATH='src'; python -m pytest tests/test_g1_base_attitude_height_stabilization.py -p no:cacheprovider`
   passed with 14 tests. No H200 command was run.
+- 2026-05-13 H200 guarded focused verification after sync:
+  `CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src python -m pytest tests/test_g1_base_attitude_height_stabilization.py -p no:cacheprovider`
+  passed with 14 tests under
+  `/root/agent_workspace/project/h200-locomotion-lab-task023-base-attitude-height-stabilization`.
+- 2026-05-13 Regenerated the task-local `ankle_roll_larger_spheres` asset under
+  `outputs/task023/ankle_roll_contact_patch/matrix_assets/assets/` from the
+  prepared source asset. Source remained unchanged; 8 ankle-roll support geoms
+  were enlarged from `0.005` to `0.012`.
+- 2026-05-13 H200 guarded matrix evidence, physical GPU 1/logical `cuda:0`,
+  `n_envs=64`, `pose_profile=current`:
+  - source/no stabilizer:
+    `source_none_n64_s120_pose_current`, first tilt/reset step 88, ankle-roll
+    max force 294.7, ankle-pitch max force 0.0.
+  - source/attitude:
+    `source_attitude_n64_s120_pose_current`, first tilt/reset step 109,
+    ankle-roll max force 652.3; confirm
+    `source_attitude_n64_s120_pose_current_confirm`, first tilt/reset step 109,
+    ankle-roll max force 258.7. This is the only reproducible source delay
+    above the 20-step rerun threshold.
+  - source/height:
+    `source_height_n64_s120_pose_current`, first tilt/reset step 91,
+    ankle-roll max force 212.0.
+  - source/attitude+height:
+    `source_attitude_height_n64_s120_pose_current`, first tilt/reset step 110,
+    ankle-roll max force 678.7; confirm
+    `source_attitude_height_n64_s120_pose_current_confirm`, first tilt/reset
+    step 96, ankle-roll max force 678.7. Treat as inconsistent and high-force.
+  - `ankle_roll_larger_spheres`/no stabilizer:
+    `larger_spheres_none_n64_s120_pose_current`, first tilt/reset step 106,
+    ankle-roll max force 241.0.
+  - `ankle_roll_larger_spheres`/attitude:
+    `larger_spheres_attitude_n64_s140_pose_current`, first tilt/reset step 105,
+    ankle-roll max force 1235.7. This regresses versus the larger-spheres
+    baseline and exceeds the task022 box-support force range.
+- 2026-05-13 Summary JSON paths for H200 evidence:
+  - `/root/agent_workspace/project/h200-locomotion-lab-task023-base-attitude-height-stabilization/outputs/task023/base_attitude_height_stabilization/source_none_n64_s120_pose_current/summary.json`
+  - `/root/agent_workspace/project/h200-locomotion-lab-task023-base-attitude-height-stabilization/outputs/task023/base_attitude_height_stabilization/source_attitude_n64_s120_pose_current/summary.json`
+  - `/root/agent_workspace/project/h200-locomotion-lab-task023-base-attitude-height-stabilization/outputs/task023/base_attitude_height_stabilization/source_attitude_n64_s120_pose_current_confirm/summary.json`
+  - `/root/agent_workspace/project/h200-locomotion-lab-task023-base-attitude-height-stabilization/outputs/task023/base_attitude_height_stabilization/source_height_n64_s120_pose_current/summary.json`
+  - `/root/agent_workspace/project/h200-locomotion-lab-task023-base-attitude-height-stabilization/outputs/task023/base_attitude_height_stabilization/source_attitude_height_n64_s120_pose_current/summary.json`
+  - `/root/agent_workspace/project/h200-locomotion-lab-task023-base-attitude-height-stabilization/outputs/task023/base_attitude_height_stabilization/source_attitude_height_n64_s120_pose_current_confirm/summary.json`
+  - `/root/agent_workspace/project/h200-locomotion-lab-task023-base-attitude-height-stabilization/outputs/task023/base_attitude_height_stabilization/larger_spheres_none_n64_s120_pose_current/summary.json`
+  - `/root/agent_workspace/project/h200-locomotion-lab-task023-base-attitude-height-stabilization/outputs/task023/base_attitude_height_stabilization/larger_spheres_attitude_n64_s140_pose_current/summary.json`
 
 ## Review
 
-Status: reviewed_no_blocking_for_h200_matrix.
+Status: evidence_ready_for_final_review.
 
 - 2026-05-13 Read-only reviewer found no blocking findings and allowed Router
   to execute the guarded H200 matrix. Reviewer confirmed that `--runner genesis`

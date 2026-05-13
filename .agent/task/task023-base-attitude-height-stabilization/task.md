@@ -164,7 +164,24 @@ unbounded contact forces, or only mask the reset condition.
 
 - 2026-05-13 Created after task022 showed contact patching helps partially but
   does not stabilize passive standing.
+- 2026-05-13 Completed subtask001 local deterministic feedback loop and tests.
+- 2026-05-13 Completed subtask002 H200 guarded matrix after fixing two runner
+  equivalence issues: projected-gravity upright/reset semantics and
+  `pose_profile=current` default reset pose. H200 evidence reproduced source
+  baseline first tilt/reset step 88 and `ankle_roll_larger_spheres` baseline
+  step 106.
+- 2026-05-13 Matrix decision before final review: fixed attitude feedback gives
+  a reproducible source-only delay to step 109, but height feedback is
+  negligible, attitude+height is inconsistent/high-force, and the
+  larger-spheres plus attitude combination regresses with very high ankle-roll
+  force. The controller does not arrest collapse.
 
 ## Review
 
-Status: pending.
+Status: reviewed_no_blocking_diagnostic_not_passed.
+
+- 2026-05-13 Final read-only reviewer found no blocking findings. Task023 is
+  complete as a diagnostic result, not a passed standing-controller baseline.
+  Decision: fixed stabilizer helps partially on the source asset, but
+  asset/controller semantics still dominate and it is not ready to become the
+  PPO standing baseline.
