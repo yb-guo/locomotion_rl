@@ -55,8 +55,49 @@ logical_cuda_device=cuda:0
   tests/test_g1_failure_onset_trace.py
   tests/test_g1_ankle_foot_asset_contact_audit.py -q -p no:cacheprovider`
   -> 37 passed, 4 skipped. Re-review found no blocking findings.
+- 2026-05-13 H200 deploy `36807e4` verified focused tests through
+  `run_guarded.sh` with `CUDA_VISIBLE_DEVICES=1` -> 46 passed. Generated real
+  patched XML variants under
+  `outputs/task022/ankle_roll_contact_patch/h200-gpu1-patches-v2/`; static
+  summary status `completed`, `source_unchanged=true`, `missing=[]`,
+  `errors=[]`, and `compiler.meshdir` was rewritten from `meshes` to
+  `/root/h200-locomotion-lab-runs/task002-sonic-mujoco-smoke/GR00T-WholeBodyControl/gear_sonic/data/robots/g1/meshes`.
+- 2026-05-13 H200 zero-action onset traces completed with physical GPU 1
+  (`CUDA_VISIBLE_DEVICES=1`, logical `cuda:0`), `n_envs=512`, `chunks=128`,
+  `chunk_steps=1`, `scenario=baseline_current`:
+
+| asset | first_tilt_step | confirm | result |
+| --- | ---: | ---: | --- |
+| source `g1_27dof_nohand.xml` | 88 | n/a | baseline reproduced |
+| `ankle_roll_friction_attrs` | 88 | n/a | no delay |
+| `ankle_roll_larger_spheres` | 106 | 106 | delayed +18 steps, still failed |
+| `ankle_roll_box_support` | 113 | 113 | delayed +25 steps, still failed |
+
+  Onset summaries:
+  `outputs/task022/failure_onset_trace/h200-gpu1-source-baseline-v1/summary.json`,
+  `h200-gpu1-friction-baseline-v2/summary.json`,
+  `h200-gpu1-larger-spheres-baseline-v1/summary.json`,
+  `h200-gpu1-larger-spheres-baseline-confirm-v1/summary.json`,
+  `h200-gpu1-box-support-baseline-v1/summary.json`, and
+  `h200-gpu1-box-support-baseline-confirm-v1/summary.json`.
+- 2026-05-13 H200 link-level traces completed for source and all three patch
+  variants. Ankle-pitch links stayed at `contact_force_max=0.0`; ankle-roll
+  links remained the contact path:
+
+| asset | link first_tilt_step | left ankle-roll force max | right ankle-roll force max | note |
+| --- | ---: | ---: | ---: | --- |
+| source | 89 | 294.43 | 294.97 | baseline contact path |
+| `ankle_roll_friction_attrs` | 89 | 294.55 | 294.76 | unchanged |
+| `ankle_roll_larger_spheres` | 107 | 240.95 | 240.68 | delayed and lower roll force |
+| `ankle_roll_box_support` | 114 | 662.77 | 638.69 | delayed but much higher roll force |
+
+  Link summaries:
+  `outputs/task022/ankle_foot_asset_contact_audit/h200-gpu1-source-link-v1/summary.json`,
+  `h200-gpu1-friction-link-v1/summary.json`,
+  `h200-gpu1-larger-spheres-link-v1/summary.json`, and
+  `h200-gpu1-box-support-link-v1/summary.json`.
 
 ## Review
 
-Status: local asset-override preparation reviewed with no blocking findings.
-H200 runtime evidence remains pending.
+Status: passed with no blocking findings. H200 runtime evidence supports a
+partial-help decision, not a stable-standing pass.

@@ -197,7 +197,29 @@ remains localized and large, or patch causes earlier height/upright collapse
   verification passed: `PYTHONPATH=src python -m pytest
   tests/test_g1_ankle_roll_contact_patch.py -q -p no:cacheprovider` -> 5
   passed. No H200 rerun performed.
+- 2026-05-13 H200 deploy `36807e4` passed focused remote tests through
+  `run_guarded.sh` with `CUDA_VISIBLE_DEVICES=1` -> 46 passed. Patch generator
+  run `h200-gpu1-patches-v2` produced all three variants under
+  `/root/agent_workspace/project/h200-locomotion-lab-task022-ankle-roll-contact-patch-ablation/outputs/task022/ankle_roll_contact_patch/`,
+  with `source_unchanged=true`, `missing=[]`, `errors=[]`, and source-resolved
+  absolute `compiler.meshdir`.
+- 2026-05-13 H200 zero-action/link-trace evidence collected on physical GPU 1.
+  Source first tilt reproduced at step 88. `ankle_roll_friction_attrs` stayed
+  at step 88. `ankle_roll_larger_spheres` delayed first tilt to step 106 and
+  reproduced step 106 in confirm. `ankle_roll_box_support` delayed first tilt
+  to step 113 and reproduced step 113 in confirm. Link-level traces kept
+  ankle-pitch contact force at 0.0; source/friction ankle-roll force max was
+  about 294, larger-spheres about 241, and box-support about 639-663. All
+  variants still failed from tilt/reset, so this task remains diagnosis, not a
+  PPO pass.
+- 2026-05-13 Final read-only review found no blocking findings. Decision:
+  contact patch helps partially but is insufficient for stable passive
+  standing. Keep `ankle_roll_larger_spheres` as the cleanest controlled
+  comparison asset for follow-up; do not treat `ankle_roll_box_support` as a
+  training asset without separate high-contact-force geometry review. PPO stays
+  closed.
 
 ## Review
 
-Status: pending.
+Status: passed with no blocking findings. Task022 decision is partial-help,
+not a standing/PPO pass.
