@@ -43,7 +43,21 @@ Initial patch variants:
 ## Log
 
 - 2026-05-13 Created with task022.
+- 2026-05-13 Coding subagent added standalone
+  `g1_ankle_roll_contact_patch` XML generator with three local variants and
+  fixture tests. Verification: `PYTHONPATH=src python -m pytest
+  tests/test_g1_ankle_roll_contact_patch.py -p no:cacheprovider` passed
+  locally with 4 tests.
 
 ## Review
 
-Status: pending.
+Status: passed with no blocking findings.
+
+Residual risks:
+
+- Support-geom selection intentionally targets direct `sphere`/`ellipsoid`
+  geoms whose first `size` token is exactly `0.005`; differently formatted
+  support geoms will be reported as missing rather than patched.
+- `ankle_roll_box_support` adds a box even if existing point support geoms are
+  missing, while still reporting that missing condition. Treat that case as
+  structurally different during H200 review.

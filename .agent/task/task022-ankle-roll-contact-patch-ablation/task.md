@@ -167,6 +167,13 @@ remains localized and large, or patch causes earlier height/upright collapse
 - 2026-05-13 Task022 branch/worktree created from task021 dependency baseline.
   Task021 is not merged yet, so this branch intentionally carries task021
   diagnostic tools as a dependency baseline.
+- 2026-05-13 Subtask001 implemented a project-local XML patch generator for
+  `left/right_ankle_roll_link` variants and local fixture tests. Focused local
+  verification passed: `PYTHONPATH=src python -m pytest
+  tests/test_g1_ankle_roll_contact_patch.py -p no:cacheprovider`.
+- 2026-05-13 Subtask001 read-only review passed with no blocking findings.
+  Remaining risk is intentionally narrow support-geom matching; H200 ablation
+  must inspect generated real-asset XML before runtime comparison.
 
 ## Review
 
