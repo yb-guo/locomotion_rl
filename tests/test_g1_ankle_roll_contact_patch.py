@@ -68,8 +68,26 @@ def test_patch_generation_writes_all_variants_and_preserves_source_and_visual() 
     friction_xml = parse_variant(summary, "ankle_roll_friction_attrs")
     larger_xml = parse_variant(summary, "ankle_roll_larger_spheres")
     box_xml = parse_variant(summary, "ankle_roll_box_support")
+    mesh_collision_xml = parse_variant(summary, "ankle_roll_mesh_collision")
+    sole_collision_xml = parse_variant(summary, "ankle_roll_sole_collision")
+    center_keep_xml = parse_variant(summary, "ankle_roll_center_sole_keep_points")
+    center_no_points_xml = parse_variant(summary, "ankle_roll_center_sole_no_points")
+    mesh_bbox_xml = parse_variant(summary, "ankle_roll_mesh_bbox_sole_no_points")
+    edge_boxes_xml = parse_variant(summary, "ankle_roll_edge_boxes_no_points")
+    hybrid_edge_boxes_xml = parse_variant(summary, "ankle_roll_hybrid_edge_boxes_no_points")
 
-    for root in (friction_xml, larger_xml, box_xml):
+    for root in (
+        friction_xml,
+        larger_xml,
+        box_xml,
+        mesh_collision_xml,
+        sole_collision_xml,
+        center_keep_xml,
+        center_no_points_xml,
+        mesh_bbox_xml,
+        edge_boxes_xml,
+        hybrid_edge_boxes_xml,
+    ):
         assert root.find("compiler") is None
         for body_name in TARGETS:
             visual = geom_by_name(root, f"{body_name}_visual")
@@ -105,6 +123,121 @@ def test_patch_generation_writes_all_variants_and_preserves_source_and_visual() 
         assert box.get("type") == "box"
         assert box.get("size") == patcher.BOX_SUPPORT_SIZE
         assert box.get("pos") == patcher.BOX_SUPPORT_POS
+
+        mesh_collision = geom_by_name(
+            mesh_collision_xml,
+            f"{body_name}_task023_mesh_collision",
+        )
+        assert mesh_collision.attrib == {
+            "name": f"{body_name}_task023_mesh_collision",
+            "type": "mesh",
+            "mesh": f"{body_name}_mesh",
+            "friction": "1.0 0.02 0.001",
+            "condim": "4",
+            "priority": "1",
+            "contype": "1",
+            "conaffinity": "1",
+        }
+        sole_collision = geom_by_name(
+            sole_collision_xml,
+            f"{body_name}_task023_sole_collision",
+        )
+        assert sole_collision.attrib == {
+            "name": f"{body_name}_task023_sole_collision",
+            "type": "box",
+            "size": "0.035 0.025 0.004",
+            "pos": "0 0 -0.011",
+            "friction": "1.0 0.02 0.001",
+            "condim": "4",
+            "priority": "1",
+            "contype": "1",
+            "conaffinity": "1",
+        }
+        support_prefix = body_name.removesuffix("_ankle_roll_link")
+        for index in range(4):
+            support = geom_by_name(sole_collision_xml, f"{support_prefix}_support_{index}")
+            assert support.get("contype") == "0"
+            assert support.get("conaffinity") == "0"
+
+        center_keep = geom_by_name(
+            center_keep_xml,
+            f"{body_name}_task023_center_sole_keep_points",
+        )
+        assert center_keep.attrib == {
+            "name": f"{body_name}_task023_center_sole_keep_points",
+            "type": "box",
+            "size": patcher.BOX_SUPPORT_SIZE,
+            "pos": patcher.BOX_SUPPORT_POS,
+            "friction": "1.0 0.02 0.001",
+            "condim": "4",
+            "priority": "1",
+            "contype": "1",
+            "conaffinity": "1",
+        }
+        for index in range(4):
+            support = geom_by_name(center_keep_xml, f"{support_prefix}_support_{index}")
+            assert support.get("contype") is None
+            assert support.get("conaffinity") is None
+
+        center_no_points = geom_by_name(
+            center_no_points_xml,
+            f"{body_name}_task023_center_sole_no_points",
+        )
+        assert center_no_points.get("size") == patcher.BOX_SUPPORT_SIZE
+        assert center_no_points.get("pos") == patcher.BOX_SUPPORT_POS
+        for index in range(4):
+            support = geom_by_name(center_no_points_xml, f"{support_prefix}_support_{index}")
+            assert support.get("contype") == "0"
+            assert support.get("conaffinity") == "0"
+
+        mesh_bbox = geom_by_name(
+            mesh_bbox_xml,
+            f"{body_name}_task023_mesh_bbox_sole_no_points",
+        )
+        assert mesh_bbox.get("type") == "box"
+        assert mesh_bbox.get("size") == "0.1 0.04 0.006"
+        assert mesh_bbox.get("pos") == "0.04 0 -0.006"
+        for index in range(4):
+            support = geom_by_name(mesh_bbox_xml, f"{support_prefix}_support_{index}")
+            assert support.get("contype") == "0"
+            assert support.get("conaffinity") == "0"
+
+        edge_heel = geom_by_name(
+            edge_boxes_xml,
+            f"{body_name}_task023_edge_boxes_no_points_heel",
+        )
+        edge_toe = geom_by_name(
+            edge_boxes_xml,
+            f"{body_name}_task023_edge_boxes_no_points_toe",
+        )
+        assert_edge_box(edge_heel, "heel")
+        assert_edge_box(edge_toe, "toe")
+        for index in range(4):
+            support = geom_by_name(edge_boxes_xml, f"{support_prefix}_support_{index}")
+            assert support.get("contype") == "0"
+            assert support.get("conaffinity") == "0"
+
+        hybrid_center = geom_by_name(
+            hybrid_edge_boxes_xml,
+            f"{body_name}_task023_hybrid_center_pad",
+        )
+        assert hybrid_center.get("type") == "box"
+        assert hybrid_center.get("size") == patcher.BOX_SUPPORT_SIZE
+        assert hybrid_center.get("pos") == patcher.BOX_SUPPORT_POS
+        hybrid_heel = geom_by_name(
+            hybrid_edge_boxes_xml,
+            f"{body_name}_task023_hybrid_edge_boxes_heel",
+        )
+        hybrid_toe = geom_by_name(
+            hybrid_edge_boxes_xml,
+            f"{body_name}_task023_hybrid_edge_boxes_toe",
+        )
+        assert_edge_box(hybrid_heel, "heel")
+        assert_edge_box(hybrid_toe, "toe")
+        for index in range(4):
+            support = geom_by_name(hybrid_edge_boxes_xml, f"{support_prefix}_support_{index}")
+            assert support.get("contype") == "0"
+            assert support.get("conaffinity") == "0"
 
     for variant, report in written_summary["variants"].items():
         assert Path(report["path"]).is_file(), variant
@@ -221,6 +354,17 @@ def test_unknown_variant_is_rejected() -> None:
 
 def write_fixture_xml(path: Path, *, meshdir: str | None = None) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
+    mesh_root = (path.parent / meshdir).resolve() if meshdir is not None else path.parent
+    mesh_root.mkdir(parents=True, exist_ok=True)
+    for name in ("left.obj", "right.obj"):
+        (mesh_root / name).write_text(
+            """v -0.06 -0.04 -0.03
+v -0.06 0.04 -0.03
+v 0.14 -0.04 -0.03
+v 0.14 0.04 0.02
+""",
+            encoding="utf-8",
+        )
     compiler = f'  <compiler meshdir="{meshdir}" />\n' if meshdir is not None else ""
     path.write_text(
         f"""<mujoco>
@@ -274,6 +418,18 @@ def geom_by_name(root: ElementTree.Element, geom_name: str) -> ElementTree.Eleme
     geom = root.find(f".//geom[@name='{geom_name}']")
     assert geom is not None
     return geom
+
+
+def assert_edge_box(geom: ElementTree.Element, label: str) -> None:
+    expected_x = {"heel": "-0.05", "toe": "0.12"}[label]
+    assert geom.get("type") == "box"
+    assert geom.get("size") == patcher.EDGE_BOX_SIZE
+    assert geom.get("pos") == f"{expected_x} 0 {patcher.EDGE_BOX_Z}"
+    assert geom.get("friction") == "1.0 0.02 0.001"
+    assert geom.get("condim") == "4"
+    assert geom.get("priority") == "1"
+    assert geom.get("contype") == "1"
+    assert geom.get("conaffinity") == "1"
 
 
 def support_geoms_for_body(

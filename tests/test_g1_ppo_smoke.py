@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from types import SimpleNamespace
 
 import pytest
@@ -56,6 +57,7 @@ def test_parse_args_accepts_log_std_init(monkeypatch: pytest.MonkeyPatch) -> Non
     assert args.joint_velocity_penalty_scale == 0.02
     assert args.termination_penalty == -5.0
     assert args.warmup_steps == 2
+    assert args.asset_variant == "task023_hybrid"
 
 
 def test_parse_args_defaults_to_stable_tall_crouch_pose(
@@ -67,6 +69,77 @@ def test_parse_args_defaults_to_stable_tall_crouch_pose(
 
     assert args.root_z == 1.20
     assert args.default_pose == "tall_crouch"
+    assert args.asset_variant == "task023_hybrid"
+
+
+def test_parse_args_can_use_profile_asset_variant(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.argv", ["g1_ppo_smoke", "--asset-variant", "profile"])
+
+    args = g1_ppo_smoke.parse_args()
+
+    assert args.asset_variant == "profile"
+
+
+def test_resolve_training_profile_profile_variant_keeps_source_asset() -> None:
+    profile = FakeProfile(asset=FakeAsset(path="/source/g1_27dof_nohand.xml"))
+
+    resolved, report = g1_ppo_smoke.resolve_training_profile_for_asset_variant(
+        profile,
+        asset_variant="profile",
+        run_dir=g1_ppo_smoke.Path.cwd() / "unused",
+    )
+
+    assert resolved is profile
+    assert report == {
+        "asset_variant": "profile",
+        "source_asset_path": "/source/g1_27dof_nohand.xml",
+        "effective_asset_path": "/source/g1_27dof_nohand.xml",
+        "generated": False,
+    }
+
+
+def test_resolve_training_profile_task023_hybrid_generates_asset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_dir = g1_ppo_smoke.Path.cwd() / "outputs" / ".test_tmp_ppo_hybrid"
+    profile = FakeProfile(asset=FakeAsset(path="/source/g1_27dof_nohand.xml"))
+    generated_asset = run_dir / "asset_generation" / "task023_hybrid" / "assets" / "hybrid.xml"
+
+    def fake_run_patch_generation(args):
+        assert args.source_asset == g1_ppo_smoke.Path("/source/g1_27dof_nohand.xml")
+        assert args.output_root == run_dir / "asset_generation"
+        assert args.run_id == "task023_hybrid"
+        assert args.variants == g1_ppo_smoke.TASK023_HYBRID_PATCH_VARIANT
+        return {
+            "run_dir": str(run_dir / "asset_generation" / "task023_hybrid"),
+            "missing": [],
+            "errors": [],
+            "variants": {
+                g1_ppo_smoke.TASK023_HYBRID_PATCH_VARIANT: {
+                    "path": str(generated_asset),
+                },
+            },
+        }
+
+    monkeypatch.setattr(
+        g1_ppo_smoke.contact_patch,
+        "run_patch_generation",
+        fake_run_patch_generation,
+    )
+
+    resolved, report = g1_ppo_smoke.resolve_training_profile_for_asset_variant(
+        profile,
+        asset_variant="task023_hybrid",
+        run_dir=run_dir,
+    )
+
+    assert profile.asset.path == "/source/g1_27dof_nohand.xml"
+    assert resolved.asset.path == generated_asset.resolve().as_posix()
+    assert report["asset_variant"] == "task023_hybrid"
+    assert report["patch_variant"] == g1_ppo_smoke.TASK023_HYBRID_PATCH_VARIANT
+    assert report["source_asset_path"] == "/source/g1_27dof_nohand.xml"
+    assert report["effective_asset_path"] == generated_asset.resolve().as_posix()
+    assert report["generated"] is True
 
 
 def test_resolve_run_dir_stays_under_project_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -292,6 +365,16 @@ def test_summarize_run_training_metrics_aggregates_across_seeds() -> None:
 
 def argparse_error() -> type[Exception]:
     return Exception
+
+
+@dataclass(frozen=True)
+class FakeAsset:
+    path: str
+
+
+@dataclass(frozen=True)
+class FakeProfile:
+    asset: FakeAsset
 
 
 def _valid_metric_row() -> dict[str, float | bool]:

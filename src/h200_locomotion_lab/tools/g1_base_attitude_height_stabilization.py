@@ -24,6 +24,25 @@ DEFAULT_OUTPUT_ROOT = Path("outputs/task023/base_attitude_height_stabilization")
 STABILIZER_MODES = ("none", "attitude", "height", "attitude_height")
 RUNNERS = ("local_toy", "genesis")
 POSE_PROFILES = ("current", "unitree_gym")
+ROLL_ALLOCATIONS = (
+    "hip_ankle_same",
+    "hip_only_same",
+    "ankle_only_same",
+    "hip_ankle_mirrored",
+    "hip_only_mirrored",
+    "ankle_only_mirrored",
+)
+ROLL_SIGNS = ("normal", "inverted")
+ACTION_JOINT_GROUPS = (
+    "all",
+    "hip_roll",
+    "ankle_roll",
+    "hip_pitch",
+    "ankle_pitch",
+    "knee",
+    "leg_pitch",
+    "legs_no_ankle_roll",
+)
 DEFAULT_TARGET_HEIGHT = 0.78
 DEFAULT_MIN_UPRIGHT = 0.30
 DEFAULT_TERMINATION_HEIGHT_MIN = 0.20
@@ -146,6 +165,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--attitude-kd", type=nonnegative_float, default=0.45)
     parser.add_argument("--height-kp", type=nonnegative_float, default=1.25)
     parser.add_argument("--height-kd", type=nonnegative_float, default=0.30)
+    parser.add_argument("--roll-allocation", choices=ROLL_ALLOCATIONS, default="hip_ankle_same")
+    parser.add_argument("--roll-sign", choices=ROLL_SIGNS, default="normal")
+    parser.add_argument("--action-joint-group", choices=ACTION_JOINT_GROUPS, default="all")
+    parser.add_argument("--controller-start-step", type=nonnegative_int, default=0)
+    parser.add_argument("--controller-stop-step", type=positive_int, default=None)
     parser.add_argument("--max-gain", type=positive_float, default=DEFAULT_MAX_GAIN)
     parser.add_argument("--max-joint-delta", type=positive_float, default=DEFAULT_MAX_JOINT_DELTA)
     parser.add_argument("--target-height", type=positive_float, default=DEFAULT_TARGET_HEIGHT)
@@ -235,16 +259,29 @@ def run_toy_rollout(
     asset_instability = asset_instability_factor(str(args.asset_variant_label))
     reset_seen = False
     for step in range(int(args.steps)):
+        effective_mode = effective_controller_mode(
+            requested_mode=mode,
+            step=step,
+            start_step=int(args.controller_start_step),
+            stop_step=args.controller_stop_step,
+        )
         control = compute_controller_output(
-            mode=mode,
+            mode=effective_mode,
             gains=gains,
             state=state,
             target_height=float(args.target_height),
         )
-        joint_errors = update_joint_errors(joint_errors, control)
+        joint_deltas = controller_joint_deltas(
+            control,
+            roll_allocation=args.roll_allocation,
+            roll_sign=args.roll_sign,
+            action_joint_group=args.action_joint_group,
+        )
+        joint_errors = update_joint_errors(joint_errors, joint_deltas)
         ankle_roll_force, ankle_pitch_force = contact_forces(
             state=state,
             control=control,
+            joint_deltas=joint_deltas,
             asset_instability=asset_instability,
             rng=rng,
         )
@@ -257,18 +294,25 @@ def run_toy_rollout(
         rows.append(
             {
                 "step": step,
-                "mode": mode,
+                "mode": effective_mode,
+                "requested_mode": mode,
+                "controller_enabled": effective_mode != "none",
                 "root_height": state.root_height,
+                "root_height_velocity": state.root_height_velocity,
                 "upright": state.upright,
                 "tilt": state.tilt,
                 "roll": state.roll,
                 "pitch": state.pitch,
+                "root_ang_vel_roll": state.roll_velocity,
+                "root_ang_vel_pitch": state.pitch_velocity,
                 "controller": {
                     "roll_delta": control.roll_delta,
                     "pitch_delta": control.pitch_delta,
                     "height_delta": control.height_delta,
                     "max_abs_delta": control.max_abs_delta,
                     "clipped": control.clipped,
+                    "roll_allocation": args.roll_allocation,
+                    "roll_sign": args.roll_sign,
                 },
                 "tilt_bad": tilt_bad,
                 "height_bad": height_bad,
@@ -328,6 +372,22 @@ def compute_controller_output(
     )
 
 
+def effective_controller_mode(
+    *,
+    requested_mode: str,
+    step: int,
+    start_step: int,
+    stop_step: int | None,
+) -> str:
+    if requested_mode == "none":
+        return "none"
+    if step < start_step:
+        return "none"
+    if stop_step is not None and step >= stop_step:
+        return "none"
+    return requested_mode
+
+
 def advance_toy_state(
     *,
     state: ToyState,
@@ -358,40 +418,126 @@ def advance_toy_state(
 
 def update_joint_errors(
     joint_errors: Sequence[float],
-    control: ControllerOutput,
+    joint_deltas: dict[str, float],
 ) -> list[float]:
     values = [float(value) * 0.90 for value in joint_errors]
-    for joint_name in ANKLE_ROLL_JOINTS:
-        values[joint_index(joint_name)] += control.roll_delta
-    for joint_name in ANKLE_PITCH_JOINTS:
-        values[joint_index(joint_name)] += control.pitch_delta + (0.5 * control.height_delta)
-    for joint_name in ("left_knee_joint", "right_knee_joint"):
-        values[joint_index(joint_name)] += control.height_delta
-    for joint_name in ("left_hip_roll_joint", "right_hip_roll_joint"):
-        values[joint_index(joint_name)] += 0.5 * control.roll_delta
-    for joint_name in ("left_hip_pitch_joint", "right_hip_pitch_joint"):
-        values[joint_index(joint_name)] += 0.5 * control.pitch_delta + 0.25 * control.height_delta
+    for joint_name, delta in joint_deltas.items():
+        values[joint_index(joint_name)] += float(delta)
     return values
+
+
+def controller_joint_deltas(
+    control: ControllerOutput,
+    *,
+    roll_allocation: str,
+    roll_sign: str,
+    action_joint_group: str = "all",
+) -> dict[str, float]:
+    if roll_allocation not in ROLL_ALLOCATIONS:
+        raise ValueError(f"unknown roll allocation: {roll_allocation}")
+    if roll_sign not in ROLL_SIGNS:
+        raise ValueError(f"unknown roll sign: {roll_sign}")
+    if action_joint_group not in ACTION_JOINT_GROUPS:
+        raise ValueError(f"unknown action joint group: {action_joint_group}")
+
+    values = {joint_name: 0.0 for joint_name in G1_27DOF_NOHAND_ACTUATOR_ORDER}
+    roll_delta = control.roll_delta * (-1.0 if roll_sign == "inverted" else 1.0)
+    mirrored = "mirrored" in roll_allocation
+    use_hip = roll_allocation.startswith("hip_") or roll_allocation.startswith("hip_ankle")
+    use_ankle = "ankle" in roll_allocation
+    right_sign = -1.0 if mirrored else 1.0
+
+    if use_ankle:
+        values["left_ankle_roll_joint"] += roll_delta
+        values["right_ankle_roll_joint"] += right_sign * roll_delta
+    if use_hip:
+        values["left_hip_roll_joint"] += 0.5 * roll_delta
+        values["right_hip_roll_joint"] += right_sign * 0.5 * roll_delta
+
+    for joint_name in ANKLE_PITCH_JOINTS:
+        values[joint_name] += control.pitch_delta + (0.5 * control.height_delta)
+    for joint_name in ("left_knee_joint", "right_knee_joint"):
+        values[joint_name] += control.height_delta
+    for joint_name in ("left_hip_pitch_joint", "right_hip_pitch_joint"):
+        values[joint_name] += 0.5 * control.pitch_delta + 0.25 * control.height_delta
+    values = filter_joint_deltas(values, action_joint_group)
+    return values
+
+
+def filter_joint_deltas(
+    values: dict[str, float],
+    action_joint_group: str,
+) -> dict[str, float]:
+    if action_joint_group == "all":
+        return values
+    allowed = action_joint_group_names(action_joint_group)
+    return {
+        joint_name: (float(delta) if joint_name in allowed else 0.0)
+        for joint_name, delta in values.items()
+    }
+
+
+def action_joint_group_names(action_joint_group: str) -> set[str]:
+    if action_joint_group == "hip_roll":
+        return {"left_hip_roll_joint", "right_hip_roll_joint"}
+    if action_joint_group == "ankle_roll":
+        return {"left_ankle_roll_joint", "right_ankle_roll_joint"}
+    if action_joint_group == "hip_pitch":
+        return {"left_hip_pitch_joint", "right_hip_pitch_joint"}
+    if action_joint_group == "ankle_pitch":
+        return {"left_ankle_pitch_joint", "right_ankle_pitch_joint"}
+    if action_joint_group == "knee":
+        return {"left_knee_joint", "right_knee_joint"}
+    if action_joint_group == "leg_pitch":
+        return {
+            "left_hip_pitch_joint",
+            "right_hip_pitch_joint",
+            "left_knee_joint",
+            "right_knee_joint",
+            "left_ankle_pitch_joint",
+            "right_ankle_pitch_joint",
+        }
+    if action_joint_group == "legs_no_ankle_roll":
+        return {
+            "left_hip_roll_joint",
+            "right_hip_roll_joint",
+            "left_hip_pitch_joint",
+            "right_hip_pitch_joint",
+            "left_knee_joint",
+            "right_knee_joint",
+            "left_ankle_pitch_joint",
+            "right_ankle_pitch_joint",
+        }
+    if action_joint_group == "all":
+        return set(G1_27DOF_NOHAND_ACTUATOR_ORDER)
+    raise ValueError(f"unknown action joint group: {action_joint_group}")
 
 
 def contact_forces(
     *,
     state: ToyState,
     control: ControllerOutput,
+    joint_deltas: dict[str, float],
     asset_instability: float,
     rng: random.Random,
 ) -> tuple[float, float]:
     deterministic_jitter = rng.random() * 0.0001
+    ankle_roll_delta = max(
+        abs(float(joint_deltas[joint_name])) for joint_name in ANKLE_ROLL_JOINTS
+    )
+    ankle_pitch_delta = max(
+        abs(float(joint_deltas[joint_name])) for joint_name in ANKLE_PITCH_JOINTS
+    )
     ankle_roll = (
         1.4 * asset_instability
         + 9.0 * state.tilt
-        + 95.0 * abs(control.roll_delta)
+        + 95.0 * ankle_roll_delta
         + deterministic_jitter
     )
     ankle_pitch = (
         1.2 * asset_instability
         + 6.0 * abs(state.pitch)
-        + 70.0 * abs(control.pitch_delta)
+        + 70.0 * ankle_pitch_delta
         + 55.0 * abs(control.height_delta)
         + deterministic_jitter
     )
@@ -437,6 +583,8 @@ def summarize_rollout(
         },
         "stabilizer": {
             "mode": args.mode,
+            "controller_mapping": controller_mapping_summary(args),
+            "controller_gating": controller_gating_summary(args),
             "gains": {
                 "requested": gains_to_dict(requested_gains),
                 "effective": gains_to_dict(effective_gains),
@@ -457,6 +605,7 @@ def summarize_rollout(
             "ankle_roll": contact_summary(rows, "ankle_roll_contact_force"),
             "ankle_pitch": contact_summary(rows, "ankle_pitch_contact_force"),
         },
+        "force_event_summary": force_event_summary(rows),
         "improvement_classification": classify_improvement(
             mode=args.mode,
             first_reset=first_reset,
@@ -505,6 +654,8 @@ def build_run_config(
             "effective": gains_to_dict(effective_gains),
             "max_gain": float(args.max_gain),
         },
+        "controller_mapping": controller_mapping_summary(args),
+        "controller_gating": controller_gating_summary(args),
     }
 
 
@@ -554,6 +705,7 @@ def run_genesis_probe(args: argparse.Namespace) -> dict[str, Any]:
         ),
         profile=profile,
     )
+    reset_pose_audit = genesis_reset_pose_audit(backend=backend, profile=profile)
     rows = run_genesis_rollout(
         args=args,
         backend=backend,
@@ -602,6 +754,7 @@ def run_genesis_probe(args: argparse.Namespace) -> dict[str, Any]:
         "tensor_device_report": optional_call(backend, "tensor_device_report"),
         "tensor_device_ok": optional_call(backend, "tensor_device_ok"),
         "contact_solver_config_report": optional_call(backend, "contact_solver_config_report"),
+        "reset_pose_audit": reset_pose_audit,
     }
     write_json(run_dir / "summary.json", summary)
     if args.summary_json is not None:
@@ -620,6 +773,29 @@ def load_genesis_runtime() -> tuple[Any, Any, Any]:
     except Exception as exc:  # pragma: no cover - H200 environment path.
         raise RuntimeError(f"torch import failed for Genesis runner: {exc}") from exc
     return VectorizedGenesisBackend, VectorizedGenesisConfig, torch
+
+
+def genesis_reset_pose_audit(*, backend: Any, profile: Any) -> dict[str, Any]:
+    backend.reset()
+    state = backend.state()
+    actual_rows = rows_from_tensorlike(state.dof_pos)
+    effective_default = tuple(float(value) for value in backend.default_positions_values)
+    profile_default = tuple(float(value) for value in profile.control.default_angles_rad)
+    actual_vs_effective = aggregate_joint_errors(
+        actual_rows,
+        effective_default,
+        profile.actuator_order,
+    )
+    effective_vs_profile = {
+        joint_name: abs(float(effective_default[index]) - float(profile_default[index]))
+        for index, joint_name in enumerate(profile.actuator_order)
+    }
+    return {
+        "actual_vs_effective_default_max_abs": max(actual_vs_effective.values(), default=0.0),
+        "actual_vs_effective_default_top": top_abs_entries(actual_vs_effective, count=6),
+        "effective_vs_profile_default_top": top_abs_entries(effective_vs_profile, count=6),
+        "pose_leg_values_rad": leg_value_summary(effective_default),
+    }
 
 
 def profile_with_asset_path(profile: Any, asset_path: Path | None) -> Any:
@@ -651,6 +827,7 @@ def run_genesis_rollout(
             state=pre_state,
             gains=gains,
             mode=mode,
+            step=step,
         )
         clipped_action = rows_from_tensorlike(backend.step_physics(action))
         post_state = backend.state()
@@ -675,6 +852,7 @@ def genesis_action_rows(
     state: Any,
     gains: StabilizerGains,
     mode: str,
+    step: int,
 ) -> tuple[list[list[float]], list[dict[str, Any]]]:
     root_rows = rows_from_tensorlike(state.root_pos)
     quat_rows = rows_from_tensorlike(state.root_quat)
@@ -683,12 +861,18 @@ def genesis_action_rows(
     action_scales = tuple(float(value) for value in backend.profile.control.action_scales_rad)
     rows: list[list[float]] = []
     controller_rows: list[dict[str, Any]] = []
+    effective_mode = effective_controller_mode(
+        requested_mode=mode,
+        step=step,
+        start_step=int(args.controller_start_step),
+        stop_step=args.controller_stop_step,
+    )
     for env_index in range(backend.n_envs):
         roll, pitch = roll_pitch_from_quat(quat_rows[env_index])
         root_vel = root_vel_rows[env_index] if root_vel_rows else [0.0, 0.0, 0.0]
         root_ang_vel = root_ang_vel_rows[env_index] if root_ang_vel_rows else [0.0, 0.0, 0.0]
         control = compute_controller_output(
-            mode=mode,
+            mode=effective_mode,
             gains=gains,
             state=ToyState(
                 step=0,
@@ -701,7 +885,12 @@ def genesis_action_rows(
             ),
             target_height=float(args.target_height),
         )
-        joint_deltas = genesis_joint_deltas(control)
+        joint_deltas = controller_joint_deltas(
+            control,
+            roll_allocation=args.roll_allocation,
+            roll_sign=args.roll_sign,
+            action_joint_group=args.action_joint_group,
+        )
         action_row = []
         for joint_name, scale in zip(backend.profile.actuator_order, action_scales):
             delta = joint_deltas.get(joint_name, 0.0)
@@ -715,6 +904,11 @@ def genesis_action_rows(
                 "pitch_delta": control.pitch_delta,
                 "height_delta": control.height_delta,
                 "max_abs_delta": control.max_abs_delta,
+                "effective_mode": effective_mode,
+                "controller_enabled": effective_mode != "none",
+                "roll_allocation": args.roll_allocation,
+                "roll_sign": args.roll_sign,
+                "action_joint_group": args.action_joint_group,
                 "clipped": control.clipped or clipped_by_normalization,
                 "max_abs_normalized_action": max((abs(value) for value in action_row), default=0.0),
             }
@@ -723,18 +917,12 @@ def genesis_action_rows(
 
 
 def genesis_joint_deltas(control: ControllerOutput) -> dict[str, float]:
-    values = {joint_name: 0.0 for joint_name in G1_27DOF_NOHAND_ACTUATOR_ORDER}
-    for joint_name in ANKLE_ROLL_JOINTS:
-        values[joint_name] += control.roll_delta
-    for joint_name in ANKLE_PITCH_JOINTS:
-        values[joint_name] += control.pitch_delta + (0.5 * control.height_delta)
-    for joint_name in ("left_knee_joint", "right_knee_joint"):
-        values[joint_name] += control.height_delta
-    for joint_name in ("left_hip_roll_joint", "right_hip_roll_joint"):
-        values[joint_name] += 0.5 * control.roll_delta
-    for joint_name in ("left_hip_pitch_joint", "right_hip_pitch_joint"):
-        values[joint_name] += 0.5 * control.pitch_delta + 0.25 * control.height_delta
-    return values
+    return controller_joint_deltas(
+        control,
+        roll_allocation="hip_ankle_same",
+        roll_sign="normal",
+        action_joint_group="all",
+    )
 
 
 def genesis_metric_row(
@@ -751,6 +939,8 @@ def genesis_metric_row(
     root_rows = rows_from_tensorlike(state.root_pos)
     quat_rows = rows_from_tensorlike(state.root_quat)
     dof_rows = rows_from_tensorlike(state.dof_pos)
+    root_vel_rows = rows_from_tensorlike(getattr(state, "root_vel", []))
+    root_ang_vel_rows = rows_from_tensorlike(getattr(state, "root_ang_vel", []))
     default_positions = tuple(float(value) for value in backend.default_positions_values)
     heights = [float(row[2]) for row in root_rows]
     attitudes = [attitude_from_quat(row) for row in quat_rows]
@@ -776,11 +966,28 @@ def genesis_metric_row(
     return {
         "step": step,
         "mode": mode,
+        "requested_mode": mode,
+        "controller_enabled": bool(controller.get("controller_enabled", False)),
         "root_height": min(heights),
+        "root_height_velocity": (
+            min(float(row[2]) for row in root_vel_rows if len(row) > 2)
+            if root_vel_rows
+            else 0.0
+        ),
         "upright": min(uprights),
         "tilt": max(tilts),
         "roll": max((abs(row["roll"]) for row in attitudes), default=0.0),
         "pitch": max((abs(row["pitch"]) for row in attitudes), default=0.0),
+        "root_ang_vel_roll": (
+            max((abs(float(row[0])) for row in root_ang_vel_rows if row), default=0.0)
+            if root_ang_vel_rows
+            else 0.0
+        ),
+        "root_ang_vel_pitch": (
+            max((abs(float(row[1])) for row in root_ang_vel_rows if len(row) > 1), default=0.0)
+            if root_ang_vel_rows
+            else 0.0
+        ),
         "controller": controller,
         "tilt_bad": tilt_bad,
         "height_bad": height_bad,
@@ -831,6 +1038,14 @@ def build_h200_genesis_command(args: argparse.Namespace) -> str:
         str(args.height_kp),
         "--height-kd",
         str(args.height_kd),
+        "--roll-allocation",
+        args.roll_allocation,
+        "--roll-sign",
+        args.roll_sign,
+        "--action-joint-group",
+        args.action_joint_group,
+        "--controller-start-step",
+        str(args.controller_start_step),
         "--max-gain",
         str(args.max_gain),
         "--max-joint-delta",
@@ -844,6 +1059,8 @@ def build_h200_genesis_command(args: argparse.Namespace) -> str:
         "--termination-height-max",
         str(args.termination_height_max),
     ]
+    if args.controller_stop_step is not None:
+        command.extend(["--controller-stop-step", str(args.controller_stop_step)])
     if args.asset_path is not None:
         command.extend(["--asset-path", path_cli(args.asset_path)])
     if args.asset_source_path is not None:
@@ -859,6 +1076,10 @@ def build_h200_genesis_command(args: argparse.Namespace) -> str:
 
 def aggregate_controller_rows(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
     return {
+        "action_joint_group": next(
+            (str(row["action_joint_group"]) for row in rows if row.get("action_joint_group")),
+            "all",
+        ),
         "roll_delta": max((abs(float(row["roll_delta"])) for row in rows), default=0.0),
         "pitch_delta": max((abs(float(row["pitch_delta"])) for row in rows), default=0.0),
         "height_delta": max((abs(float(row["height_delta"])) for row in rows), default=0.0),
@@ -868,6 +1089,22 @@ def aggregate_controller_rows(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
             default=0.0,
         ),
         "clipped": any(bool(row["clipped"]) for row in rows),
+        "controller_enabled": any(bool(row.get("controller_enabled", False)) for row in rows),
+    }
+
+
+def controller_mapping_summary(args: argparse.Namespace) -> dict[str, str]:
+    return {
+        "roll_allocation": args.roll_allocation,
+        "roll_sign": args.roll_sign,
+        "action_joint_group": args.action_joint_group,
+    }
+
+
+def controller_gating_summary(args: argparse.Namespace) -> dict[str, int | None]:
+    return {
+        "start_step": int(args.controller_start_step),
+        "stop_step": args.controller_stop_step,
     }
 
 
@@ -1257,6 +1494,14 @@ def top_joint_errors(rows: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(entries, key=lambda row: row["rms"], reverse=True)[:TOP_JOINT_COUNT]
 
 
+def top_abs_entries(values: dict[str, float], *, count: int) -> list[dict[str, Any]]:
+    entries = [
+        {"joint": joint_name, "abs_error": abs(float(value))}
+        for joint_name, value in values.items()
+    ]
+    return sorted(entries, key=lambda entry: entry["abs_error"], reverse=True)[:count]
+
+
 def contact_summary(rows: Sequence[dict[str, Any]], key: str) -> dict[str, Any]:
     values = [
         float(row[key])
@@ -1285,6 +1530,133 @@ def contact_summary(rows: Sequence[dict[str, Any]], key: str) -> dict[str, Any]:
         "active_steps": sum(1 for value in values if value > 0.0),
         "samples": sample_optional_timeline(rows, key),
     }
+
+
+def force_event_summary(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    peak = peak_force_row(rows, "ankle_roll_contact_force")
+    first_tilt = first_step(rows, "tilt_bad")
+    return {
+        "peak_ankle_roll_force_step": None if peak is None else int(peak["step"]),
+        "peak_ankle_roll_force": None
+        if peak is None or peak.get("ankle_roll_contact_force") is None
+        else float(peak["ankle_roll_contact_force"]),
+        "first_ankle_roll_force_over": {
+            str(threshold): first_force_over(rows, "ankle_roll_contact_force", threshold)
+            for threshold in (300.0, 600.0, 1000.0)
+        },
+        "rows_around_peak_force": focus_rows(
+            rows,
+            None if peak is None else int(peak["step"]),
+        ),
+        "rows_around_first_tilt": focus_rows(rows, first_tilt),
+    }
+
+
+def peak_force_row(rows: Sequence[dict[str, Any]], key: str) -> dict[str, Any] | None:
+    available = [
+        row
+        for row in rows
+        if row.get(key) is not None
+    ]
+    if not available:
+        return None
+    return max(available, key=lambda row: float(row[key] or 0.0))
+
+
+def first_force_over(
+    rows: Sequence[dict[str, Any]],
+    key: str,
+    threshold: float,
+) -> int | None:
+    for row in rows:
+        value = row.get(key)
+        if value is not None and float(value) > threshold:
+            return int(row["step"])
+    return None
+
+
+def focus_rows(
+    rows: Sequence[dict[str, Any]],
+    center_step: int | None,
+    *,
+    radius: int = 5,
+) -> list[dict[str, Any]]:
+    if center_step is None:
+        return []
+    return [
+        focus_row(row)
+        for row in rows
+        if abs(int(row["step"]) - int(center_step)) <= radius
+    ]
+
+
+def focus_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "step": int(row["step"]),
+        "mode": row.get("mode"),
+        "controller_enabled": bool(row.get("controller_enabled", False)),
+        "root_height": optional_float(row.get("root_height")),
+        "root_height_velocity": optional_float(row.get("root_height_velocity")),
+        "upright": optional_float(row.get("upright")),
+        "tilt": optional_float(row.get("tilt")),
+        "roll": optional_float(row.get("roll")),
+        "pitch": optional_float(row.get("pitch")),
+        "root_ang_vel_roll": optional_float(row.get("root_ang_vel_roll")),
+        "root_ang_vel_pitch": optional_float(row.get("root_ang_vel_pitch")),
+        "reset": bool(row.get("reset", False)),
+        "reset_reason": row.get("reset_reason"),
+        "controller": {
+            "action_joint_group": row.get("controller", {}).get("action_joint_group"),
+            "max_abs_delta": optional_float(row.get("controller", {}).get("max_abs_delta")),
+            "max_abs_normalized_action": optional_float(
+                row.get("controller", {}).get("max_abs_normalized_action")
+            ),
+            "clipped": bool(row.get("controller", {}).get("clipped", False)),
+        },
+        "ankle_roll_contact_force": optional_float(row.get("ankle_roll_contact_force")),
+        "ankle_pitch_contact_force": optional_float(row.get("ankle_pitch_contact_force")),
+        "contact_link_forces": contact_link_forces(row.get("contact_metrics", {})),
+        "top_joint_errors": top_joint_errors_for_row(row, count=4),
+    }
+
+
+def contact_link_forces(contact_metrics: Any) -> dict[str, list[dict[str, Any]]]:
+    if not isinstance(contact_metrics, dict):
+        return {}
+    result: dict[str, list[dict[str, Any]]] = {}
+    for group_name, group in contact_metrics.items():
+        if not isinstance(group, dict):
+            continue
+        links = []
+        for link in group.get("links", []):
+            if not isinstance(link, dict):
+                continue
+            links.append(
+                {
+                    "link": link.get("link"),
+                    "index": link.get("index"),
+                    "force": optional_float(link.get("force")),
+                }
+            )
+        result[str(group_name)] = links
+    return result
+
+
+def top_joint_errors_for_row(row: dict[str, Any], *, count: int) -> list[dict[str, Any]]:
+    joint_errors = row.get("joint_errors", {})
+    if not isinstance(joint_errors, dict):
+        return []
+    entries = [
+        {"joint": joint_name, "abs_error": abs(float(value))}
+        for joint_name, value in joint_errors.items()
+    ]
+    return sorted(entries, key=lambda entry: entry["abs_error"], reverse=True)[:count]
+
+
+def optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    return float(value)
 
 
 def first_step(rows: Sequence[dict[str, Any]], key: str) -> int | None:
@@ -1483,6 +1855,13 @@ def positive_int(value: str) -> int:
     parsed = int(value)
     if parsed <= 0:
         raise argparse.ArgumentTypeError("value must be positive")
+    return parsed
+
+
+def nonnegative_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("value must be nonnegative")
     return parsed
 
 

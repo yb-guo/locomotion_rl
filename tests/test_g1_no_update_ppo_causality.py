@@ -253,7 +253,12 @@ class FakeControl:
     default_angles_rad = (0.0,) * 27
 
 
+class FakeAsset:
+    path = "/source/fake_g1.xml"
+
+
 class FakeProfile:
+    asset = FakeAsset()
     action_dim = 27
     actuator_order = tuple(f"joint_{index}" for index in range(27))
     control = FakeControl()

@@ -145,6 +145,38 @@ def test_vectorized_genesis_backend_can_freeze_non_leg_action_targets() -> None:
     )
 
 
+def test_vectorized_genesis_backend_can_freeze_ankle_roll_action_targets() -> None:
+    backend = VectorizedGenesisBackend(
+        VectorizedGenesisConfig(
+            n_envs=1,
+            backend="cpu",
+            logical_cuda_device="cpu",
+            require_asset_path=False,
+            action_joint_group="legs_no_ankle_roll",
+        ),
+        genesis_module=_FakeGenesisModule(),
+        profile=load_g1_27dof_nohand_profile(),
+    )
+    backend.reset()
+
+    backend.step([[1.0] * backend.action_dim])
+
+    ankle_roll_action_index = backend.profile.actuator_order.index(
+        "left_ankle_roll_joint"
+    )
+    ankle_pitch_action_index = backend.profile.actuator_order.index(
+        "left_ankle_pitch_joint"
+    )
+    ankle_roll_dof_index = backend.motor_dof_indices[ankle_roll_action_index]
+    ankle_pitch_dof_index = backend.motor_dof_indices[ankle_pitch_action_index]
+    assert backend.robot.positions[0][ankle_roll_dof_index] == pytest.approx(
+        backend.default_positions_values[ankle_roll_action_index]
+    )
+    assert backend.robot.positions[0][ankle_pitch_dof_index] != pytest.approx(
+        backend.default_positions_values[ankle_pitch_action_index]
+    )
+
+
 def test_vectorized_genesis_backend_rejects_wrong_action_shape() -> None:
     backend = _make_backend(n_envs=2)
 

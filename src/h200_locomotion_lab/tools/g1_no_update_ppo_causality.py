@@ -25,6 +25,7 @@ from h200_locomotion_lab.envs.vectorized_genesis_backend import (
     VectorizedGenesisConfig,
 )
 from h200_locomotion_lab.robots import load_g1_27dof_nohand_profile
+from h200_locomotion_lab.tools import g1_ppo_smoke
 from h200_locomotion_lab.training.ppo_loop import (
     PPOConfig,
     build_actor_critic,
@@ -42,6 +43,7 @@ DEFAULT_LOG_STD_INIT = -2.5
 DEFAULT_ACTION_SCALE_MULT = 0.10
 DEFAULT_TERMINATION_HEIGHT_MIN = 0.20
 DEFAULT_WARMUP_STEPS = 1
+DEFAULT_ASSET_VARIANT = "profile"
 ACTION_MODES = (
     "zero_action",
     "untrained_mean_action",
@@ -121,6 +123,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=G1_STANDING_RESET_POSE_NAMES,
         default=DEFAULT_RESET_POSE,
     )
+    parser.add_argument(
+        "--asset-variant",
+        choices=g1_ppo_smoke.ASSET_VARIANTS,
+        default=DEFAULT_ASSET_VARIANT,
+        help=(
+            "No-update probe asset selector. profile preserves the source "
+            "robot profile asset; task023_hybrid generates the current task023 "
+            "hybrid foot asset under the run directory."
+        ),
+    )
     parser.add_argument("--backend", default="cuda")
     parser.add_argument("--physical-gpu", default="1")
     parser.add_argument("--logical-cuda-device", default="cuda:0")
@@ -145,17 +157,26 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
 
-    profile = load_g1_27dof_nohand_profile()
+    base_profile = load_g1_27dof_nohand_profile()
     default_pose = build_g1_standing_reset_pose_candidates(
-        profile.control.default_angles_rad
+        base_profile.control.default_angles_rad
     )[args.default_pose]
-    model_config = build_model_config(args=args, action_dim=profile.action_dim)
+    model_config = build_model_config(args=args, action_dim=base_profile.action_dim)
     run_dir = resolve_run_dir(args.output_root, args.run_id)
     run_dir.mkdir(parents=True, exist_ok=False)
+    profile, asset_resolution = g1_ppo_smoke.resolve_training_profile_for_asset_variant(
+        base_profile,
+        asset_variant=args.asset_variant,
+        run_dir=run_dir,
+    )
+    write_json(run_dir / "asset_resolution.json", asset_resolution)
     config_payload = build_run_config(
         args=args,
         ppo_config=model_config,
         default_pose=default_pose,
+        asset_resolution=asset_resolution,
+        profile_asset_path=profile.asset.path,
+        base_profile_asset_path=base_profile.asset.path,
     )
     write_json(run_dir / "config.json", config_payload)
 
@@ -392,6 +413,9 @@ def build_run_config(
     args: argparse.Namespace,
     ppo_config: PPOConfig,
     default_pose: Any,
+    asset_resolution: dict[str, Any],
+    profile_asset_path: str,
+    base_profile_asset_path: str,
 ) -> dict[str, Any]:
     return {
         "task": "task018-g1-no-update-ppo-causality-diagnosis",
@@ -410,6 +434,10 @@ def build_run_config(
             "root_z": args.root_z,
             "default_pose": args.default_pose,
             "default_pose_leg_values_rad": leg_value_summary(default_pose),
+            "asset_variant": args.asset_variant,
+            "asset_path": profile_asset_path,
+            "base_profile_asset_path": base_profile_asset_path,
+            "asset_resolution": asset_resolution,
             "action_scale_mult": args.action_scale_mult,
             "action_joint_group": args.action_joint_group,
             "base_height_target": args.base_height_target,
@@ -444,6 +472,7 @@ def summarize_run(
         "status": "passed" if completed and tensors_ok else "failed",
         "run_dir": str(run_dir),
         "mode": args.mode,
+        "asset_variant": args.asset_variant,
         "mode_passed": completed and tensors_ok,
         "all_modes_passed": completed and tensors_ok,
         "seed": args.seed,

@@ -18,7 +18,7 @@ from h200_locomotion_lab.robots import (
 )
 
 
-ACTION_JOINT_GROUPS = ("all", "legs", "legs_waist")
+ACTION_JOINT_GROUPS = ("all", "legs", "legs_waist", "legs_no_ankle_roll")
 LEG_JOINT_SUFFIXES = (
     "_hip_pitch_joint",
     "_hip_roll_joint",
@@ -599,8 +599,13 @@ class VectorizedGenesisBackend:
             is_leg = joint_name.startswith(("left_", "right_")) and joint_name.endswith(
                 LEG_JOINT_SUFFIXES
             )
+            is_ankle_roll = joint_name.endswith("_ankle_roll_joint")
             is_waist = joint_name == "waist_yaw_joint"
-            if is_leg or (action_joint_group == "legs_waist" and is_waist):
+            if is_leg and not (
+                action_joint_group == "legs_no_ankle_roll" and is_ankle_roll
+            ):
+                values.append(1.0)
+            elif action_joint_group == "legs_waist" and is_waist:
                 values.append(1.0)
             else:
                 values.append(0.0)

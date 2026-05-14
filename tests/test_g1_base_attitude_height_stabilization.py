@@ -26,6 +26,16 @@ def test_parse_args_exposes_task023_modes_and_metadata() -> None:
             "ankle_roll_larger_spheres",
             "--asset-source-path",
             "/source/g1.xml",
+            "--roll-allocation",
+            "ankle_only_mirrored",
+            "--roll-sign",
+            "inverted",
+            "--action-joint-group",
+            "hip_pitch",
+            "--controller-start-step",
+            "10",
+            "--controller-stop-step",
+            "40",
             "--output-root",
             "outputs/task023/probe",
             "--run-name",
@@ -42,6 +52,11 @@ def test_parse_args_exposes_task023_modes_and_metadata() -> None:
     assert args.asset_path == Path("outputs/task023/assets/g1.xml")
     assert args.asset_variant_label == "ankle_roll_larger_spheres"
     assert args.asset_source_path == Path("/source/g1.xml")
+    assert args.roll_allocation == "ankle_only_mirrored"
+    assert args.roll_sign == "inverted"
+    assert args.action_joint_group == "hip_pitch"
+    assert args.controller_start_step == 10
+    assert args.controller_stop_step == 40
     assert args.output_root == Path("outputs/task023/probe")
     assert args.run_name == "local"
 
@@ -102,6 +117,49 @@ def test_controller_mode_and_gain_clipping_are_bounded() -> None:
     assert output.roll_delta == pytest.approx(-0.03)
     assert output.pitch_delta == pytest.approx(0.03)
     assert output.height_delta == pytest.approx(0.03)
+
+
+def test_controller_joint_deltas_support_roll_allocation_and_sign() -> None:
+    control = probe.ControllerOutput(
+        roll_delta=0.08,
+        pitch_delta=0.02,
+        height_delta=0.04,
+        clipped=False,
+    )
+
+    current = probe.controller_joint_deltas(
+        control,
+        roll_allocation="hip_ankle_same",
+        roll_sign="normal",
+    )
+    mirrored_ankle = probe.controller_joint_deltas(
+        control,
+        roll_allocation="ankle_only_mirrored",
+        roll_sign="inverted",
+    )
+
+    assert current["left_ankle_roll_joint"] == pytest.approx(0.08)
+    assert current["right_ankle_roll_joint"] == pytest.approx(0.08)
+    assert current["left_hip_roll_joint"] == pytest.approx(0.04)
+    assert current["right_hip_roll_joint"] == pytest.approx(0.04)
+    assert mirrored_ankle["left_ankle_roll_joint"] == pytest.approx(-0.08)
+    assert mirrored_ankle["right_ankle_roll_joint"] == pytest.approx(0.08)
+    assert mirrored_ankle["left_hip_roll_joint"] == pytest.approx(0.0)
+    assert mirrored_ankle["right_hip_roll_joint"] == pytest.approx(0.0)
+    assert mirrored_ankle["left_ankle_pitch_joint"] == pytest.approx(0.04)
+    assert mirrored_ankle["right_knee_joint"] == pytest.approx(0.04)
+
+    hip_pitch_only = probe.controller_joint_deltas(
+        control,
+        roll_allocation="hip_ankle_same",
+        roll_sign="normal",
+        action_joint_group="hip_pitch",
+    )
+
+    assert hip_pitch_only["left_hip_pitch_joint"] == pytest.approx(0.02)
+    assert hip_pitch_only["right_hip_pitch_joint"] == pytest.approx(0.02)
+    assert hip_pitch_only["left_ankle_pitch_joint"] == pytest.approx(0.0)
+    assert hip_pitch_only["left_ankle_roll_joint"] == pytest.approx(0.0)
 
 
 def test_local_none_rollout_reports_first_tilt_reset_and_schema() -> None:
@@ -196,6 +254,44 @@ def test_local_attitude_height_improves_over_local_baseline() -> None:
     assert summary["contact_trace_summary"]["ankle_pitch"]["active_steps"] == 180
 
 
+def test_local_controller_gating_and_force_event_summary() -> None:
+    root = fresh_test_dir("gated")
+    args = probe.parse_args(
+        [
+            "--mode",
+            "attitude",
+            "--steps",
+            "120",
+            "--seed",
+            "0",
+            "--asset-path",
+            "source.xml",
+            "--output-root",
+            str(root),
+            "--run-name",
+            "gated",
+            "--controller-start-step",
+            "999",
+        ]
+    )
+
+    summary = probe.run_probe(args)
+    rows = [
+        json.loads(line)
+        for line in (root / "gated" / "metrics.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert summary["stabilizer"]["controller_gating"] == {
+        "start_step": 999,
+        "stop_step": None,
+    }
+    assert summary["first_reset_step"] == summary["baseline_first_reset_step"]
+    assert all(row["mode"] == "none" for row in rows)
+    assert all(row["controller_enabled"] is False for row in rows)
+    assert summary["force_event_summary"]["peak_ankle_roll_force_step"] is not None
+    assert summary["force_event_summary"]["rows_around_first_tilt"]
+
+
 def test_summary_json_option_writes_requested_file() -> None:
     root = fresh_test_dir("summary_json")
     summary_json = root / "summary-copy.json"
@@ -247,6 +343,9 @@ def test_genesis_command_uses_guarded_wrapper_without_running_h200() -> None:
     assert "h200_locomotion_lab.tools.g1_base_attitude_height_stabilization" in command
     assert "--runner genesis" in command
     assert "--pose-profile current" in command
+    assert "--roll-allocation hip_ankle_same --roll-sign normal" in command
+    assert "--action-joint-group all" in command
+    assert "--controller-start-step 0" in command
     assert "--physical-gpu 1 --logical-cuda-device cuda:0" in command
 
 
@@ -317,6 +416,10 @@ def test_genesis_runner_uses_fake_vectorized_backend_and_asset_override(
             "/tmp/override-g1.xml",
             "--asset-variant-label",
             "source",
+            "--roll-allocation",
+            "ankle_only_mirrored",
+            "--roll-sign",
+            "inverted",
             "--output-root",
             str(root),
             "--run-name",
@@ -350,11 +453,30 @@ def test_genesis_runner_uses_fake_vectorized_backend_and_asset_override(
     assert summary["hardware_metadata"]["physical_gpu"] == "1"
     assert summary["hardware_metadata"]["logical_cuda_device"] == "cpu"
     assert summary["stabilizer"]["mode"] == "attitude_height"
+    assert summary["stabilizer"]["controller_mapping"] == {
+        "roll_allocation": "ankle_only_mirrored",
+        "roll_sign": "inverted",
+        "action_joint_group": "all",
+    }
+    assert summary["stabilizer"]["controller_gating"] == {
+        "start_step": 0,
+        "stop_step": None,
+    }
     assert summary["stabilizer"]["clipping"]["max_abs_delta"] <= args.max_joint_delta
+    assert summary["force_event_summary"]["rows_around_peak_force"]
+    peak_focus = summary["force_event_summary"]["rows_around_peak_force"][0]
+    assert "contact_link_forces" in peak_focus
+    assert "ankle_roll" in peak_focus["contact_link_forces"]
     assert summary["contact_trace_summary"]["ankle_roll"]["available"] is True
     assert summary["contact_trace_summary"]["ankle_pitch"]["available"] is True
     assert summary["contact_trace_summary"]["ankle_roll"]["max_force"] > 0.0
     assert summary["top_joint_errors"]
+    reset_audit = summary["genesis"]["reset_pose_audit"]
+    assert reset_audit["actual_vs_effective_default_max_abs"] == pytest.approx(0.0)
+    assert reset_audit["effective_vs_profile_default_top"][0]["joint"] in {
+        "left_knee_joint",
+        "right_knee_joint",
+    }
     assert (root / "fake" / "metrics.jsonl").is_file()
     assert (root / "fake" / "baseline_metrics.jsonl").is_file()
     assert any(
@@ -369,6 +491,61 @@ def test_genesis_runner_uses_fake_vectorized_backend_and_asset_override(
         for row in action
         for value in row
     )
+    first_action = backend.actions[0][0]
+    index = probe.G1_27DOF_NOHAND_ACTUATOR_ORDER.index
+    assert first_action[index("left_ankle_roll_joint")] == pytest.approx(0.4)
+    assert first_action[index("right_ankle_roll_joint")] == pytest.approx(-0.4)
+    assert first_action[index("left_hip_roll_joint")] == pytest.approx(0.0)
+    assert first_action[index("right_hip_roll_joint")] == pytest.approx(0.0)
+
+
+def test_genesis_action_rows_applies_action_joint_group_filter() -> None:
+    profile = fake_profile()
+    backend = FakeGenesisBackend(
+        config=FakeGenesisConfig(
+            n_envs=1,
+            default_positions_rad=probe.pose_profile_values(
+                "current",
+                profile.control.default_angles_rad,
+            ),
+        ),
+        profile=profile,
+        with_contact=True,
+    )
+    backend.reset()
+    args = probe.parse_args(
+        [
+            "--mode",
+            "attitude",
+            "--action-joint-group",
+            "hip_pitch",
+        ]
+    )
+    gains = probe.StabilizerGains(
+        attitude_kp=args.attitude_kp,
+        attitude_kd=args.attitude_kd,
+        height_kp=args.height_kp,
+        height_kd=args.height_kd,
+        max_joint_delta=args.max_joint_delta,
+    )
+
+    action, controller_rows = probe.genesis_action_rows(
+        args=args,
+        backend=backend,
+        state=backend.state(),
+        gains=gains,
+        mode=args.mode,
+        step=0,
+    )
+
+    index = probe.G1_27DOF_NOHAND_ACTUATOR_ORDER.index
+    first_action = action[0]
+    assert controller_rows[0]["action_joint_group"] == "hip_pitch"
+    assert abs(first_action[index("left_hip_pitch_joint")]) > 0.0
+    assert abs(first_action[index("right_hip_pitch_joint")]) > 0.0
+    assert first_action[index("left_ankle_pitch_joint")] == pytest.approx(0.0)
+    assert first_action[index("left_hip_roll_joint")] == pytest.approx(0.0)
+    assert first_action[index("left_ankle_roll_joint")] == pytest.approx(0.0)
 
 
 def test_current_pose_profile_matches_zero_action_tall_crouch_semantics() -> None:

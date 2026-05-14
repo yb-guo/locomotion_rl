@@ -6,7 +6,7 @@ import argparse
 import json
 import os
 import time
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +25,7 @@ from h200_locomotion_lab.envs.vectorized_genesis_backend import (
     VectorizedGenesisConfig,
 )
 from h200_locomotion_lab.robots import load_g1_27dof_nohand_profile
+from h200_locomotion_lab.tools import g1_ankle_roll_contact_patch as contact_patch
 from h200_locomotion_lab.training.ppo_loop import (
     PPOConfig,
     REWARD_COMPONENT_NAMES,
@@ -44,6 +45,9 @@ DEFAULT_OUTPUT_ROOT = Path("outputs/task014/minimal_ppo_smoke")
 DEFAULT_RESET_POSE = "tall_crouch"
 DEFAULT_ROOT_Z = 1.20
 COMMAND_MODES = ("vx_yaw", "standing")
+ASSET_VARIANTS = ("task023_hybrid", "profile")
+DEFAULT_ASSET_VARIANT = "task023_hybrid"
+TASK023_HYBRID_PATCH_VARIANT = "ankle_roll_hybrid_edge_boxes_no_points"
 
 
 def main() -> None:
@@ -102,6 +106,16 @@ def parse_args() -> argparse.Namespace:
         choices=G1_STANDING_RESET_POSE_NAMES,
         default=DEFAULT_RESET_POSE,
     )
+    parser.add_argument(
+        "--asset-variant",
+        choices=ASSET_VARIANTS,
+        default=DEFAULT_ASSET_VARIANT,
+        help=(
+            "Training asset selector. task023_hybrid generates the current best "
+            "hybrid edge-box foot asset under the run directory; profile uses "
+            "the source asset from the robot profile."
+        ),
+    )
     parser.add_argument("--backend", default="cuda")
     parser.add_argument("--physical-gpu", default="1")
     parser.add_argument("--logical-cuda-device", default="cuda:0")
@@ -135,13 +149,19 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
         log_std_init=args.log_std_init,
     )
     seeds = parse_seeds(args.seeds)
-    profile = load_g1_27dof_nohand_profile()
+    base_profile = load_g1_27dof_nohand_profile()
     default_pose = build_g1_standing_reset_pose_candidates(
-        profile.control.default_angles_rad
+        base_profile.control.default_angles_rad
     )[args.default_pose]
     command_ranges = command_ranges_for_mode(args.command_mode)
     run_dir = resolve_run_dir(args.output_root, args.run_id)
     run_dir.mkdir(parents=True, exist_ok=False)
+    profile, asset_resolution = resolve_training_profile_for_asset_variant(
+        base_profile,
+        asset_variant=args.asset_variant,
+        run_dir=run_dir,
+    )
+    write_json(run_dir / "asset_resolution.json", asset_resolution)
     write_json(
         run_dir / "config.json",
         {
@@ -154,6 +174,10 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 "root_z": args.root_z,
                 "default_pose": args.default_pose,
                 "default_pose_leg_values_rad": leg_value_summary(default_pose),
+                "asset_variant": args.asset_variant,
+                "asset_path": profile.asset.path,
+                "base_profile_asset_path": base_profile.asset.path,
+                "asset_resolution": asset_resolution,
                 "action_scale_mult": args.action_scale_mult,
                 "action_joint_group": args.action_joint_group,
                 "command_mode": args.command_mode,
@@ -232,6 +256,8 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
     summary = {
         "status": "ok",
         "run_dir": str(run_dir),
+        "asset_variant": args.asset_variant,
+        "asset_path": profile.asset.path,
         "seeds": seed_summaries,
         "all_seeds_passed": all(seed["passed"] for seed in seed_summaries),
         "min_collect_env_policy_steps_per_sec": min(
@@ -277,6 +303,60 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
         run_dir / "final_checkpoint.pt",
     )
     return summary
+
+
+def resolve_training_profile_for_asset_variant(
+    profile: Any,
+    *,
+    asset_variant: str,
+    run_dir: Path,
+) -> tuple[Any, dict[str, Any]]:
+    if asset_variant == "profile":
+        return profile, {
+            "asset_variant": asset_variant,
+            "source_asset_path": profile.asset.path,
+            "effective_asset_path": profile.asset.path,
+            "generated": False,
+        }
+    if asset_variant != "task023_hybrid":
+        raise ValueError(f"unknown asset_variant: {asset_variant}")
+
+    patch_args = argparse.Namespace(
+        source_asset=Path(profile.asset.path),
+        output_root=run_dir / "asset_generation",
+        run_id="task023_hybrid",
+        target_bodies=",".join(contact_patch.DEFAULT_TARGET_BODIES),
+        variants=TASK023_HYBRID_PATCH_VARIANT,
+        larger_sphere_size=contact_patch.DEFAULT_LARGER_SPHERE_SIZE,
+        friction=contact_patch.DEFAULT_FRICTION,
+        condim=contact_patch.DEFAULT_CONDIM,
+        priority=contact_patch.DEFAULT_PRIORITY,
+        box_size=contact_patch.BOX_SUPPORT_SIZE,
+        box_pos=contact_patch.BOX_SUPPORT_POS,
+    )
+    patch_summary = contact_patch.run_patch_generation(patch_args)
+    if patch_summary.get("missing") or patch_summary.get("errors"):
+        raise RuntimeError(
+            "task023 hybrid asset generation failed: "
+            f"missing={patch_summary.get('missing')} errors={patch_summary.get('errors')}"
+        )
+    variant_report = patch_summary["variants"][TASK023_HYBRID_PATCH_VARIANT]
+    effective_asset = Path(variant_report["path"]).resolve()
+    return profile_with_asset_path(profile, effective_asset), {
+        "asset_variant": asset_variant,
+        "patch_variant": TASK023_HYBRID_PATCH_VARIANT,
+        "source_asset_path": profile.asset.path,
+        "effective_asset_path": effective_asset.as_posix(),
+        "generated": True,
+        "patch_run_dir": patch_summary["run_dir"],
+        "patch_summary_path": str(Path(patch_summary["run_dir"]) / "summary.json"),
+        "missing": patch_summary.get("missing", []),
+        "errors": patch_summary.get("errors", []),
+    }
+
+
+def profile_with_asset_path(profile: Any, asset_path: Path) -> Any:
+    return replace(profile, asset=replace(profile.asset, path=asset_path.as_posix()))
 
 
 def warmup_env(
