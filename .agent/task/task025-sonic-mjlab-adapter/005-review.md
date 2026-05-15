@@ -25,6 +25,12 @@ adapter correctness from policy quality.
   encoder, and decoder artifacts. The 40-step run made 4 planner calls with no
   terminations. The 160-step run made 16 planner calls with no terminations,
   moved forward about 1.27 m, and rendered video.
+- 2026-05-15 H200 longer online runs with normal mjlab terminations enabled:
+  400 steps made 40 planner calls, no `done_steps`, moved about 3.19 m, and
+  ended at root z about 0.718. 800 steps made 80 planner calls, no
+  `done_steps`, moved about 7.96 m, and ended at root z about 0.738. Contact
+  sheet inspection shows a low/crouched/backward-leaning gait, not an immediate
+  fall.
 - 2026-05-15 `ruff` was not run locally because the environment does not have
   `ruff` installed.
 
@@ -48,6 +54,7 @@ Not passed:
 
 - Official SONIC sequence replay is still blocked by missing upstream reference
   motion CSV/directory, if we still want that route.
-- No stable locomotion claim is made yet from the online smoke. The 160-step
-  run moves forward but root height still drops, so the next diagnosis should
-  compare reset/context/command construction against official SONIC.
+- No stable locomotion claim is made yet from the online smoke. The 400/800
+  step runs keep walking without termination, but the body posture is low and
+  visually unhealthy, so the next diagnosis should compare reset/context/command
+  construction against official SONIC.

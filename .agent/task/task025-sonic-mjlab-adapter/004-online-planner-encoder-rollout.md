@@ -199,14 +199,58 @@ numeric finite/height checks pass.
   outputs/task025/online_smoke_160/online_smoke_160-step-0.mp4
   ```
 
+- 2026-05-15 Ran longer online rollouts after visual review suggested the
+  robot might be about to fall. First, 400 steps with normal mjlab
+  terminations enabled:
+
+  ```text
+  provider online
+  steps 400
+  planner_calls 40
+  done_steps []
+  root_start_xyz [0.05209040641784668, 0.09186610579490662, 0.7968233227729797]
+  root_end_xyz [3.239908456802368, 0.2686282694339752, 0.7175686955451965]
+  root_delta_xyz [3.1878180503845215, 0.1767621636390686, -0.0792546272277832]
+  video_bytes [1423922]
+  ```
+
+  Local video:
+
+  ```text
+  outputs/task025/online_long_400_term/online_long_400_term-step-0.mp4
+  ```
+
+- 2026-05-15 Ran 800 steps with normal mjlab terminations enabled:
+
+  ```text
+  provider online
+  steps 800
+  planner_calls 80
+  done_steps []
+  root_start_xyz [-0.22425736486911774, 0.2673904299736023, 0.7967045903205872]
+  root_end_xyz [7.740487098693848, 0.382237046957016, 0.7381809949874878]
+  root_delta_xyz [7.964744463562965, 0.1148466169834137, -0.058523595333099365]
+  video_bytes [3024475]
+  ```
+
+  Local video and contact sheet:
+
+  ```text
+  outputs/task025/online_long_800_term/online_long_800_term-step-0.mp4
+  outputs/task025/online_long_800_term/online_long_800_term_contact.jpg
+  ```
+
+  Contact sheet frames 0/200/400/600/799 show the robot staying upright enough
+  to continue stepping, but with a low, crouched, backward-leaning posture.
+
 ## Review
 
 First true online rollout passed the adapter gate: official planner, encoder,
 and decoder artifacts execute inside `unitree_rl_mjlab`, feed finite 29DoF
 actions through the existing scalar runtime boundary, and render video evidence.
 
-This is not yet a stable locomotion claim. The 160-step smoke moves forward
-about 1.27 m, but root height drops by about 9 cm. Next work should inspect the
-video, compare reset/context construction against official SONIC assumptions,
-and then decide whether the remaining issue is initial state, command contract,
-domain mismatch, or controller gains.
+This is not yet a stable locomotion claim. The longer 400/800-step smokes do
+not trigger `fell_over` and keep moving forward, but the posture is visibly low
+and crouched. Next work should compare reset/context construction against
+official SONIC assumptions, then inspect whether the remaining issue is initial
+state, command contract, domain mismatch, or controller gains.

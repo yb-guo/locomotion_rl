@@ -69,6 +69,11 @@ RSL-RL runner or the mjlab task implementation.
 - 2026-05-15 H200 true online rollout with official planner/encoder/decoder
   ran for 40 and 160 steps with no terminations and rendered videos. The
   160-step run moved forward about 1.27 m while root height dropped about 9 cm.
+- 2026-05-15 Ran longer 400-step and 800-step online rollouts with normal mjlab
+  terminations enabled. Neither triggered `fell_over`; the 800-step run moved
+  about 7.96 m and ended with root z about 0.738. Contact sheet inspection
+  shows the robot remains upright enough to step, but with a low, crouched,
+  backward-leaning posture.
 
 ## Review
 
@@ -82,9 +87,10 @@ SONIC ONNX artifacts were restored and the true online planner/encoder/decoder
 path now runs and renders in `unitree_rl_mjlab`.
 
 The remaining risk is policy/context quality, not adapter availability: the
-160-step online smoke progresses forward but loses height. Next diagnosis
-should inspect video frames and compare reset state, context qpos construction,
-target command, and mjlab motor gains against official SONIC assumptions.
+longer online smokes progress forward without termination, but the gait is low
+and crouched. Next diagnosis should inspect video frames and compare reset
+state, context qpos construction, target command, and mjlab motor gains against
+official SONIC assumptions.
 
 Verification:
 
