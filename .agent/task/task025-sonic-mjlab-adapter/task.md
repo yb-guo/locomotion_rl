@@ -79,6 +79,13 @@ RSL-RL runner or the mjlab task implementation.
   strongest immediate mismatch is mjlab HOME reset/action offset versus SONIC
   crouched default angles; hip-pitch action scale/controller constants also
   differ between mjlab and the SONIC profile.
+- 2026-05-15 Added a deterministic alignment trace CLI and H200 ablations. The
+  reset-only, startup-randomization-only, naive explicit-height, and unseeded
+  velocity-tweak hypotheses did not hold up.
+- 2026-05-15 Added `planner_context_source={live,motion}` to the online SONIC
+  provider. On H200 with `seed=123`, 400-step fixed-base A/B improved from
+  live-context `root_z_final=0.7049`, `abs_pitch_p95=0.5607` to motion-context
+  `root_z_final=0.7598`, `abs_pitch_p95=0.2627`, with no terminations.
 
 ## Review
 
@@ -91,18 +98,24 @@ trace. The C++ planner runner dependency is now buildable on H200. Official
 SONIC ONNX artifacts were restored and the true online planner/encoder/decoder
 path now runs and renders in `unitree_rl_mjlab`.
 
-The remaining risk is policy/context quality, not adapter availability: the
-longer online smokes progress forward without termination, but the gait is low
-and crouched. Next diagnosis should inspect video frames and compare reset
-state, context qpos construction, target command, and mjlab motor gains against
-official SONIC assumptions. Alignment diagnosis now ranks the next ablations:
-trace target/actual errors, disable startup randomization, reset to SONIC
-default, compare planner context sources, fill encoder root-z fields, then sweep
-planner command parameters.
+The remaining risk is policy/context quality, not adapter availability. The
+deterministic trace shows planner context source is a concrete alignment issue:
+official-like motion context materially improves height and pitch under the same
+seed. It is not a complete fix because ankle/hip tracking errors remain large
+and the motion-context rollout moves faster than expected. Next work should use
+motion context as the baseline, then compare mjlab actuator gains/profile and
+planner command semantics against official SONIC before filling optional encoder
+fields.
 
 Verification:
 
 - `PYTHONPATH=src python -m pytest -p no:cacheprovider`
-  passed: `307 passed, 17 skipped`.
+  passed: `314 passed, 17 skipped`.
+- `PYTHONPATH=src python -m pytest tests/test_sonic_controller.py
+  tests/test_mjlab_sonic_alignment_trace.py -q`
+  passed: `7 passed` with only a local pytest cache permission warning.
+- H200 `seed=123`, 400-step fixed-base trace:
+  - live context: no done, `root_z_final=0.7049`, `abs_pitch_p95=0.5607`.
+  - motion context: no done, `root_z_final=0.7598`, `abs_pitch_p95=0.2627`.
 - `python -m ruff check ...` was not run because `ruff` is not installed in the
   local Python environment.

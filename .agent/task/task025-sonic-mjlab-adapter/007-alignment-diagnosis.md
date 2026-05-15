@@ -128,23 +128,110 @@ Primary metrics:
   hip_pitch -0.312, knee 0.669, ankle_pitch -0.363
   ```
 
+- 2026-05-15 Added `mjlab_sonic_alignment_trace.py` to make the repro
+  measurable without rendering. It records root height, roll/pitch, target vs
+  actual joint tracking error, planner root-z, planner context root-z,
+  encoder/decoder field norms, token norm, and action ranges.
+
+- 2026-05-15 One-variable H200 ablations:
+
+  ```text
+  fixed baseline, seed=None, 200 steps:
+    done_steps []
+    root_z_final 0.7086
+    abs_pitch_p95 0.2435
+    joint_error_rms_mean 0.2046
+
+  disable startup randomization, seed=None, 200 steps:
+    done_steps []
+    root_z_final 0.6376
+    abs_pitch_p95 0.6069
+    joint_error_rms_mean 0.2583
+
+  SONIC default reset, seed=None, 200 steps:
+    done_steps []
+    root_z_final 0.6826
+    abs_pitch_p95 0.5913
+    joint_error_rms_mean 0.2562
+
+  explicit height 0.8, seed=None, 200 steps:
+    done_steps [180]
+    root_z_final 0.5044
+    abs_pitch_p95 1.0413
+    joint_error_rms_mean 0.4040
+  ```
+
+  These falsify reset-only, startup-randomization-only, and naive explicit
+  height as first fixes.
+
+- 2026-05-15 Seeded command/context checks:
+
+  ```text
+  live context, seed=123, target_vel=-1.0, 200 steps:
+    done_steps []
+    root_z_final 0.7298
+    abs_pitch_p95 0.4643
+    joint_error_rms_mean 0.2326
+
+  live context, seed=123, target_vel=-0.5, 200 steps:
+    done_steps []
+    root_z_final 0.6847
+    abs_pitch_p95 0.4602
+    joint_error_rms_mean 0.2327
+  ```
+
+  The earlier unseeded `target_vel=-0.5` improvement was not reproducible after
+  fixing the seed.
+
+- 2026-05-15 Added a provider switch:
+  `planner_context_source={live,motion}`. `live` preserves current behavior.
+  `motion` starts with official-style normalized initial context and then
+  replans from previous planner motion with a two-step lookahead.
+
+  Fair H200 A/B, `seed=123`, fixed-base reset, `target_vel=-1.0`, 400 steps:
+
+  ```text
+  live context:
+    done_steps []
+    root_z_final 0.7049
+    root_z_mean 0.7227
+    root_z_min 0.6403
+    abs_pitch_p95 0.5607
+    joint_error_rms_mean 0.2831
+    root_delta_xyz [3.6513, 0.2348, -0.0919]
+    trace outputs/task025/alignment_trace_seed123_live_400/seed123_live_400.json
+
+  motion context:
+    done_steps []
+    root_z_final 0.7598
+    root_z_mean 0.7555
+    root_z_min 0.7082
+    abs_pitch_p95 0.2627
+    joint_error_rms_mean 0.2606
+    root_delta_xyz [9.9653, -0.2602, -0.0369]
+    trace outputs/task025/alignment_trace_seed123_motionctx_400/seed123_motionctx_400.json
+  ```
+
+  This supports hypothesis 3: replan context source is a real alignment issue.
+  It does not close the whole problem because ankle/hip tracking errors remain
+  large and motion-context rollouts move much faster than expected.
+
 ## Review
 
-Do not start by hand-tuning action scale or speed. The current evidence says
-the adapter can run, but multiple contracts are not aligned:
+Do not start by hand-tuning action scale or speed. The deterministic repro now
+shows one concrete fix direction: replan from previous planner motion instead
+of live qpos history. That brings root height and pitch much closer to the
+official planner trajectory under the same seed.
 
-- mjlab reset/action offset uses HOME pose;
-- SONIC decoder history subtracts SONIC crouched default;
-- mjlab actuator constants are not identical to SONIC control constants;
-- encoder input may be missing enabled non-required fields;
-- play mode still has startup randomization.
+Remaining risks:
 
-Next implementation should add an alignment trace CLI, then run this ablation
-order:
+- ankle/hip pitch actual-vs-target tracking is still the largest error source;
+- motion-context gait speed is high relative to the command, so planner command
+  semantics and mjlab velocity command semantics still need comparison;
+- encoder root-z and other enabled-but-unfilled fields remain zero by design in
+  the current G1 mode and should be tested after controller/context alignment;
+- mjlab actuator constants are still not identical to SONIC control constants.
 
-1. baseline trace with target/actual joint errors;
-2. disable startup randomization;
-3. reset to SONIC default pose;
-4. planner context source switch: live qpos vs previous planner motion;
-5. fill encoder root-z/non-required enabled fields;
-6. explicit planner command sweep: `target_vel`, `height`, `mode`.
+Next ablations should keep `planner_context_source=motion` as the new baseline,
+then test controller gain/profile alignment and command semantics before
+touching encoder non-required fields.

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol, Sequence
+from typing import Literal, Protocol, Sequence
 
 from h200_locomotion_lab.envs.robot_backend import (
     G1RobotState,
@@ -20,8 +20,12 @@ from h200_locomotion_lab.sonic.g1_planner_encoder import (
     SONIC_ENCODER_OBS_DIM,
     SonicPlannerMotion50Hz,
     build_g1_encoder_observation_from_planner_motion,
+    build_initial_planner_context,
+    build_planner_context_from_motion,
     build_planner_context_from_mujoco_qpos_history,
 )
+
+PlannerContextSource = Literal["live", "motion"]
 
 
 class SonicPlanner(Protocol):
@@ -49,13 +53,21 @@ class SonicPlannerEncoderActionProvider:
         encoder: SonicEncoder,
         decoder: SonicDecoder,
         replan_interval: int = 10,
+        planner_context_source: PlannerContextSource = "live",
+        motion_context_lookahead_steps: int = 2,
     ) -> None:
         if replan_interval < 0:
             raise ValueError("replan_interval must be non-negative")
+        if planner_context_source not in ("live", "motion"):
+            raise ValueError("planner_context_source must be 'live' or 'motion'")
+        if motion_context_lookahead_steps < 0:
+            raise ValueError("motion_context_lookahead_steps must be non-negative")
         self.planner = planner
         self.encoder = encoder
         self.decoder = decoder
         self.replan_interval = int(replan_interval)
+        self.planner_context_source = planner_context_source
+        self.motion_context_lookahead_steps = int(motion_context_lookahead_steps)
         self.history = SonicG1HistoryBuffer()
         self.qpos_history: list[tuple[float, ...]] = []
         self.motion: SonicPlannerMotion50Hz | None = None
@@ -119,10 +131,21 @@ class SonicPlannerEncoderActionProvider:
         return self.replan_interval > 0 and step_index > 0 and step_index % self.replan_interval == 0
 
     def _replan(self, step_index: int) -> None:
-        context = build_planner_context_from_mujoco_qpos_history(self.qpos_history)
+        context = self._build_replan_context(step_index)
         self.motion = self.planner.plan(context)
         self.motion_start_step = step_index
         self.planner_calls += 1
+
+    def _build_replan_context(self, step_index: int) -> tuple[tuple[float, ...], ...]:
+        if self.planner_context_source == "live" or self.motion is None:
+            if self.planner_context_source == "motion" and self.motion is None:
+                return build_initial_planner_context(self.qpos_history[-1][7:])
+            return build_planner_context_from_mujoco_qpos_history(self.qpos_history)
+        return build_planner_context_from_motion(
+            self.motion,
+            gen_frame=step_index - self.motion_start_step,
+            motion_look_ahead_steps=self.motion_context_lookahead_steps,
+        )
 
 
 def _coerce_vector(values: Sequence[float], expected_dim: int, name: str) -> tuple[float, ...]:
