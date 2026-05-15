@@ -16,12 +16,21 @@ adapter correctness from policy quality.
 - 2026-05-15 H200 synthetic `sequence` provider smoke rendered successfully
   with no terminations over 120 steps. The robot still fell because the replay
   used a repeated fixture row, not an official SONIC action trace.
+- 2026-05-15 User explicitly approved restoring official GEAR-SONIC artifacts.
+  Local download path:
+  `.external_downloads/gear_sonic_artifacts`.
+- 2026-05-15 Uploaded official SONIC ONNX artifacts to H200 and verified
+  SHA256 for encoder, decoder, and planner.
+- 2026-05-15 H200 `online` provider smoke ran with official planner,
+  encoder, and decoder artifacts. The 40-step run made 4 planner calls with no
+  terminations. The 160-step run made 16 planner calls with no terminations,
+  moved forward about 1.27 m, and rendered video.
 - 2026-05-15 `ruff` was not run locally because the environment does not have
   `ruff` installed.
 
 ## Review
 
-Status: partial pass.
+Status: adapter pass, locomotion quality not yet passed.
 
 Passed:
 
@@ -32,10 +41,13 @@ Passed:
 - The backend maps targets by joint name rather than assumed index.
 - Local tests and H200 smoke runs show finite state/action plumbing and video
   rendering.
+- Official planner, encoder, and decoder artifacts can run end-to-end through
+  the mjlab adapter on H200.
 
 Not passed:
 
-- Official SONIC sequence replay is still blocked by missing action/ONNX
-  artifacts in the current workspace.
-- Online planner/encoder rollout is still blocked for the same reason.
-- No stable locomotion claim is made from zero or synthetic fixture actions.
+- Official SONIC sequence replay is still blocked by missing upstream reference
+  motion CSV/directory, if we still want that route.
+- No stable locomotion claim is made yet from the online smoke. The 160-step
+  run moves forward but root height still drops, so the next diagnosis should
+  compare reset/context/command construction against official SONIC.

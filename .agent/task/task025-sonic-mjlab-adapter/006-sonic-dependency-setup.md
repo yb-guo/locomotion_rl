@@ -132,3 +132,18 @@ Linux-only.
 The C++ planner runner dependency was later prepared under task025 using the
 official ONNX Runtime Linux x64 1.19.2 tarball. That makes the planner binary
 buildable on H200, but it does not provide SONIC model artifacts.
+
+After explicit user approval, the official GEAR-SONIC ONNX artifacts were
+downloaded locally and uploaded to H200:
+
+```text
+local:  .external_downloads/gear_sonic_artifacts
+remote: /mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/gear_sonic_artifacts
+```
+
+The H200 online adapter now has all runtime pieces available:
+
+- Python `onnx`/`numpy` in the `unitree-rl-mjlab` conda environment.
+- C++ ONNX Runtime 1.19.2 and `bin/sonic_planner_ort_runner`.
+- Official `model_encoder.onnx`, `model_decoder.onnx`, and
+  `planner_sonic.onnx`.
