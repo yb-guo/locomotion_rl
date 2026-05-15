@@ -56,6 +56,10 @@ RSL-RL runner or the mjlab task implementation.
 - 2026-05-15 Downloaded a Linux CPython 3.11 wheelhouse locally and uploaded it
   to H200 for offline SONIC Python dependency setup:
   `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/sonic_wheelhouse_linux_cp311`.
+- 2026-05-15 Downloaded and uploaded ONNX Runtime C++ Linux x64 1.19.2, then
+  built `bin/sonic_planner_ort_runner` on H200. The binary links against the
+  uploaded runtime and starts correctly. Online rollout is still blocked by
+  missing SONIC ONNX artifacts.
 
 ## Review
 
@@ -64,8 +68,9 @@ Status: partial implementation.
 Implemented the modular backend/controller boundary and verified local unit
 tests. H200 zero-action and synthetic-sequence mjlab smokes executed and
 rendered, but both collapsed because neither uses a stabilized SONIC action
-trace. Official sequence/online rollout is blocked by missing SONIC artifacts
-in the current H200 workspace.
+trace. The C++ planner runner dependency is now buildable on H200. Official
+sequence/online rollout remains blocked by missing SONIC artifacts in the
+current H200 workspace.
 
 Verification:
 

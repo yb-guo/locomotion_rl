@@ -128,3 +128,7 @@ H200 already satisfies the Python-side `sonic` extra. The uploaded wheelhouse is
 now available as a repeatable offline fallback for this exact Python 3.11 Linux
 target. Local Windows remains missing `onnx` because the uploaded wheelhouse is
 Linux-only.
+
+The C++ planner runner dependency was later prepared under task025 using the
+official ONNX Runtime Linux x64 1.19.2 tarball. That makes the planner binary
+buildable on H200, but it does not provide SONIC model artifacts.
