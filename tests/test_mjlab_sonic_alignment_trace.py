@@ -5,10 +5,13 @@ import math
 import pytest
 
 from h200_locomotion_lab.tools.mjlab_sonic_alignment_trace import (
+    joint_limit_margins,
     planner_root_velocity,
     percentile,
     quat_to_rpy,
     summarize_alignment_trace,
+    top_joint_fraction_above,
+    top_joint_fraction_below,
     zero_fields,
 )
 
@@ -45,6 +48,11 @@ def test_summarize_alignment_trace_reports_joint_error_ranking() -> None:
             "planner_root_z": 0.78,
             "planner_root_vel_xyz": [0.5, 0.0, 0.0],
             "mjlab_twist_command": [0.2, 0.0, 0.0],
+            "actuator_force": [0.0, 2.0, -4.0],
+            "actuator_force_utilization": [0.0, 0.5, 1.0],
+            "actual_soft_limit_margin": [0.3, 0.2, 0.1],
+            "target_soft_limit_margin": [0.2, 0.1, -0.1],
+            "foot_contact_force_norm": [10.0, 20.0],
         },
         {
             "root_xyz": [1.0, 0.0, 0.7],
@@ -59,6 +67,11 @@ def test_summarize_alignment_trace_reports_joint_error_ranking() -> None:
             "planner_root_z": 0.76,
             "planner_root_vel_xyz": [0.7, 0.0, 0.0],
             "mjlab_twist_command": [0.2, 0.0, 0.0],
+            "actuator_force": [0.0, 1.0, -8.0],
+            "actuator_force_utilization": [0.0, 0.25, 2.0],
+            "actual_soft_limit_margin": [0.4, 0.1, 0.0],
+            "target_soft_limit_margin": [0.3, 0.2, -0.2],
+            "foot_contact_force_norm": [30.0, 40.0],
         },
     ]
 
@@ -72,6 +85,24 @@ def test_summarize_alignment_trace_reports_joint_error_ranking() -> None:
     assert summary["root_lin_vel_b_x_mean"] == pytest.approx(0.5)
     assert summary["mjlab_twist_command_x_mean"] == pytest.approx(0.2)
     assert summary["top_joint_error_rms"][0]["joint"] == "c"
+    assert summary["top_joint_actuator_force_abs_max"][0] == {"joint": "c", "value": 8.0}
+    assert summary["top_joint_force_saturation_fraction"][0] == {
+        "joint": "c",
+        "value": 1.0,
+    }
+    assert summary["top_joint_target_soft_limit_margin_min"][0] == {
+        "joint": "c",
+        "value": -0.2,
+    }
+    assert summary["top_joint_target_soft_limit_violation_fraction"][0] == {
+        "joint": "c",
+        "value": 1.0,
+    }
+    assert summary["top_joint_actual_soft_limit_violation_fraction"][0] == {
+        "joint": "a",
+        "value": 0.0,
+    }
+    assert summary["foot_contact_force_norm_mean"] == pytest.approx([20.0, 30.0])
     assert summary["encoder_zero_fields_last"] == ["zero"]
     assert summary["root_minus_planner_z_mean"] == pytest.approx(-0.02)
 
@@ -84,3 +115,29 @@ def test_planner_root_velocity_uses_next_frame() -> None:
     velocity = planner_root_velocity(((0.0, 0.0, 0.8), (0.02, 0.04, 0.8)), 0)
 
     assert velocity == pytest.approx((1.0, 2.0, 0.0))
+
+
+def test_joint_limit_margins() -> None:
+    assert joint_limit_margins((0.0, 0.8), ((-1.0, 1.0), (0.0, 1.0))) == pytest.approx(
+        (1.0, 0.2)
+    )
+
+
+def test_top_joint_fraction_above() -> None:
+    scored = top_joint_fraction_above(
+        ((0.0, 1.0), (0.5, 0.2)),
+        ("a", "b"),
+        threshold=0.9,
+    )
+
+    assert scored[0] == {"joint": "b", "value": 0.5}
+
+
+def test_top_joint_fraction_below() -> None:
+    scored = top_joint_fraction_below(
+        ((0.0, -0.1), (-0.2, 0.2)),
+        ("a", "b"),
+        threshold=0.0,
+    )
+
+    assert scored[0] == {"joint": "a", "value": 0.5}

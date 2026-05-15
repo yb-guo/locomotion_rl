@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Sequence
@@ -291,6 +292,26 @@ def trace_row(
     root_lin_vel_b = read_robot_data_vector(backend, "root_link_lin_vel_b", 3)
     root_ang_vel_b = read_robot_data_vector(backend, "root_link_ang_vel_b", 3)
     mjlab_twist_command = read_mjlab_command(backend.raw_env, "twist", 3)
+    actuator_force = read_sonic_robot_data_vector(backend, "actuator_force")
+    joint_effort_target = read_sonic_robot_data_vector(backend, "joint_effort_target")
+    effort_limits = mjlab_effort_limits_by_sonic_joint(backend)
+    force_utilization = (
+        tuple(
+            abs(force) / limit if limit > 0.0 else 0.0
+            for force, limit in zip(actuator_force, effort_limits, strict=True)
+        )
+        if actuator_force is not None and effort_limits is not None
+        else None
+    )
+    soft_limit_margins = joint_limit_margins(
+        actual,
+        read_sonic_robot_data_matrix(backend, "soft_joint_pos_limits", 2),
+    )
+    target_soft_limit_margins = joint_limit_margins(
+        target,
+        read_sonic_robot_data_matrix(backend, "soft_joint_pos_limits", 2),
+    )
+    foot_contact = read_foot_contact(backend.raw_env)
     return {
         "step": step.step_index,
         "done": done,
@@ -309,6 +330,26 @@ def trace_row(
         "planner_root_z": planner_root_z,
         "mjlab_twist_command": (
             list(mjlab_twist_command) if mjlab_twist_command is not None else None
+        ),
+        "actuator_force": list(actuator_force) if actuator_force is not None else None,
+        "joint_effort_target": (
+            list(joint_effort_target) if joint_effort_target is not None else None
+        ),
+        "effort_limits": list(effort_limits) if effort_limits is not None else None,
+        "actuator_force_utilization": (
+            list(force_utilization) if force_utilization is not None else None
+        ),
+        "actual_soft_limit_margin": (
+            list(soft_limit_margins) if soft_limit_margins is not None else None
+        ),
+        "target_soft_limit_margin": (
+            list(target_soft_limit_margins) if target_soft_limit_margins is not None else None
+        ),
+        "foot_contact_found": (
+            list(foot_contact["found"]) if foot_contact is not None else None
+        ),
+        "foot_contact_force_norm": (
+            list(foot_contact["force_norm"]) if foot_contact is not None else None
         ),
         "planner_context_root_z": list(probe.planner_context_root_z)
         if probe.planner_context_root_z is not None
@@ -381,6 +422,61 @@ def summarize_alignment_trace(
         "top_joint_error_rms": top_joint_error_rms(rows, joint_names),
         "encoder_zero_fields_last": zero_fields(rows[-1]["encoder_field_norms"]),
     }
+    force_rows = rows_with_vector(rows, "actuator_force")
+    force_util_rows = rows_with_vector(rows, "actuator_force_utilization")
+    actual_margin_rows = rows_with_vector(rows, "actual_soft_limit_margin")
+    target_margin_rows = rows_with_vector(rows, "target_soft_limit_margin")
+    foot_force_rows = rows_with_vector(rows, "foot_contact_force_norm")
+    if force_rows:
+        summary["top_joint_actuator_force_abs_mean"] = top_joint_abs_mean(
+            force_rows,
+            joint_names,
+        )
+        summary["top_joint_actuator_force_abs_max"] = top_joint_abs_max(
+            force_rows,
+            joint_names,
+        )
+    if force_util_rows:
+        summary["top_joint_force_utilization_mean"] = top_joint_abs_mean(
+            force_util_rows,
+            joint_names,
+        )
+        summary["top_joint_force_utilization_max"] = top_joint_abs_max(
+            force_util_rows,
+            joint_names,
+        )
+        summary["top_joint_force_saturation_fraction"] = top_joint_fraction_above(
+            force_util_rows,
+            joint_names,
+            threshold=0.95,
+        )
+    if actual_margin_rows:
+        summary["top_joint_actual_soft_limit_margin_min"] = top_joint_min_value(
+            actual_margin_rows,
+            joint_names,
+        )
+        summary["top_joint_actual_soft_limit_violation_fraction"] = (
+            top_joint_fraction_below(
+                actual_margin_rows,
+                joint_names,
+                threshold=0.0,
+            )
+        )
+    if target_margin_rows:
+        summary["top_joint_target_soft_limit_margin_min"] = top_joint_min_value(
+            target_margin_rows,
+            joint_names,
+        )
+        summary["top_joint_target_soft_limit_violation_fraction"] = (
+            top_joint_fraction_below(
+                target_margin_rows,
+                joint_names,
+                threshold=0.0,
+            )
+        )
+    if foot_force_rows:
+        summary["foot_contact_force_norm_mean"] = column_means(foot_force_rows)
+        summary["foot_contact_force_norm_max"] = column_maxes(foot_force_rows)
     if planner_root_z:
         summary["planner_root_z_min"] = min(planner_root_z)
         summary["planner_root_z_mean"] = mean(planner_root_z)
@@ -450,6 +546,119 @@ def top_joint_error_rms(
     return sorted(scored, key=lambda row: float(row["rms"]), reverse=True)[:count]
 
 
+def rows_with_vector(rows: Sequence[dict[str, Any]], field: str) -> list[list[float]]:
+    values: list[list[float]] = []
+    for row in rows:
+        vector = row.get(field)
+        if vector is not None:
+            values.append([float(value) for value in vector])
+    return values
+
+
+def top_joint_abs_mean(
+    rows: Sequence[Sequence[float]],
+    joint_names: Sequence[str],
+    *,
+    count: int = 8,
+) -> list[dict[str, float | str]]:
+    scored = [
+        {
+            "joint": joint_name,
+            "value": mean([abs(float(row[index])) for row in rows]),
+        }
+        for index, joint_name in enumerate(joint_names)
+    ]
+    return sorted(scored, key=lambda row: float(row["value"]), reverse=True)[:count]
+
+
+def top_joint_abs_max(
+    rows: Sequence[Sequence[float]],
+    joint_names: Sequence[str],
+    *,
+    count: int = 8,
+) -> list[dict[str, float | str]]:
+    scored = [
+        {
+            "joint": joint_name,
+            "value": max(abs(float(row[index])) for row in rows),
+        }
+        for index, joint_name in enumerate(joint_names)
+    ]
+    return sorted(scored, key=lambda row: float(row["value"]), reverse=True)[:count]
+
+
+def top_joint_fraction_above(
+    rows: Sequence[Sequence[float]],
+    joint_names: Sequence[str],
+    *,
+    threshold: float,
+    count: int = 8,
+) -> list[dict[str, float | str]]:
+    scored = [
+        {
+            "joint": joint_name,
+            "value": sum(
+                1.0 for row in rows if abs(float(row[index])) >= threshold
+            )
+            / len(rows),
+        }
+        for index, joint_name in enumerate(joint_names)
+    ]
+    return sorted(scored, key=lambda row: float(row["value"]), reverse=True)[:count]
+
+
+def top_joint_fraction_below(
+    rows: Sequence[Sequence[float]],
+    joint_names: Sequence[str],
+    *,
+    threshold: float,
+    count: int = 8,
+) -> list[dict[str, float | str]]:
+    scored = [
+        {
+            "joint": joint_name,
+            "value": sum(1.0 for row in rows if float(row[index]) < threshold)
+            / len(rows),
+        }
+        for index, joint_name in enumerate(joint_names)
+    ]
+    return sorted(scored, key=lambda row: float(row["value"]), reverse=True)[:count]
+
+
+def top_joint_min_value(
+    rows: Sequence[Sequence[float]],
+    joint_names: Sequence[str],
+    *,
+    count: int = 8,
+) -> list[dict[str, float | str]]:
+    scored = [
+        {
+            "joint": joint_name,
+            "value": min(float(row[index]) for row in rows),
+        }
+        for index, joint_name in enumerate(joint_names)
+    ]
+    return sorted(scored, key=lambda row: float(row["value"]))[:count]
+
+
+def column_means(rows: Sequence[Sequence[float]]) -> list[float]:
+    if not rows:
+        raise ValueError("rows must not be empty")
+    return [
+        mean([float(row[index]) for row in rows])
+        for index in range(len(rows[0]))
+    ]
+
+
+def column_maxes(rows: Sequence[Sequence[float]]) -> list[float]:
+    if not rows:
+        raise ValueError("rows must not be empty")
+    return [
+        max(float(row[index]) for row in rows)
+        for index in range(len(rows[0]))
+    ]
+
+
 def zero_fields(field_values: dict[str, float], *, eps: float = 1.0e-9) -> list[str]:
     return sorted(name for name, value in field_values.items() if abs(float(value)) <= eps)
 
@@ -500,6 +709,100 @@ def read_robot_data_vector(
     if len(flat) < expected_dim:
         return None
     return tuple(flat[:expected_dim])
+
+
+def read_sonic_robot_data_vector(
+    backend: MjlabG1RobotBackend,
+    attr: str,
+) -> tuple[float, ...] | None:
+    values = getattr(backend.robot.data, attr, None)
+    if values is None:
+        return None
+    flat = flatten_numeric(values)
+    if len(flat) < len(backend.robot_joint_names):
+        return None
+    robot_order = tuple(flat[: len(backend.robot_joint_names)])
+    return tuple(
+        robot_order[index]
+        for index in getattr(backend, "_sonic_to_robot_indices")
+    )
+
+
+def read_sonic_robot_data_matrix(
+    backend: MjlabG1RobotBackend,
+    attr: str,
+    cols: int,
+) -> tuple[tuple[float, ...], ...] | None:
+    values = getattr(backend.robot.data, attr, None)
+    if values is None:
+        return None
+    flat = flatten_numeric(values)
+    rows = len(backend.robot_joint_names)
+    if len(flat) < rows * cols:
+        return None
+    robot_order = tuple(
+        tuple(flat[row * cols : row * cols + cols])
+        for row in range(rows)
+    )
+    return tuple(
+        robot_order[index]
+        for index in getattr(backend, "_sonic_to_robot_indices")
+    )
+
+
+def joint_limit_margins(
+    values: Sequence[float],
+    limits: Sequence[Sequence[float]] | None,
+) -> tuple[float, ...] | None:
+    if limits is None:
+        return None
+    return tuple(
+        min(float(value) - float(limit[0]), float(limit[1]) - float(value))
+        for value, limit in zip(values, limits, strict=True)
+    )
+
+
+def mjlab_effort_limits_by_sonic_joint(
+    backend: MjlabG1RobotBackend,
+) -> tuple[float, ...] | None:
+    articulation = getattr(getattr(backend.robot, "cfg", None), "articulation", None)
+    actuators = getattr(articulation, "actuators", None)
+    if not actuators:
+        return None
+    limits: list[float] = []
+    for joint_name in backend.sonic_joint_order:
+        limit = None
+        for actuator in actuators:
+            patterns = getattr(actuator, "target_names_expr", ())
+            if any(re.fullmatch(pattern, joint_name) for pattern in patterns):
+                limit = getattr(actuator, "effort_limit", None)
+        if limit is None:
+            return None
+        limits.append(float(limit))
+    return tuple(limits)
+
+
+def read_foot_contact(env: Any) -> dict[str, tuple[float, ...]] | None:
+    sensors = getattr(getattr(env, "scene", None), "sensors", None)
+    if sensors is None:
+        return None
+    sensor = sensors.get("feet_ground_contact")
+    data = getattr(sensor, "data", None)
+    if data is None:
+        return None
+    found_values = getattr(data, "found", None)
+    force_values = getattr(data, "force", None)
+    if found_values is None or force_values is None:
+        return None
+    found = flatten_numeric(found_values)
+    force = flatten_numeric(force_values)
+    if len(found) < 2 or len(force) < 6:
+        return None
+    force_norm = (
+        math.sqrt(sum(value * value for value in force[0:3])),
+        math.sqrt(sum(value * value for value in force[3:6])),
+    )
+    return {"found": tuple(found[:2]), "force_norm": force_norm}
 
 
 def read_mjlab_command(env: Any, command_name: str, expected_dim: int) -> tuple[float, ...] | None:

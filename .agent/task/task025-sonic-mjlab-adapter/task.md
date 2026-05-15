@@ -29,6 +29,7 @@ RSL-RL runner or the mjlab task implementation.
 - `006-sonic-dependency-setup.md`
 - `007-alignment-diagnosis.md`
 - `008-command-and-actuator-alignment.md`
+- `009-ankle-pitch-residual.md`
 
 ## Acceptance
 
@@ -99,6 +100,13 @@ RSL-RL runner or the mjlab task implementation.
   `effort=139`). A trace-only hip-pitch profile override improved the 400-step
   `target_vel=0.5` run to `abs_pitch_p95=0.1229`,
   `joint_error_rms_mean=0.1528`.
+- 2026-05-15 Added ankle-focused trace instrumentation. In the current best
+  H200 400-step baseline, ankle pitch residual is not explained by actuator
+  force saturation or actual joint-limit clipping. The actual ankle joints stay
+  inside soft limits, while the SONIC motor targets sometimes command outside
+  mjlab soft limits. During target violations, left/right ankle-pitch RMS error
+  rises to about `1.15` / `0.95` rad versus `0.28` / `0.32` rad when targets
+  remain inside limits.
 
 ## Review
 
@@ -120,8 +128,11 @@ deterministic traces now identify three concrete alignment issues:
 
 The current best diagnostic baseline is motion context, `target_vel=0.5`, and
 the SONIC hip-pitch actuator profile. That still leaves ankle pitch as the
-dominant residual tracking error, so the next route should inspect ankle
-actuator/linkage limits and force saturation before filling optional encoder
+dominant residual tracking error. The first ankle probe points to target/limit
+contract mismatch rather than force saturation: SONIC sometimes asks for ankle
+targets outside mjlab soft limits, while the actual joints remain inside those
+limits. The next route should compare official SONIC ankle limits with mjlab G1
+limits, then run a trace-only target clamp probe before filling optional encoder
 fields.
 
 Verification:
@@ -139,5 +150,10 @@ Verification:
     `joint_error_rms_mean=0.1703`.
   - `target_vel=0.5` plus SONIC hip-pitch actuator profile: no done,
     `abs_pitch_p95=0.1229`, `joint_error_rms_mean=0.1528`.
+- H200 `seed=123`, 400-step ankle-focused trace on the current best baseline:
+  no done, `abs_pitch_p95=0.1225`, `joint_error_rms_mean=0.1527`. Actual
+  soft-limit violation fraction was `0.0` for all joints; target soft-limit
+  violation fraction was `0.0925` for left ankle pitch and `0.0700` for right
+  ankle pitch.
 - `python -m ruff check ...` was not run because `ruff` is not installed in the
   local Python environment.
