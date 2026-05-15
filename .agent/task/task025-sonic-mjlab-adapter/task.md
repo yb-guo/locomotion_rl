@@ -53,6 +53,9 @@ RSL-RL runner or the mjlab task implementation.
   ONNX helper code: `numpy` and `onnx`. H200 `unitree-rl-mjlab` already has
   these Python modules installed; Python `onnxruntime` is not required for the
   current adapter path.
+- 2026-05-15 Downloaded a Linux CPython 3.11 wheelhouse locally and uploaded it
+  to H200 for offline SONIC Python dependency setup:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/sonic_wheelhouse_linux_cp311`.
 
 ## Review
 
