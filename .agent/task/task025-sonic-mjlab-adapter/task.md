@@ -45,16 +45,19 @@ RSL-RL runner or the mjlab task implementation.
 - 2026-05-15 Remote mjlab inspection found `joint_pos.target_names` matches the
   SONIC 29DoF command MuJoCo order:
   left leg, right leg, waist, left arm, right arm.
+- 2026-05-15 H200 synthetic sequence smoke rendered a 120-step video with no
+  termination. This verified CSV sequence plumbing only; it was not an official
+  SONIC replay and the robot fell under repeated fixture actions.
 
 ## Review
 
 Status: partial implementation.
 
 Implemented the modular backend/controller boundary and verified local unit
-tests. H200 zero-action mjlab smoke executed and rendered, but collapsed because
-SONIC zero raw action targets SONIC default angles rather than the mjlab policy
-stance. Sequence/online rollout is blocked by missing SONIC artifacts in the
-current H200 workspace.
+tests. H200 zero-action and synthetic-sequence mjlab smokes executed and
+rendered, but both collapsed because neither uses a stabilized SONIC action
+trace. Official sequence/online rollout is blocked by missing SONIC artifacts
+in the current H200 workspace.
 
 Verification:
 
