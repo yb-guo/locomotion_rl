@@ -27,6 +27,7 @@ RSL-RL runner or the mjlab task implementation.
 - `004-online-planner-encoder-rollout.md`
 - `005-review.md`
 - `006-sonic-dependency-setup.md`
+- `007-alignment-diagnosis.md`
 
 ## Acceptance
 
@@ -74,6 +75,10 @@ RSL-RL runner or the mjlab task implementation.
   about 7.96 m and ended with root z about 0.738. Contact sheet inspection
   shows the robot remains upright enough to step, but with a low, crouched,
   backward-leaning posture.
+- 2026-05-15 Added alignment diagnosis after the 800-step visual review. The
+  strongest immediate mismatch is mjlab HOME reset/action offset versus SONIC
+  crouched default angles; hip-pitch action scale/controller constants also
+  differ between mjlab and the SONIC profile.
 
 ## Review
 
@@ -90,7 +95,10 @@ The remaining risk is policy/context quality, not adapter availability: the
 longer online smokes progress forward without termination, but the gait is low
 and crouched. Next diagnosis should inspect video frames and compare reset
 state, context qpos construction, target command, and mjlab motor gains against
-official SONIC assumptions.
+official SONIC assumptions. Alignment diagnosis now ranks the next ablations:
+trace target/actual errors, disable startup randomization, reset to SONIC
+default, compare planner context sources, fill encoder root-z fields, then sweep
+planner command parameters.
 
 Verification:
 
