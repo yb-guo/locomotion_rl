@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from h200_locomotion_lab.envs.mjlab_backend import MjlabG1RobotBackend
+from h200_locomotion_lab.runtime import ScalarActionBridge
 from h200_locomotion_lab.runtime.scalar_g1_runtime import ScalarG1Runtime
 from h200_locomotion_lab.sonic.controller import SonicPlannerEncoderActionProvider
 from h200_locomotion_lab.sonic.g1_observation import (
@@ -23,6 +24,7 @@ from h200_locomotion_lab.sonic.g1_planner_encoder import (
     SONIC_G1_ENCODER_FIELDS,
     SONIC_PLANNER_DEFAULT_HEIGHT,
 )
+from h200_locomotion_lab.sonic.g1_policy_bridge import get_default_sonic_g1_action_bridge
 from h200_locomotion_lab.sonic.planner_runner import (
     SonicPlannerCommand,
     SubprocessSonicPlanner,
@@ -93,6 +95,7 @@ def main() -> None:
     parser.add_argument("--planner-work-dir", required=True)
     parser.add_argument("--replan-interval", type=int, default=10)
     parser.add_argument("--planner-context-source", choices=("live", "motion"), default="live")
+    parser.add_argument("--sonic-action-scale-mult", type=float, default=1.0)
     parser.add_argument("--mode", type=int, default=2)
     parser.add_argument("--target-vel", type=float, default=-1.0)
     parser.add_argument("--movement-direction", nargs=3, type=float, default=(1.0, 0.0, 0.0))
@@ -101,6 +104,7 @@ def main() -> None:
     parser.add_argument("--fixed-base-reset", action="store_true")
     parser.add_argument("--disable-startup-randomization", action="store_true")
     parser.add_argument("--sonic-default-reset", action="store_true")
+    parser.add_argument("--sonic-hip-pitch-actuator", action="store_true")
     parser.add_argument("--disable-terminations", action="store_true")
     args = parser.parse_args()
 
@@ -114,7 +118,11 @@ def main() -> None:
     backend = MjlabG1RobotBackend(raw_env)
     probe = TraceProbeState()
     provider = build_online_provider(args, probe)
-    runtime = ScalarG1Runtime(backend, provider)
+    runtime = ScalarG1Runtime(
+        backend,
+        provider,
+        action_bridge=build_action_bridge(args.sonic_action_scale_mult),
+    )
 
     rows: list[dict[str, Any]] = []
     done_steps: list[int] = []
@@ -161,6 +169,8 @@ def build_mjlab_env(args: argparse.Namespace):
             cfg.events.pop(event_name, None)
     if args.sonic_default_reset:
         set_sonic_default_reset(cfg)
+    if args.sonic_hip_pitch_actuator:
+        set_sonic_hip_pitch_actuator(cfg)
     return ManagerBasedRlEnv(cfg=cfg, device=args.device, render_mode=None)
 
 
@@ -191,6 +201,23 @@ def build_online_provider(args: argparse.Namespace, probe: TraceProbeState):
     )
 
 
+def build_action_bridge(scale_mult: float) -> ScalarActionBridge | None:
+    if not math.isfinite(scale_mult) or scale_mult <= 0.0:
+        raise ValueError("--sonic-action-scale-mult must be finite and positive")
+    if abs(scale_mult - 1.0) <= 1.0e-12:
+        return None
+    bridge = get_default_sonic_g1_action_bridge()
+    return ScalarActionBridge(
+        action_dim=bridge.action_dim,
+        command_to_policy=bridge.command_to_policy,
+        default_angles_command=bridge.default_angles_command,
+        action_scale_command=tuple(
+            float(scale) * float(scale_mult)
+            for scale in bridge.action_scale_command
+        ),
+    )
+
+
 def set_fixed_base_reset(cfg: Any) -> None:
     reset_base = cfg.events.get("reset_base")
     if reset_base is None:
@@ -213,6 +240,34 @@ def set_sonic_default_reset(cfg: Any) -> None:
         reset_base.params["pose_range"]["z"] = (0.0, 0.0)
 
 
+def set_sonic_hip_pitch_actuator(cfg: Any) -> None:
+    from mjlab.actuator import BuiltinPositionActuatorCfg
+    from src.assets.robots.unitree_g1 import g1_constants as g1
+
+    robot_cfg = cfg.scene.entities["robot"]
+    articulation = robot_cfg.articulation
+    actuators = []
+    for actuator in articulation.actuators:
+        names = tuple(
+            name
+            for name in actuator.target_names_expr
+            if name != ".*_hip_pitch_joint"
+        )
+        if names:
+            actuator.target_names_expr = names
+            actuators.append(actuator)
+    actuators.append(
+        BuiltinPositionActuatorCfg(
+            target_names_expr=(".*_hip_pitch_joint",),
+            stiffness=g1.STIFFNESS_7520_22,
+            damping=g1.DAMPING_7520_22,
+            effort_limit=g1.ACTUATOR_7520_22.effort_limit,
+            armature=g1.ACTUATOR_7520_22.reflected_inertia,
+        )
+    )
+    articulation.actuators = tuple(actuators)
+
+
 def trace_row(
     step: Any,
     backend: MjlabG1RobotBackend,
@@ -225,20 +280,36 @@ def trace_row(
     mjlab_action = backend.motor_targets_to_mjlab_action(target)
     roll, pitch, yaw = quat_to_rpy(step.next_state.base_quat)
     motion_frame = step.step_index - provider.motion_start_step
+    planner_root_xyz = None
+    planner_root_vel_xyz = None
     planner_root_z = None
     if provider.motion is not None and 0 <= motion_frame < provider.motion.timesteps:
-        planner_root_z = provider.motion.root_positions[motion_frame][2]
+        planner_root_xyz = provider.motion.root_positions[motion_frame]
+        planner_root_vel_xyz = planner_root_velocity(provider.motion.root_positions, motion_frame)
+        planner_root_z = planner_root_xyz[2]
     done = backend.last_step_result.done if backend.last_step_result else None
+    root_lin_vel_b = read_robot_data_vector(backend, "root_link_lin_vel_b", 3)
+    root_ang_vel_b = read_robot_data_vector(backend, "root_link_ang_vel_b", 3)
+    mjlab_twist_command = read_mjlab_command(backend.raw_env, "twist", 3)
     return {
         "step": step.step_index,
         "done": done,
         "root_xyz": list(step.next_state.root_qpos[:3]),
+        "root_lin_vel_b": list(root_lin_vel_b) if root_lin_vel_b is not None else None,
+        "root_ang_vel_b": list(root_ang_vel_b) if root_ang_vel_b is not None else None,
         "roll": roll,
         "pitch": pitch,
         "yaw": yaw,
         "planner_calls": provider.planner_calls,
         "motion_frame": motion_frame,
+        "planner_root_xyz": list(planner_root_xyz) if planner_root_xyz is not None else None,
+        "planner_root_vel_xyz": (
+            list(planner_root_vel_xyz) if planner_root_vel_xyz is not None else None
+        ),
         "planner_root_z": planner_root_z,
+        "mjlab_twist_command": (
+            list(mjlab_twist_command) if mjlab_twist_command is not None else None
+        ),
         "planner_context_root_z": list(probe.planner_context_root_z)
         if probe.planner_context_root_z is not None
         else None,
@@ -272,6 +343,7 @@ def summarize_alignment_trace(
     if not rows:
         raise ValueError("rows must not be empty")
     root_z = [float(row["root_xyz"][2]) for row in rows]
+    duration_s = len(rows) * 0.02
     pitch_abs = [abs(float(row["pitch"])) for row in rows]
     roll_abs = [abs(float(row["roll"])) for row in rows]
     joint_error_rms = [float(row["joint_error_rms"]) for row in rows]
@@ -282,6 +354,10 @@ def summarize_alignment_trace(
         for row in rows
         if row.get("planner_root_z") is not None
     ]
+    root_delta_xyz = [
+        float(rows[-1]["root_xyz"][axis] - rows[0]["root_xyz"][axis])
+        for axis in range(3)
+    ]
     summary = {
         "steps": len(rows),
         "done_steps": list(done_steps[:20]),
@@ -289,9 +365,10 @@ def summarize_alignment_trace(
         "root_z_final": root_z[-1],
         "root_z_min": min(root_z),
         "root_z_mean": mean(root_z),
-        "root_delta_xyz": [
-            float(rows[-1]["root_xyz"][axis] - rows[0]["root_xyz"][axis])
-            for axis in range(3)
+        "root_delta_xyz": root_delta_xyz,
+        "root_delta_xy_per_s": [
+            root_delta_xyz[0] / duration_s,
+            root_delta_xyz[1] / duration_s,
         ],
         "abs_pitch_p95": percentile(pitch_abs, 95.0),
         "abs_pitch_max": max(pitch_abs),
@@ -314,16 +391,33 @@ def summarize_alignment_trace(
                 if row.get("planner_root_z") is not None
             ]
         )
+    planner_vel_x = vector_component_values(rows, "planner_root_vel_xyz", 0)
+    planner_vel_y = vector_component_values(rows, "planner_root_vel_xyz", 1)
+    root_lin_vel_x = vector_component_values(rows, "root_lin_vel_b", 0)
+    root_lin_vel_y = vector_component_values(rows, "root_lin_vel_b", 1)
+    mjlab_command_x = vector_component_values(rows, "mjlab_twist_command", 0)
+    mjlab_command_y = vector_component_values(rows, "mjlab_twist_command", 1)
+    if planner_vel_x:
+        summary["planner_root_vel_x_mean"] = mean(planner_vel_x)
+        summary["planner_root_vel_y_mean"] = mean(planner_vel_y)
+    if root_lin_vel_x:
+        summary["root_lin_vel_b_x_mean"] = mean(root_lin_vel_x)
+        summary["root_lin_vel_b_y_mean"] = mean(root_lin_vel_y)
+    if mjlab_command_x:
+        summary["mjlab_twist_command_x_mean"] = mean(mjlab_command_x)
+        summary["mjlab_twist_command_y_mean"] = mean(mjlab_command_y)
     if args is not None:
         summary["options"] = {
             "fixed_base_reset": bool(args.fixed_base_reset),
             "disable_startup_randomization": bool(args.disable_startup_randomization),
             "sonic_default_reset": bool(args.sonic_default_reset),
+            "sonic_hip_pitch_actuator": bool(args.sonic_hip_pitch_actuator),
             "mode": int(args.mode),
             "target_vel": float(args.target_vel),
             "height": float(args.height),
             "replan_interval": int(args.replan_interval),
             "planner_context_source": args.planner_context_source,
+            "sonic_action_scale_mult": float(args.sonic_action_scale_mult),
             "seed": args.seed,
         }
     return summary
@@ -360,6 +454,74 @@ def zero_fields(field_values: dict[str, float], *, eps: float = 1.0e-9) -> list[
     return sorted(name for name, value in field_values.items() if abs(float(value)) <= eps)
 
 
+def vector_component_values(
+    rows: Sequence[dict[str, Any]],
+    field: str,
+    component: int,
+) -> list[float]:
+    values: list[float] = []
+    for row in rows:
+        vector = row.get(field)
+        if vector is not None:
+            values.append(float(vector[component]))
+    return values
+
+
+def planner_root_velocity(
+    root_positions: Sequence[Sequence[float]],
+    frame: int,
+    *,
+    rate_hz: float = 50.0,
+) -> tuple[float, float, float]:
+    if not root_positions:
+        raise ValueError("root_positions must not be empty")
+    index = max(0, min(int(frame), len(root_positions) - 1))
+    if index < len(root_positions) - 1:
+        current = root_positions[index]
+        other = root_positions[index + 1]
+    else:
+        current = root_positions[index - 1] if index > 0 else root_positions[index]
+        other = root_positions[index]
+    return tuple(
+        (float(other[axis]) - float(current[axis])) * float(rate_hz)
+        for axis in range(3)
+    )  # type: ignore[return-value]
+
+
+def read_robot_data_vector(
+    backend: MjlabG1RobotBackend,
+    attr: str,
+    expected_dim: int,
+) -> tuple[float, ...] | None:
+    values = getattr(backend.robot.data, attr, None)
+    if values is None:
+        return None
+    flat = flatten_numeric(values)
+    if len(flat) < expected_dim:
+        return None
+    return tuple(flat[:expected_dim])
+
+
+def read_mjlab_command(env: Any, command_name: str, expected_dim: int) -> tuple[float, ...] | None:
+    command_manager = getattr(env, "command_manager", None)
+    if command_manager is None:
+        return None
+    get_term = getattr(command_manager, "get_term", None)
+    if not callable(get_term):
+        return None
+    try:
+        command_term = get_term(command_name)
+    except Exception:
+        return None
+    command = getattr(command_term, "command", None)
+    if command is None:
+        return None
+    flat = flatten_numeric(command)
+    if len(flat) < expected_dim:
+        return None
+    return tuple(flat[:expected_dim])
+
+
 def quat_to_rpy(quat: Sequence[float]) -> tuple[float, float, float]:
     qw, qx, qy, qz = _coerce_vector(quat, 4, "quat")
     sinr_cosp = 2.0 * (qw * qx + qy * qz)
@@ -387,6 +549,31 @@ def max_abs(values: Sequence[float]) -> float:
     if not values:
         raise ValueError("values must not be empty")
     return max(abs(float(value)) for value in values)
+
+
+def flatten_numeric(values: Any) -> tuple[float, ...]:
+    if hasattr(values, "detach"):
+        values = values.detach()
+    if hasattr(values, "cpu"):
+        values = values.cpu()
+    if hasattr(values, "reshape") and hasattr(values, "tolist"):
+        try:
+            values = values.reshape(-1).tolist()
+        except TypeError:
+            values = values.tolist()
+    elif hasattr(values, "flatten") and hasattr(values, "tolist"):
+        values = values.flatten().tolist()
+    elif hasattr(values, "tolist"):
+        values = values.tolist()
+    if isinstance(values, (int, float)):
+        return (float(values),)
+    flat: list[float] = []
+    for value in values:
+        if isinstance(value, (list, tuple)):
+            flat.extend(flatten_numeric(value))
+        else:
+            flat.append(float(value))
+    return tuple(flat)
 
 
 def mean(values: Sequence[float]) -> float:

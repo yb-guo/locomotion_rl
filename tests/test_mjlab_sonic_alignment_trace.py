@@ -5,6 +5,7 @@ import math
 import pytest
 
 from h200_locomotion_lab.tools.mjlab_sonic_alignment_trace import (
+    planner_root_velocity,
     percentile,
     quat_to_rpy,
     summarize_alignment_trace,
@@ -33,6 +34,7 @@ def test_summarize_alignment_trace_reports_joint_error_ranking() -> None:
     rows = [
         {
             "root_xyz": [0.0, 0.0, 0.8],
+            "root_lin_vel_b": [0.4, 0.1, 0.0],
             "pitch": 0.1,
             "roll": 0.0,
             "joint_error_rms": 0.2,
@@ -41,9 +43,12 @@ def test_summarize_alignment_trace_reports_joint_error_ranking() -> None:
             "joint_error": [0.0, 0.2, 0.4],
             "encoder_field_norms": {"filled": 1.0, "zero": 0.0},
             "planner_root_z": 0.78,
+            "planner_root_vel_xyz": [0.5, 0.0, 0.0],
+            "mjlab_twist_command": [0.2, 0.0, 0.0],
         },
         {
             "root_xyz": [1.0, 0.0, 0.7],
+            "root_lin_vel_b": [0.6, 0.1, 0.0],
             "pitch": -0.2,
             "roll": 0.1,
             "joint_error_rms": 0.3,
@@ -52,6 +57,8 @@ def test_summarize_alignment_trace_reports_joint_error_ranking() -> None:
             "joint_error": [0.0, 0.1, 0.8],
             "encoder_field_norms": {"filled": 2.0, "zero": 0.0},
             "planner_root_z": 0.76,
+            "planner_root_vel_xyz": [0.7, 0.0, 0.0],
+            "mjlab_twist_command": [0.2, 0.0, 0.0],
         },
     ]
 
@@ -60,6 +67,10 @@ def test_summarize_alignment_trace_reports_joint_error_ranking() -> None:
     assert summary["done_steps"] == [1]
     assert summary["root_z_final"] == pytest.approx(0.7)
     assert summary["root_delta_xyz"] == pytest.approx([1.0, 0.0, -0.1])
+    assert summary["root_delta_xy_per_s"] == pytest.approx([25.0, 0.0])
+    assert summary["planner_root_vel_x_mean"] == pytest.approx(0.6)
+    assert summary["root_lin_vel_b_x_mean"] == pytest.approx(0.5)
+    assert summary["mjlab_twist_command_x_mean"] == pytest.approx(0.2)
     assert summary["top_joint_error_rms"][0]["joint"] == "c"
     assert summary["encoder_zero_fields_last"] == ["zero"]
     assert summary["root_minus_planner_z_mean"] == pytest.approx(-0.02)
@@ -67,3 +78,9 @@ def test_summarize_alignment_trace_reports_joint_error_ranking() -> None:
 
 def test_zero_fields_uses_epsilon() -> None:
     assert zero_fields({"a": 0.0, "b": 1.0e-10, "c": 1.0e-4}) == ["a", "b"]
+
+
+def test_planner_root_velocity_uses_next_frame() -> None:
+    velocity = planner_root_velocity(((0.0, 0.0, 0.8), (0.02, 0.04, 0.8)), 0)
+
+    assert velocity == pytest.approx((1.0, 2.0, 0.0))

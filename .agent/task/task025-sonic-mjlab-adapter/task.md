@@ -28,6 +28,7 @@ RSL-RL runner or the mjlab task implementation.
 - `005-review.md`
 - `006-sonic-dependency-setup.md`
 - `007-alignment-diagnosis.md`
+- `008-command-and-actuator-alignment.md`
 
 ## Acceptance
 
@@ -86,6 +87,18 @@ RSL-RL runner or the mjlab task implementation.
   provider. On H200 with `seed=123`, 400-step fixed-base A/B improved from
   live-context `root_z_final=0.7049`, `abs_pitch_p95=0.5607` to motion-context
   `root_z_final=0.7598`, `abs_pitch_p95=0.2627`, with no terminations.
+- 2026-05-15 Added planner/root velocity instrumentation and planner-only
+  command sweep. `target_vel` is not a signed metric velocity for SONIC mode 2:
+  direction comes from `movement_direction`, while `target_vel=0.5` gives a
+  slower gait bucket than `-1.0/-0.5/1.0`.
+- 2026-05-15 On H200 with motion context, `target_vel=0.5` reduced the 400-step
+  trace from `abs_pitch_p95=0.2627`, `joint_error_rms_mean=0.2606` to
+  `abs_pitch_p95=0.1827`, `joint_error_rms_mean=0.1703`.
+- 2026-05-15 Confirmed mjlab G1 hip-pitch actuator profile is 7520_14
+  (`kp=40.18`, `effort=88`) while SONIC profile uses 7520_22 (`kp=99.10`,
+  `effort=139`). A trace-only hip-pitch profile override improved the 400-step
+  `target_vel=0.5` run to `abs_pitch_p95=0.1229`,
+  `joint_error_rms_mean=0.1528`.
 
 ## Review
 
@@ -99,23 +112,32 @@ SONIC ONNX artifacts were restored and the true online planner/encoder/decoder
 path now runs and renders in `unitree_rl_mjlab`.
 
 The remaining risk is policy/context quality, not adapter availability. The
-deterministic trace shows planner context source is a concrete alignment issue:
-official-like motion context materially improves height and pitch under the same
-seed. It is not a complete fix because ankle/hip tracking errors remain large
-and the motion-context rollout moves faster than expected. Next work should use
-motion context as the baseline, then compare mjlab actuator gains/profile and
-planner command semantics against official SONIC before filling optional encoder
+deterministic traces now identify three concrete alignment issues:
+
+- replanning from live qpos history instead of previous planner motion;
+- using `target_vel=-1.0` as if it were a signed metric velocity;
+- mjlab's hip-pitch actuator profile being weaker than the SONIC profile.
+
+The current best diagnostic baseline is motion context, `target_vel=0.5`, and
+the SONIC hip-pitch actuator profile. That still leaves ankle pitch as the
+dominant residual tracking error, so the next route should inspect ankle
+actuator/linkage limits and force saturation before filling optional encoder
 fields.
 
 Verification:
 
 - `PYTHONPATH=src python -m pytest -p no:cacheprovider`
-  passed: `314 passed, 17 skipped`.
+  passed: `319 passed, 17 skipped`.
 - `PYTHONPATH=src python -m pytest tests/test_sonic_controller.py
   tests/test_mjlab_sonic_alignment_trace.py -q`
   passed: `7 passed` with only a local pytest cache permission warning.
 - H200 `seed=123`, 400-step fixed-base trace:
   - live context: no done, `root_z_final=0.7049`, `abs_pitch_p95=0.5607`.
   - motion context: no done, `root_z_final=0.7598`, `abs_pitch_p95=0.2627`.
+- H200 `seed=123`, 400-step motion-context command/profile traces:
+  - `target_vel=0.5`: no done, `abs_pitch_p95=0.1827`,
+    `joint_error_rms_mean=0.1703`.
+  - `target_vel=0.5` plus SONIC hip-pitch actuator profile: no done,
+    `abs_pitch_p95=0.1229`, `joint_error_rms_mean=0.1528`.
 - `python -m ruff check ...` was not run because `ruff` is not installed in the
   local Python environment.
