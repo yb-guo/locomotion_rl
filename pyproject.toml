@@ -22,6 +22,10 @@ training = [
   "torch>=2.4",
   "tqdm>=4.66",
 ]
+sonic = [
+  "numpy>=1.26",
+  "onnx>=1.16",
+]
 genesis = [
   "genesis-world>=0.3",
 ]

@@ -26,6 +26,7 @@ RSL-RL runner or the mjlab task implementation.
 - `003-sonic-sequence-replay.md`
 - `004-online-planner-encoder-rollout.md`
 - `005-review.md`
+- `006-sonic-dependency-setup.md`
 
 ## Acceptance
 
@@ -48,6 +49,10 @@ RSL-RL runner or the mjlab task implementation.
 - 2026-05-15 H200 synthetic sequence smoke rendered a 120-step video with no
   termination. This verified CSV sequence plumbing only; it was not an official
   SONIC replay and the robot fell under repeated fixture actions.
+- 2026-05-15 Added a `sonic` optional Python dependency extra for adapter-side
+  ONNX helper code: `numpy` and `onnx`. H200 `unitree-rl-mjlab` already has
+  these Python modules installed; Python `onnxruntime` is not required for the
+  current adapter path.
 
 ## Review
 

@@ -25,6 +25,24 @@ This repo should initially implement a thin adapter only:
 Do not fork the whole upstream SONIC code until the official input/output shape
 and runtime contract are confirmed.
 
+## Runtime Dependencies
+
+Use the repo `sonic` Python extra for local SONIC ONNX helper code:
+
+```bash
+python -m pip install -e ".[sonic]"
+```
+
+This installs the Python-side requirements used by the adapter and inspection
+tools:
+
+- `numpy`
+- `onnx`
+
+Do not treat Python `onnxruntime` as required for the current adapter path. The
+encoder/decoder wrappers use `onnx.reference.ReferenceEvaluator`; the planner
+path is a separate C++ runner and needs its own system/runtime setup.
+
 ## H200 Rule
 
 SONIC MuJoCo sim2sim is the priority path on H200.
@@ -68,4 +86,3 @@ L4: Full reproduction.
 - Training CUDA: `12.x`.
 
 Wrong TensorRT version can produce wrong motion. Treat this as a hard blocker.
-

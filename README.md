@@ -70,9 +70,16 @@ python -m pip install -e ".[genesis]"
 # MuJoCo path
 python -m pip install -e ".[mujoco]"
 
+# SONIC Python ONNX helpers for encoder/decoder inspection and rollout
+python -m pip install -e ".[sonic]"
+
 # Optional training utilities
 python -m pip install -e ".[training]"
 ```
+
+The `sonic` extra covers the Python-side ONNX helpers used by this repo. The
+SONIC planner runner remains a separate C++ binary dependency and may require a
+system ONNX Runtime/TensorRT install on the target Linux machine.
 
 Isaac Lab is intentionally not a hard dependency here. If you test it on an H200,
 run only the official GEAR-SONIC headless smoke test first and stop if the stack

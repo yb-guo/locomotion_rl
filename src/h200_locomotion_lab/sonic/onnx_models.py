@@ -14,7 +14,10 @@ class SonicOnnxReferenceModel:
             import onnx
             from onnx.reference import ReferenceEvaluator
         except ModuleNotFoundError as exc:
-            raise RuntimeError("Running SONIC ONNX models requires onnx") from exc
+            raise RuntimeError(
+                "Running SONIC ONNX models requires the `sonic` extra: "
+                'python -m pip install -e ".[sonic]"'
+            ) from exc
 
         model = onnx.load(str(model_path))
         self._output_names = tuple(value.name for value in model.graph.output)
