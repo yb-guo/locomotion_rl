@@ -38,6 +38,7 @@ RSL-RL runner or the mjlab task implementation.
 - `015-official-sim2sim-target-contract.md`
 - `016-official-limit-overlay-probe.md`
 - `017-official-install-bootstrap.md`
+- `018-official-sim2sim-runtime.md`
 
 ## Acceptance
 
@@ -170,6 +171,24 @@ RSL-RL runner or the mjlab task implementation.
   artifacts, and a pragmatic `.venv_sim` can import the official MuJoCo sim
   stack and show `gear_sonic/scripts/run_sim_loop.py --help`. The official C++
   deploy build remains blocked by missing TensorRT headers/libraries.
+- 2026-05-17 Opened `018` to run the official SONIC sim2sim baseline. Preflight
+  reconfirmed that H200 has no existing TensorRT install; official CMake
+  requires a `TensorRT_ROOT` containing `NvInfer.h`, `NvInferVersion.h`,
+  `libnvinfer`, `libnvinfer_plugin`, and `libnvonnxparser`.
+- 2026-05-17 Built official `gear_sonic_deploy` on H200 using user-space
+  TensorRT 10.16.1.11 CUDA 12.9 deb extracts plus Jammy C++ dev dependencies.
+  The official `g1_deploy_onnx_ref` target now builds and generates TensorRT
+  engines for the decoder, encoder, and planner from the task025 ONNX
+  artifacts.
+- 2026-05-17 Fixed the official sim venv's DDS mismatch by replacing
+  `cyclonedds 11.0.1` with official-required `cyclonedds 0.10.2` built against
+  the bundled Unitree `libddsc.so`. A Python LowState probe then confirmed the
+  official sim loop continuously publishes `rt/lowstate` over `lo`.
+- 2026-05-17 Official sim/deploy paired run now reaches `Init Done`, proving initial
+  C++/Python DDS contact, but exits before control because C++ deploy reports
+  `Lost LowState data connection from robot` and the deploy CSV logs stay
+  empty. The remaining blocker is continuous C++ subscriber updates from the
+  Python sim publisher, not TensorRT/model loading or adapter code.
 
 ## Review
 
@@ -230,6 +249,13 @@ The official source checkout/environment is now partially staged after explicit
 install permission. Python MuJoCo sim entry is importable; C++ deploy is not
 buildable yet because TensorRT is absent on H200.
 
+`018` has moved the official runtime further: C++ deploy now builds and loads
+the task025 SONIC artifacts through TensorRT, and the official Python sim loop
+publishes continuous LowState under the official `cyclonedds==0.10.2` stack.
+Full official sim2sim control is still blocked because `g1_deploy_onnx_ref`
+receives enough LowState to finish `INIT` but then fails the 500 ms LowState
+freshness check before writing any control CSV rows.
+
 Verification:
 
 - `PYTHONPATH=src python -m pytest -p no:cacheprovider`
@@ -278,6 +304,21 @@ Verification:
   GR00T-WholeBodyControl/.venv_sim`; C++ deploy `cmake` configure failed at
   `FindTensorRT.cmake` because `NvInferVersion.h` / `libnvinfer.so*` were not
   present.
+- H200 official runtime build:
+  `cmake --build build --target g1_deploy_onnx_ref --parallel 16` passed in
+  `/mnt/workspace/users/guoyubo/agent_workspace/official/
+  GR00T-WholeBodyControl/gear_sonic_deploy`.
+- H200 official deploy-alone smoke:
+  `g1_deploy_onnx_ref lo ... --planner-precision 32 --policy-precision 32`
+  generated/loaded TensorRT engines for decoder, encoder, and planner, then
+  waited for `LowState` as expected without the sim.
+- H200 official Python sim LowState probe:
+  after installing `cyclonedds==0.10.2`, a Python subscriber observed continuous
+  `rt/lowstate` messages (`count=644` over a 5 second probe window).
+- H200 official sim/deploy smoke:
+  with the fixed DDS Python stack, deploy reached `Init Done` but exited before
+  control with `Lost LowState data connection from robot`; deploy CSV files
+  remained empty.
 - `PYTHONPATH=src python -m pytest tests/test_mjlab_sonic_alignment_trace.py
   tests/test_scalar_action_bridge.py tests/test_sonic_controller.py -q`
   passed: `26 passed` with only the existing local pytest cache permission
