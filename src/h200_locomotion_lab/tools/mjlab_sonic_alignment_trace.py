@@ -34,6 +34,7 @@ from h200_locomotion_lab.sonic.planner_runner import (
 
 
 STARTUP_RANDOMIZATION_EVENTS = ("foot_friction", "encoder_bias", "base_com")
+OFFICIAL_G1_ANKLE_PITCH_LIMIT = (-0.87267, 0.5236)
 
 
 @dataclass
@@ -108,6 +109,11 @@ def main() -> None:
     parser.add_argument("--sonic-default-reset", action="store_true")
     parser.add_argument("--sonic-hip-pitch-actuator", action="store_true")
     parser.add_argument("--clamp-targets-to-soft-limits", action="store_true")
+    parser.add_argument(
+        "--clamp-limit-source",
+        choices=("mjlab-soft", "official-g1-hard-ankle-pitch"),
+        default="mjlab-soft",
+    )
     parser.add_argument("--history-action-source", choices=("raw", "effective"), default="raw")
     parser.add_argument("--disable-terminations", action="store_true")
     args = parser.parse_args()
@@ -124,6 +130,7 @@ def main() -> None:
         SoftLimitClampedMjlabG1RobotBackend(
             raw_env,
             action_bridge=effective_action_bridge(action_bridge),
+            clamp_limit_source=args.clamp_limit_source,
             history_action_source=args.history_action_source,
         )
         if args.clamp_targets_to_soft_limits
@@ -292,21 +299,30 @@ class SoftLimitClampedMjlabG1RobotBackend(MjlabG1RobotBackend):
         self,
         *args: Any,
         action_bridge: ScalarActionBridge | None = None,
+        clamp_limit_source: str = "mjlab-soft",
         history_action_source: str = "raw",
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
+        if clamp_limit_source not in ("mjlab-soft", "official-g1-hard-ankle-pitch"):
+            raise ValueError(
+                "clamp_limit_source must be 'mjlab-soft' or "
+                "'official-g1-hard-ankle-pitch'"
+            )
         if history_action_source not in ("raw", "effective"):
             raise ValueError("history_action_source must be 'raw' or 'effective'")
         self.action_bridge = effective_action_bridge(action_bridge)
+        self.clamp_limit_source = clamp_limit_source
         self.history_action_source = history_action_source
         self.last_unclamped_command: G1MotorCommand | None = None
         self.last_target_clip_delta: tuple[float, ...] = (0.0,) * SONIC_ACTION_DIM
+        self.last_target_limits: tuple[tuple[float, ...], ...] | None = None
 
     def reset(self):
         state = super().reset()
         self.last_unclamped_command = None
         self.last_target_clip_delta = (0.0,) * SONIC_ACTION_DIM
+        self.last_target_limits = None
         return state
 
     def write_command(self, command: G1MotorCommand) -> None:
@@ -314,8 +330,12 @@ class SoftLimitClampedMjlabG1RobotBackend(MjlabG1RobotBackend):
         limits = read_sonic_robot_data_matrix(self, "soft_joint_pos_limits", 2)
         if limits is None:
             self.last_target_clip_delta = (0.0,) * SONIC_ACTION_DIM
+            self.last_target_limits = None
             super().write_command(command)
             return
+        if self.clamp_limit_source == "official-g1-hard-ankle-pitch":
+            limits = official_g1_hard_ankle_pitch_limits(self, limits)
+        self.last_target_limits = limits
         clamped_targets = clamp_joint_targets(
             command.motor_position_targets_mujoco,
             limits,
@@ -400,11 +420,7 @@ def trace_row(
         if actuator_force is not None and effort_limits is not None
         else None
     )
-    soft_joint_pos_limits = read_sonic_robot_data_matrix(
-        backend,
-        "soft_joint_pos_limits",
-        2,
-    )
+    soft_joint_pos_limits = trace_target_limits(backend)
     soft_limit_margins = joint_limit_margins(
         actual,
         soft_joint_pos_limits,
@@ -698,6 +714,7 @@ def summarize_alignment_trace(
             "sonic_default_reset": bool(args.sonic_default_reset),
             "sonic_hip_pitch_actuator": bool(args.sonic_hip_pitch_actuator),
             "clamp_targets_to_soft_limits": bool(args.clamp_targets_to_soft_limits),
+            "clamp_limit_source": args.clamp_limit_source,
             "history_action_source": args.history_action_source,
             "mode": int(args.mode),
             "target_vel": float(args.target_vel),
@@ -1020,6 +1037,25 @@ def clamp_joint_targets(
         min(max(float(value), float(limit[0])), float(limit[1]))
         for value, limit in zip(values, limits, strict=True)
     )
+
+
+def trace_target_limits(
+    backend: MjlabG1RobotBackend,
+) -> tuple[tuple[float, ...], ...] | None:
+    limits = getattr(backend, "last_target_limits", None)
+    if limits is not None:
+        return limits
+    return read_sonic_robot_data_matrix(backend, "soft_joint_pos_limits", 2)
+
+
+def official_g1_hard_ankle_pitch_limits(
+    backend: MjlabG1RobotBackend,
+    limits: Sequence[Sequence[float]],
+) -> tuple[tuple[float, ...], ...]:
+    rows = [tuple(float(value) for value in row) for row in limits]
+    for joint_name in ("left_ankle_pitch_joint", "right_ankle_pitch_joint"):
+        rows[backend.sonic_joint_order.index(joint_name)] = OFFICIAL_G1_ANKLE_PITCH_LIMIT
+    return tuple(rows)
 
 
 def mjlab_effort_limits_by_sonic_joint(

@@ -35,6 +35,8 @@ RSL-RL runner or the mjlab task implementation.
 - `012-action-history-and-range-trace.md`
 - `013-official-sonic-contract-audit.md`
 - `014-effective-action-history-probe.md`
+- `015-official-sim2sim-target-contract.md`
+- `016-official-limit-overlay-probe.md`
 
 ## Acceptance
 
@@ -148,6 +150,18 @@ RSL-RL runner or the mjlab task implementation.
   did not materially improve rollout quality: both runs had no done, similar
   pitch, similar height, similar forward velocity, and nearly unchanged joint
   error.
+- 2026-05-17 Started a `diagnose` loop for the remaining ankle target contract
+  mismatch. Added `015` to build an official sim2sim target/action feedback
+  loop and `016` to test whether replacing mjlab ankle-pitch soft limits with
+  official G1 hard limits is enough to explain the clipping.
+- 2026-05-17 `015` direct official sim2sim feedback loop is blocked because no
+  runnable `GR00T-WholeBodyControl` checkout, `run_sim_loop.py`, or
+  `deploy.sh` was found in the searched H200 workspaces. Per task rules, no new
+  upstream repo was downloaded.
+- 2026-05-17 Added and ran `016` trace-only official hard ankle-pitch limit
+  overlay. It reduced max target clipping only from `1.1099` to `1.0712` and
+  slightly worsened tracking, falsifying the hypothesis that mjlab's narrower
+  soft ankle-pitch range is the primary cause.
 
 ## Review
 
@@ -198,6 +212,12 @@ history semantics matter by reducing later target extremes, but it does not
 solve posture or tracking. Production clamping should stay blocked until the
 upstream joint-limit/asset contract is resolved.
 
+The official hard-limit overlay further rules out a small mjlab soft-limit
+width mismatch. Raw targets remain far outside official hard limits in the
+current mjlab closed loop. A true official sim2sim target trace is now the next
+missing feedback loop, but it requires an upstream checkout/environment or
+explicit permission to fetch one.
+
 Verification:
 
 - `PYTHONPATH=src python -m pytest -p no:cacheprovider`
@@ -237,9 +257,12 @@ Verification:
   - effective history: no done, `abs_pitch_p95=0.1216`,
     `root_z_final=0.7435`, `joint_error_rms_mean=0.1492`,
     `target_clip_absmax_max=0.6781`.
+- H200 `seed=123`, 400-step raw-history official ankle hard-limit overlay:
+  no done, `abs_pitch_p95=0.1247`, `root_z_final=0.7438`,
+  `joint_error_rms_mean=0.1517`, `target_clip_absmax_max=1.0712`.
 - `PYTHONPATH=src python -m pytest tests/test_mjlab_sonic_alignment_trace.py
   tests/test_scalar_action_bridge.py tests/test_sonic_controller.py -q`
-  passed: `25 passed` with only the existing local pytest cache permission
+  passed: `26 passed` with only the existing local pytest cache permission
   warning.
 - `python -m ruff check ...` was not run because `ruff` is not installed in the
   local Python environment.

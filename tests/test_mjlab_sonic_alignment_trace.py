@@ -270,6 +270,31 @@ def test_clamped_backend_can_use_effective_action_history() -> None:
     assert backend.read_state().last_action_isaaclab[0] == pytest.approx(0.5)
 
 
+def test_clamped_backend_can_use_official_ankle_pitch_hard_limits() -> None:
+    env = FakeTraceEnv()
+    left_ankle_pitch_index = G1_29DOF_JOINT_ORDER.index("left_ankle_pitch_joint")
+    env.robot.data.soft_joint_pos_limits[0][left_ankle_pitch_index] = [-0.5, 0.5]
+    backend = SoftLimitClampedMjlabG1RobotBackend(
+        env,
+        action_bridge=identity_bridge(),
+        clamp_limit_source="official-g1-hard-ankle-pitch",
+    )
+    raw_action = (0.0,) * 29
+    raw_targets = [0.0] * 29
+    raw_targets[left_ankle_pitch_index] = 1.0
+
+    backend.write_command(
+        G1MotorCommand(
+            raw_action_isaaclab=raw_action,
+            motor_position_targets_mujoco=tuple(raw_targets),
+        )
+    )
+
+    assert backend._last_command.motor_position_targets_mujoco[
+        left_ankle_pitch_index
+    ] == pytest.approx(0.5236)
+
+
 def test_top_joint_fraction_above() -> None:
     scored = top_joint_fraction_above(
         ((0.0, 1.0), (0.5, 0.2)),
