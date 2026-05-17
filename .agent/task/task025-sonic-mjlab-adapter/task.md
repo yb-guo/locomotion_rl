@@ -110,8 +110,14 @@ RSL-RL runner or the mjlab task implementation.
   remain inside limits.
 - 2026-05-17 Added a trace-only `--clamp-targets-to-soft-limits` probe that
   clamps sent mjlab targets while preserving raw SONIC target diagnostics.
-  Local tests pass. H200 execution is not yet verified because syncing the
-  updated local source to `myserver` was blocked by the approval reviewer.
+  Local tests pass. The first remote sync attempt was blocked by the approval
+  reviewer until explicit user approval was provided.
+- 2026-05-17 After explicit user approval, synced the updated trace tool to
+  H200 and ran the clamp probe. The clamped rollout completed 400 steps with no
+  done, zero sent-target soft-limit violations, similar root height/pitch, and
+  modestly lower ankle-pitch RMS error. This shows the target can be made valid
+  without breaking the rollout, but posture is not materially fixed by clamping
+  alone.
 
 ## Review
 
@@ -140,10 +146,9 @@ limits. The next route should compare official SONIC ankle limits with mjlab G1
 limits, then run a trace-only target clamp probe before filling optional encoder
 fields.
 
-The trace-only clamp probe exists locally and is ready for H200, but it has not
-yet answered whether the clamped target rollout runs normally. That requires
-approved remote sync or another approved route for the H200 workspace to get
-the updated PR code.
+The trace-only clamp probe now runs on H200. It confirms target/limit mismatch
+is real and correctable at the sent-target layer, but not sufficient to solve
+the whole gait alignment issue.
 
 Verification:
 
@@ -168,5 +173,10 @@ Verification:
 - Local target-clamp probe tests:
   `PYTHONPATH=src python -m pytest -p no:cacheprovider` passed:
   `323 passed, 17 skipped`.
+- H200 `seed=123`, 400-step target-clamp trace on the current best baseline:
+  no done, sent target soft-limit violation fraction `0.0`, raw target
+  violation fraction still visible (`0.0925` left ankle pitch, `0.0775` right
+  ankle pitch), `abs_pitch_p95=0.1250`, `root_z_final=0.7465`,
+  `joint_error_rms_mean=0.1486`.
 - `python -m ruff check ...` was not run because `ruff` is not installed in the
   local Python environment.

@@ -43,19 +43,88 @@ Expected comparison:
   323 passed, 17 skipped
   ```
 
-- 2026-05-17 H200 execution is not yet verified in this subtask. Attempting to
-  copy the updated trace tool to `myserver` was blocked by the approval
-  reviewer because local source transfer to that remote host was classified as
-  external transfer risk. Do not claim the clamp rollout runs until the user
-  explicitly approves remote sync or the remote workspace obtains this PR
-  through an approved route.
+- 2026-05-17 The user approved remote sync. H200 direct `git clone` of the PR
+  branch failed because GitHub access through `gh-proxy.com` timed out, so the
+  updated trace tool was copied into the existing remote adapter source tree.
+
+- 2026-05-17 H200 clamp probe completed, 400 steps:
+
+  ```text
+  trace:
+    /mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/
+    outputs/task025/alignment_trace_target_clamp_400/target_clamp_400.json
+
+  done_steps []
+  root_z_mean 0.7627
+  root_z_final 0.7465
+  abs_pitch_p95 0.1250
+  joint_error_rms_mean 0.1486
+  root_lin_vel_b_x_mean 0.6916
+  planner_root_vel_x_mean 0.6472
+  target_clip_absmax_max 1.1098
+  target_clip_rms_mean 0.0110
+  ```
+
+- 2026-05-17 Clamp probe limit diagnostics:
+
+  ```text
+  sent target soft-limit violation fraction:
+    all top joints 0.0000
+
+  raw target soft-limit violation fraction:
+    left_ankle_roll_joint   0.2075
+    left_ankle_pitch_joint  0.0925
+    left_knee_joint         0.0775
+    right_ankle_pitch_joint 0.0775
+    right_knee_joint        0.0250
+
+  top target clip absmax:
+    left_ankle_pitch_joint  1.1098 rad
+    right_ankle_pitch_joint 0.5096 rad
+    left_ankle_roll_joint   0.0936 rad
+    left_knee_joint         0.0745 rad
+    right_knee_joint        0.0298 rad
+  ```
+
+- 2026-05-17 Compared with the previous `009` best unclamped 400-step baseline:
+
+  ```text
+  unclamped:
+    done_steps []
+    abs_pitch_p95 0.1225
+    joint_error_rms_mean 0.1527
+    root_z_final 0.7468
+    left_ankle_pitch_rms 0.4374
+    right_ankle_pitch_rms 0.3984
+
+  clamped:
+    done_steps []
+    abs_pitch_p95 0.1250
+    joint_error_rms_mean 0.1486
+    root_z_final 0.7465
+    left_ankle_pitch_rms 0.3763
+    right_ankle_pitch_rms 0.3666
+  ```
 
 ## Review
 
-Local tool behavior is ready for the H200 experiment, but the actual question
-"does the clamped target rollout run normally" is still open.
+The clamped target rollout runs normally under the current 400-step diagnostic
+definition: no termination, similar root height, similar pitch, and zero sent
+target soft-limit violations.
 
-Run this on H200 after remote sync is approved:
+This is not a full fix yet. Clamping removes infeasible sent targets and reduces
+ankle-pitch residual, but it does not materially improve posture:
+
+- `abs_pitch_p95` is effectively unchanged;
+- `root_z_final` is effectively unchanged;
+- ankle-pitch tracking improves, but ankle pitch remains the largest residual.
+
+This supports target/limit alignment as a real issue, not the only remaining
+issue. The next step should compare official SONIC joint ranges against mjlab
+G1 ranges and decide whether the right fix is a limit contract patch, an asset
+limit patch, or retraining/domain adaptation.
+
+Reproduction command:
 
 ```bash
 python -m h200_locomotion_lab.tools.mjlab_sonic_alignment_trace \
