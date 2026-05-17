@@ -125,10 +125,11 @@ def main() -> None:
     )
     probe = TraceProbeState()
     provider = build_online_provider(args, probe)
+    action_bridge = build_action_bridge(args.sonic_action_scale_mult)
     runtime = ScalarG1Runtime(
         backend,
         provider,
-        action_bridge=build_action_bridge(args.sonic_action_scale_mult),
+        action_bridge=action_bridge,
     )
 
     rows: list[dict[str, Any]] = []
@@ -139,7 +140,7 @@ def main() -> None:
             step = runtime.step()
             if backend.last_step_result and backend.last_step_result.done:
                 done_steps.append(step.step_index)
-            rows.append(trace_row(step, backend, provider, probe))
+            rows.append(trace_row(step, backend, provider, probe, action_bridge))
     finally:
         close_env(backend.raw_env)
 
@@ -223,6 +224,10 @@ def build_action_bridge(scale_mult: float) -> ScalarActionBridge | None:
             for scale in bridge.action_scale_command
         ),
     )
+
+
+def effective_action_bridge(action_bridge: ScalarActionBridge | None) -> ScalarActionBridge:
+    return action_bridge if action_bridge is not None else get_default_sonic_g1_action_bridge()
 
 
 def set_fixed_base_reset(cfg: Any) -> None:
@@ -321,10 +326,29 @@ def trace_row(
     backend: MjlabG1RobotBackend,
     provider: SonicPlannerEncoderActionProvider,
     probe: TraceProbeState,
+    action_bridge: ScalarActionBridge | None = None,
 ) -> dict[str, Any]:
     actual = step.next_state.motor_positions_mujoco
     raw_target = step.command.motor_position_targets_mujoco
     target = backend._last_command.motor_position_targets_mujoco
+    bridge = effective_action_bridge(action_bridge)
+    effective_action = bridge.command_targets_to_policy_action(target)
+    raw_action_command_order = tuple(
+        step.raw_action_isaaclab[policy_index]
+        for policy_index in bridge.command_to_policy
+    )
+    effective_action_command_order = tuple(
+        effective_action[policy_index]
+        for policy_index in bridge.command_to_policy
+    )
+    effective_action_delta_command_order = tuple(
+        effective - raw
+        for effective, raw in zip(
+            effective_action_command_order,
+            raw_action_command_order,
+            strict=True,
+        )
+    )
     target_clip_delta = getattr(
         backend,
         "last_target_clip_delta",
@@ -356,17 +380,22 @@ def trace_row(
         if actuator_force is not None and effort_limits is not None
         else None
     )
+    soft_joint_pos_limits = read_sonic_robot_data_matrix(
+        backend,
+        "soft_joint_pos_limits",
+        2,
+    )
     soft_limit_margins = joint_limit_margins(
         actual,
-        read_sonic_robot_data_matrix(backend, "soft_joint_pos_limits", 2),
+        soft_joint_pos_limits,
     )
     raw_target_soft_limit_margins = joint_limit_margins(
         raw_target,
-        read_sonic_robot_data_matrix(backend, "soft_joint_pos_limits", 2),
+        soft_joint_pos_limits,
     )
     target_soft_limit_margins = joint_limit_margins(
         target,
-        read_sonic_robot_data_matrix(backend, "soft_joint_pos_limits", 2),
+        soft_joint_pos_limits,
     )
     foot_contact = read_foot_contact(backend.raw_env)
     return {
@@ -410,6 +439,11 @@ def trace_row(
         "target_clip_delta": list(target_clip_delta),
         "target_clip_rms": rms(target_clip_delta),
         "target_clip_absmax": max_abs(target_clip_delta),
+        "soft_joint_pos_limits": (
+            [list(limit) for limit in soft_joint_pos_limits]
+            if soft_joint_pos_limits is not None
+            else None
+        ),
         "foot_contact_found": (
             list(foot_contact["found"]) if foot_contact is not None else None
         ),
@@ -422,6 +456,12 @@ def trace_row(
         "joint_error_rms": rms(joint_error),
         "joint_error_absmax": max_abs(joint_error),
         "joint_error": list(joint_error),
+        "raw_action": list(step.raw_action_isaaclab),
+        "effective_action": list(effective_action),
+        "raw_action_command_order": list(raw_action_command_order),
+        "effective_action_command_order": list(effective_action_command_order),
+        "effective_action_delta_command_order": list(effective_action_delta_command_order),
+        "effective_action_delta_absmax": max_abs(effective_action_delta_command_order),
         "raw_action_min": min(step.raw_action_isaaclab),
         "raw_action_max": max(step.raw_action_isaaclab),
         "raw_action_absmax": max_abs(step.raw_action_isaaclab),
@@ -429,6 +469,8 @@ def trace_row(
         "mjlab_action_min": min(mjlab_action),
         "mjlab_action_max": max(mjlab_action),
         "mjlab_action_absmax": max_abs(mjlab_action),
+        "raw_target": list(raw_target),
+        "target": list(target),
         "target_min": min(target),
         "target_max": max(target),
         "actual_min": min(actual),
@@ -501,6 +543,45 @@ def summarize_alignment_trace(
     if target_clip_rows:
         summary["top_joint_target_clip_absmax"] = top_joint_abs_max(
             target_clip_rows,
+            joint_names,
+        )
+    raw_action_command_rows = rows_with_vector(rows, "raw_action_command_order")
+    effective_action_command_rows = rows_with_vector(
+        rows,
+        "effective_action_command_order",
+    )
+    effective_action_delta_rows = rows_with_vector(
+        rows,
+        "effective_action_delta_command_order",
+    )
+    effective_action_delta_absmax = [
+        float(row.get("effective_action_delta_absmax", 0.0))
+        for row in rows
+    ]
+    summary["effective_action_delta_absmax_max"] = max(effective_action_delta_absmax)
+    if raw_action_command_rows:
+        summary["top_joint_raw_action_absmax"] = top_joint_abs_max(
+            raw_action_command_rows,
+            joint_names,
+        )
+    if effective_action_command_rows:
+        summary["top_joint_effective_action_absmax"] = top_joint_abs_max(
+            effective_action_command_rows,
+            joint_names,
+        )
+    if effective_action_delta_rows:
+        summary["top_joint_effective_action_delta_absmax"] = top_joint_abs_max(
+            effective_action_delta_rows,
+            joint_names,
+        )
+    raw_target_rows = rows_with_vector(rows, "raw_target")
+    target_rows = rows_with_vector(rows, "target")
+    soft_limits = first_matrix(rows, "soft_joint_pos_limits")
+    if raw_target_rows and target_rows and soft_limits is not None:
+        summary["top_joint_target_range_vs_soft_limits"] = target_range_vs_limits(
+            raw_target_rows,
+            target_rows,
+            soft_limits,
             joint_names,
         )
     if force_rows:
@@ -746,6 +827,65 @@ def column_maxes(rows: Sequence[Sequence[float]]) -> list[float]:
         max(float(row[index]) for row in rows)
         for index in range(len(rows[0]))
     ]
+
+
+def first_matrix(
+    rows: Sequence[dict[str, Any]],
+    field: str,
+) -> tuple[tuple[float, ...], ...] | None:
+    for row in rows:
+        matrix = row.get(field)
+        if matrix is not None:
+            return tuple(tuple(float(value) for value in inner) for inner in matrix)
+    return None
+
+
+def target_range_vs_limits(
+    raw_target_rows: Sequence[Sequence[float]],
+    target_rows: Sequence[Sequence[float]],
+    soft_limits: Sequence[Sequence[float]],
+    joint_names: Sequence[str],
+    *,
+    count: int = 10,
+) -> list[dict[str, float | str]]:
+    scored: list[dict[str, float | str]] = []
+    for index, joint_name in enumerate(joint_names):
+        raw_values = [float(row[index]) for row in raw_target_rows]
+        target_values = [float(row[index]) for row in target_rows]
+        soft_low = float(soft_limits[index][0])
+        soft_high = float(soft_limits[index][1])
+        raw_min = min(raw_values)
+        raw_max = max(raw_values)
+        target_min = min(target_values)
+        target_max = max(target_values)
+        raw_low_violation = max(0.0, soft_low - raw_min)
+        raw_high_violation = max(0.0, raw_max - soft_high)
+        target_low_violation = max(0.0, soft_low - target_min)
+        target_high_violation = max(0.0, target_max - soft_high)
+        scored.append(
+            {
+                "joint": joint_name,
+                "soft_low": soft_low,
+                "soft_high": soft_high,
+                "raw_target_min": raw_min,
+                "raw_target_max": raw_max,
+                "target_min": target_min,
+                "target_max": target_max,
+                "raw_violation_absmax": max(
+                    raw_low_violation,
+                    raw_high_violation,
+                ),
+                "target_violation_absmax": max(
+                    target_low_violation,
+                    target_high_violation,
+                ),
+            }
+        )
+    return sorted(
+        scored,
+        key=lambda row: float(row["raw_violation_absmax"]),
+        reverse=True,
+    )[:count]
 
 
 def zero_fields(field_values: dict[str, float], *, eps: float = 1.0e-9) -> list[str]:

@@ -32,6 +32,7 @@ RSL-RL runner or the mjlab task implementation.
 - `009-ankle-pitch-residual.md`
 - `010-target-clamp-probe.md`
 - `011-remaining-alignment-diagnosis.md`
+- `012-action-history-and-range-trace.md`
 
 ## Acceptance
 
@@ -123,6 +124,11 @@ RSL-RL runner or the mjlab task implementation.
   Remaining issues are upstream raw target range, production action-history
   semantics if clamping becomes real, unvalidated actuator-force utilization,
   and posture/style mismatch that is not solved by target validity alone.
+- 2026-05-17 Added raw/effective action and target-range tracing. H200 detailed
+  clamp trace shows left ankle pitch raw target range `[-0.8083, 1.5653]`
+  against mjlab soft range `[-0.8029, 0.4538]`; target clamp changes effective
+  left ankle pitch action by up to `2.5344`, too large to treat as a small
+  safety correction.
 
 ## Review
 
@@ -160,6 +166,11 @@ next route should validate the upstream contract: official SONIC joint ranges,
 effective action history semantics, and whether mjlab exposes a trustworthy
 clipped actuator force signal.
 
+The detailed action/range trace narrows the next decision: either mirror an
+official SONIC deploy-side clip including effective action history, or treat the
+mjlab ankle soft limits as an asset mismatch and test a trace-only limit widening
+patch.
+
 Verification:
 
 - `PYTHONPATH=src python -m pytest -p no:cacheprovider`
@@ -188,5 +199,9 @@ Verification:
   violation fraction still visible (`0.0925` left ankle pitch, `0.0775` right
   ankle pitch), `abs_pitch_p95=0.1250`, `root_z_final=0.7465`,
   `joint_error_rms_mean=0.1486`.
+- H200 `seed=123`, 400-step detailed target-clamp trace:
+  no done, `abs_pitch_p95=0.1241`, `root_z_final=0.7441`,
+  `joint_error_rms_mean=0.1500`, left ankle pitch raw target exceeds soft high
+  by `1.1116 rad`, and effective action delta reaches `2.5344`.
 - `python -m ruff check ...` was not run because `ruff` is not installed in the
   local Python environment.

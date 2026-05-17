@@ -45,6 +45,10 @@ def test_summarize_alignment_trace_reports_joint_error_ranking() -> None:
             "raw_action_absmax": 0.3,
             "mjlab_action_absmax": 0.4,
             "joint_error": [0.0, 0.2, 0.4],
+            "raw_action_command_order": [0.0, 1.0, -2.0],
+            "effective_action_command_order": [0.0, 0.5, -1.0],
+            "effective_action_delta_command_order": [0.0, -0.5, 1.0],
+            "effective_action_delta_absmax": 1.0,
             "encoder_field_norms": {"filled": 1.0, "zero": 0.0},
             "planner_root_z": 0.78,
             "planner_root_vel_xyz": [0.5, 0.0, 0.0],
@@ -57,6 +61,9 @@ def test_summarize_alignment_trace_reports_joint_error_ranking() -> None:
             "target_clip_delta": [0.0, 0.1, 0.3],
             "target_clip_rms": math.sqrt((0.0 + 0.01 + 0.09) / 3.0),
             "target_clip_absmax": 0.3,
+            "raw_target": [0.0, 0.9, 1.4],
+            "target": [0.0, 0.9, 1.0],
+            "soft_joint_pos_limits": [[-1.0, 1.0], [0.0, 1.0], [-1.0, 1.0]],
             "foot_contact_force_norm": [10.0, 20.0],
         },
         {
@@ -68,6 +75,10 @@ def test_summarize_alignment_trace_reports_joint_error_ranking() -> None:
             "raw_action_absmax": 0.5,
             "mjlab_action_absmax": 0.6,
             "joint_error": [0.0, 0.1, 0.8],
+            "raw_action_command_order": [0.0, 0.5, -3.0],
+            "effective_action_command_order": [0.0, 0.5, -1.0],
+            "effective_action_delta_command_order": [0.0, 0.0, 2.0],
+            "effective_action_delta_absmax": 2.0,
             "encoder_field_norms": {"filled": 2.0, "zero": 0.0},
             "planner_root_z": 0.76,
             "planner_root_vel_xyz": [0.7, 0.0, 0.0],
@@ -80,6 +91,9 @@ def test_summarize_alignment_trace_reports_joint_error_ranking() -> None:
             "target_clip_delta": [0.0, 0.0, 0.4],
             "target_clip_rms": math.sqrt(0.16 / 3.0),
             "target_clip_absmax": 0.4,
+            "raw_target": [0.0, 0.8, 1.5],
+            "target": [0.0, 0.8, 1.0],
+            "soft_joint_pos_limits": [[-1.0, 1.0], [0.0, 1.0], [-1.0, 1.0]],
             "foot_contact_force_norm": [30.0, 40.0],
         },
     ]
@@ -113,6 +127,22 @@ def test_summarize_alignment_trace_reports_joint_error_ranking() -> None:
     }
     assert summary["target_clip_absmax_max"] == pytest.approx(0.4)
     assert summary["top_joint_target_clip_absmax"][0] == {"joint": "c", "value": 0.4}
+    assert summary["effective_action_delta_absmax_max"] == pytest.approx(2.0)
+    assert summary["top_joint_effective_action_delta_absmax"][0] == {
+        "joint": "c",
+        "value": 2.0,
+    }
+    assert summary["top_joint_target_range_vs_soft_limits"][0] == {
+        "joint": "c",
+        "soft_low": -1.0,
+        "soft_high": 1.0,
+        "raw_target_min": 1.4,
+        "raw_target_max": 1.5,
+        "target_min": 1.0,
+        "target_max": 1.0,
+        "raw_violation_absmax": 0.5,
+        "target_violation_absmax": 0.0,
+    }
     assert summary["top_joint_actual_soft_limit_violation_fraction"][0] == {
         "joint": "a",
         "value": 0.0,

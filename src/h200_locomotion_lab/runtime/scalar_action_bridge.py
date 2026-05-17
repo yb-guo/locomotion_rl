@@ -51,3 +51,28 @@ class ScalarActionBridge:
                 strict=True,
             )
         )
+
+    def command_targets_to_policy_action(
+        self,
+        targets_command: Sequence[float],
+    ) -> tuple[float, ...]:
+        """Invert command-order targets back to raw policy-action order."""
+
+        if len(targets_command) != self.action_dim:
+            raise ValueError(
+                f"Expected command target length {self.action_dim}, got {len(targets_command)}"
+            )
+
+        targets = tuple(float(value) for value in targets_command)
+        if not all(isfinite(value) for value in targets):
+            raise ValueError("command targets must contain only finite values")
+
+        action_policy = [0.0] * self.action_dim
+        for command_index, policy_index in enumerate(self.command_to_policy):
+            scale = self.action_scale_command[command_index]
+            if abs(scale) <= 1.0e-12:
+                raise ValueError(f"action scale is zero for command index {command_index}")
+            action_policy[policy_index] = (
+                targets[command_index] - self.default_angles_command[command_index]
+            ) / scale
+        return tuple(action_policy)

@@ -43,9 +43,23 @@ def test_scalar_bridge_uses_profile_mapping_defaults_and_scales(
         )
 
 
+def test_scalar_bridge_inverts_command_targets_to_policy_action(
+    scalar_bridge: ScalarActionBridge,
+) -> None:
+    raw_action = tuple(math.sin(index * 0.17) for index in range(29))
+    targets = scalar_bridge.policy_action_to_command_targets(raw_action)
+
+    assert scalar_bridge.command_targets_to_policy_action(targets) == pytest.approx(
+        raw_action
+    )
+
+
 def test_scalar_bridge_rejects_wrong_action_length(scalar_bridge: ScalarActionBridge) -> None:
     with pytest.raises(ValueError, match="Expected raw action length 29, got 28"):
         scalar_bridge.policy_action_to_command_targets([0.0] * 28)
+
+    with pytest.raises(ValueError, match="Expected command target length 29, got 28"):
+        scalar_bridge.command_targets_to_policy_action([0.0] * 28)
 
 
 @pytest.mark.parametrize("bad_value", [math.nan, math.inf, -math.inf])
@@ -58,6 +72,12 @@ def test_scalar_bridge_rejects_non_finite_actions(
 
     with pytest.raises(ValueError, match="raw action must contain only finite values"):
         scalar_bridge.policy_action_to_command_targets(raw_action)
+
+    targets = [0.0] * 29
+    targets[3] = bad_value
+
+    with pytest.raises(ValueError, match="command targets must contain only finite values"):
+        scalar_bridge.command_targets_to_policy_action(targets)
 
 
 def test_scalar_bridge_does_not_clip_raw_actions(scalar_bridge: ScalarActionBridge) -> None:
