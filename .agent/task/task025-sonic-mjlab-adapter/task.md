@@ -30,6 +30,7 @@ RSL-RL runner or the mjlab task implementation.
 - `007-alignment-diagnosis.md`
 - `008-command-and-actuator-alignment.md`
 - `009-ankle-pitch-residual.md`
+- `010-target-clamp-probe.md`
 
 ## Acceptance
 
@@ -107,6 +108,10 @@ RSL-RL runner or the mjlab task implementation.
   mjlab soft limits. During target violations, left/right ankle-pitch RMS error
   rises to about `1.15` / `0.95` rad versus `0.28` / `0.32` rad when targets
   remain inside limits.
+- 2026-05-17 Added a trace-only `--clamp-targets-to-soft-limits` probe that
+  clamps sent mjlab targets while preserving raw SONIC target diagnostics.
+  Local tests pass. H200 execution is not yet verified because syncing the
+  updated local source to `myserver` was blocked by the approval reviewer.
 
 ## Review
 
@@ -135,6 +140,11 @@ limits. The next route should compare official SONIC ankle limits with mjlab G1
 limits, then run a trace-only target clamp probe before filling optional encoder
 fields.
 
+The trace-only clamp probe exists locally and is ready for H200, but it has not
+yet answered whether the clamped target rollout runs normally. That requires
+approved remote sync or another approved route for the H200 workspace to get
+the updated PR code.
+
 Verification:
 
 - `PYTHONPATH=src python -m pytest -p no:cacheprovider`
@@ -155,5 +165,8 @@ Verification:
   soft-limit violation fraction was `0.0` for all joints; target soft-limit
   violation fraction was `0.0925` for left ankle pitch and `0.0700` for right
   ankle pitch.
+- Local target-clamp probe tests:
+  `PYTHONPATH=src python -m pytest -p no:cacheprovider` passed:
+  `323 passed, 17 skipped`.
 - `python -m ruff check ...` was not run because `ruff` is not installed in the
   local Python environment.

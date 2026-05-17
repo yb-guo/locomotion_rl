@@ -5,6 +5,7 @@ import math
 import pytest
 
 from h200_locomotion_lab.tools.mjlab_sonic_alignment_trace import (
+    clamp_joint_targets,
     joint_limit_margins,
     planner_root_velocity,
     percentile,
@@ -52,6 +53,10 @@ def test_summarize_alignment_trace_reports_joint_error_ranking() -> None:
             "actuator_force_utilization": [0.0, 0.5, 1.0],
             "actual_soft_limit_margin": [0.3, 0.2, 0.1],
             "target_soft_limit_margin": [0.2, 0.1, -0.1],
+            "raw_target_soft_limit_margin": [0.2, -0.1, -0.3],
+            "target_clip_delta": [0.0, 0.1, 0.3],
+            "target_clip_rms": math.sqrt((0.0 + 0.01 + 0.09) / 3.0),
+            "target_clip_absmax": 0.3,
             "foot_contact_force_norm": [10.0, 20.0],
         },
         {
@@ -71,6 +76,10 @@ def test_summarize_alignment_trace_reports_joint_error_ranking() -> None:
             "actuator_force_utilization": [0.0, 0.25, 2.0],
             "actual_soft_limit_margin": [0.4, 0.1, 0.0],
             "target_soft_limit_margin": [0.3, 0.2, -0.2],
+            "raw_target_soft_limit_margin": [0.3, 0.2, -0.4],
+            "target_clip_delta": [0.0, 0.0, 0.4],
+            "target_clip_rms": math.sqrt(0.16 / 3.0),
+            "target_clip_absmax": 0.4,
             "foot_contact_force_norm": [30.0, 40.0],
         },
     ]
@@ -98,6 +107,12 @@ def test_summarize_alignment_trace_reports_joint_error_ranking() -> None:
         "joint": "c",
         "value": 1.0,
     }
+    assert summary["top_joint_raw_target_soft_limit_violation_fraction"][0] == {
+        "joint": "c",
+        "value": 1.0,
+    }
+    assert summary["target_clip_absmax_max"] == pytest.approx(0.4)
+    assert summary["top_joint_target_clip_absmax"][0] == {"joint": "c", "value": 0.4}
     assert summary["top_joint_actual_soft_limit_violation_fraction"][0] == {
         "joint": "a",
         "value": 0.0,
@@ -121,6 +136,13 @@ def test_joint_limit_margins() -> None:
     assert joint_limit_margins((0.0, 0.8), ((-1.0, 1.0), (0.0, 1.0))) == pytest.approx(
         (1.0, 0.2)
     )
+
+
+def test_clamp_joint_targets() -> None:
+    assert clamp_joint_targets(
+        (-2.0, 0.5, 2.0),
+        ((-1.0, 1.0), (0.0, 1.0), (-1.0, 1.0)),
+    ) == pytest.approx((-1.0, 0.5, 1.0))
 
 
 def test_top_joint_fraction_above() -> None:

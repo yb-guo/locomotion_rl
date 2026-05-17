@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from h200_locomotion_lab.envs.mjlab_backend import MjlabG1RobotBackend
+from h200_locomotion_lab.envs.robot_backend import G1MotorCommand
 from h200_locomotion_lab.runtime import ScalarActionBridge
 from h200_locomotion_lab.runtime.scalar_g1_runtime import ScalarG1Runtime
 from h200_locomotion_lab.sonic.controller import SonicPlannerEncoderActionProvider
@@ -106,6 +107,7 @@ def main() -> None:
     parser.add_argument("--disable-startup-randomization", action="store_true")
     parser.add_argument("--sonic-default-reset", action="store_true")
     parser.add_argument("--sonic-hip-pitch-actuator", action="store_true")
+    parser.add_argument("--clamp-targets-to-soft-limits", action="store_true")
     parser.add_argument("--disable-terminations", action="store_true")
     args = parser.parse_args()
 
@@ -116,7 +118,11 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     raw_env = build_mjlab_env(args)
-    backend = MjlabG1RobotBackend(raw_env)
+    backend: MjlabG1RobotBackend = (
+        SoftLimitClampedMjlabG1RobotBackend(raw_env)
+        if args.clamp_targets_to_soft_limits
+        else MjlabG1RobotBackend(raw_env)
+    )
     probe = TraceProbeState()
     provider = build_online_provider(args, probe)
     runtime = ScalarG1Runtime(
@@ -269,6 +275,47 @@ def set_sonic_hip_pitch_actuator(cfg: Any) -> None:
     articulation.actuators = tuple(actuators)
 
 
+class SoftLimitClampedMjlabG1RobotBackend(MjlabG1RobotBackend):
+    """Trace-only backend that clamps motor position targets to mjlab soft limits."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.last_unclamped_command: G1MotorCommand | None = None
+        self.last_target_clip_delta: tuple[float, ...] = (0.0,) * SONIC_ACTION_DIM
+
+    def reset(self):
+        state = super().reset()
+        self.last_unclamped_command = None
+        self.last_target_clip_delta = (0.0,) * SONIC_ACTION_DIM
+        return state
+
+    def write_command(self, command: G1MotorCommand) -> None:
+        self.last_unclamped_command = command
+        limits = read_sonic_robot_data_matrix(self, "soft_joint_pos_limits", 2)
+        if limits is None:
+            self.last_target_clip_delta = (0.0,) * SONIC_ACTION_DIM
+            super().write_command(command)
+            return
+        clamped_targets = clamp_joint_targets(
+            command.motor_position_targets_mujoco,
+            limits,
+        )
+        self.last_target_clip_delta = tuple(
+            clamped - raw
+            for clamped, raw in zip(
+                clamped_targets,
+                command.motor_position_targets_mujoco,
+                strict=True,
+            )
+        )
+        super().write_command(
+            G1MotorCommand(
+                raw_action_isaaclab=command.raw_action_isaaclab,
+                motor_position_targets_mujoco=clamped_targets,
+            )
+        )
+
+
 def trace_row(
     step: Any,
     backend: MjlabG1RobotBackend,
@@ -276,7 +323,13 @@ def trace_row(
     probe: TraceProbeState,
 ) -> dict[str, Any]:
     actual = step.next_state.motor_positions_mujoco
-    target = step.command.motor_position_targets_mujoco
+    raw_target = step.command.motor_position_targets_mujoco
+    target = backend._last_command.motor_position_targets_mujoco
+    target_clip_delta = getattr(
+        backend,
+        "last_target_clip_delta",
+        (0.0,) * SONIC_ACTION_DIM,
+    )
     joint_error = tuple(actual_value - target_value for actual_value, target_value in zip(actual, target))
     mjlab_action = backend.motor_targets_to_mjlab_action(target)
     roll, pitch, yaw = quat_to_rpy(step.next_state.base_quat)
@@ -305,6 +358,10 @@ def trace_row(
     )
     soft_limit_margins = joint_limit_margins(
         actual,
+        read_sonic_robot_data_matrix(backend, "soft_joint_pos_limits", 2),
+    )
+    raw_target_soft_limit_margins = joint_limit_margins(
+        raw_target,
         read_sonic_robot_data_matrix(backend, "soft_joint_pos_limits", 2),
     )
     target_soft_limit_margins = joint_limit_margins(
@@ -345,6 +402,14 @@ def trace_row(
         "target_soft_limit_margin": (
             list(target_soft_limit_margins) if target_soft_limit_margins is not None else None
         ),
+        "raw_target_soft_limit_margin": (
+            list(raw_target_soft_limit_margins)
+            if raw_target_soft_limit_margins is not None
+            else None
+        ),
+        "target_clip_delta": list(target_clip_delta),
+        "target_clip_rms": rms(target_clip_delta),
+        "target_clip_absmax": max_abs(target_clip_delta),
         "foot_contact_found": (
             list(foot_contact["found"]) if foot_contact is not None else None
         ),
@@ -426,7 +491,18 @@ def summarize_alignment_trace(
     force_util_rows = rows_with_vector(rows, "actuator_force_utilization")
     actual_margin_rows = rows_with_vector(rows, "actual_soft_limit_margin")
     target_margin_rows = rows_with_vector(rows, "target_soft_limit_margin")
+    raw_target_margin_rows = rows_with_vector(rows, "raw_target_soft_limit_margin")
     foot_force_rows = rows_with_vector(rows, "foot_contact_force_norm")
+    target_clip_rms = [float(row.get("target_clip_rms", 0.0)) for row in rows]
+    target_clip_absmax = [float(row.get("target_clip_absmax", 0.0)) for row in rows]
+    summary["target_clip_rms_mean"] = mean(target_clip_rms)
+    summary["target_clip_absmax_max"] = max(target_clip_absmax)
+    target_clip_rows = rows_with_vector(rows, "target_clip_delta")
+    if target_clip_rows:
+        summary["top_joint_target_clip_absmax"] = top_joint_abs_max(
+            target_clip_rows,
+            joint_names,
+        )
     if force_rows:
         summary["top_joint_actuator_force_abs_mean"] = top_joint_abs_mean(
             force_rows,
@@ -474,6 +550,18 @@ def summarize_alignment_trace(
                 threshold=0.0,
             )
         )
+    if raw_target_margin_rows:
+        summary["top_joint_raw_target_soft_limit_margin_min"] = top_joint_min_value(
+            raw_target_margin_rows,
+            joint_names,
+        )
+        summary["top_joint_raw_target_soft_limit_violation_fraction"] = (
+            top_joint_fraction_below(
+                raw_target_margin_rows,
+                joint_names,
+                threshold=0.0,
+            )
+        )
     if foot_force_rows:
         summary["foot_contact_force_norm_mean"] = column_means(foot_force_rows)
         summary["foot_contact_force_norm_max"] = column_maxes(foot_force_rows)
@@ -508,6 +596,7 @@ def summarize_alignment_trace(
             "disable_startup_randomization": bool(args.disable_startup_randomization),
             "sonic_default_reset": bool(args.sonic_default_reset),
             "sonic_hip_pitch_actuator": bool(args.sonic_hip_pitch_actuator),
+            "clamp_targets_to_soft_limits": bool(args.clamp_targets_to_soft_limits),
             "mode": int(args.mode),
             "target_vel": float(args.target_vel),
             "height": float(args.height),
@@ -758,6 +847,16 @@ def joint_limit_margins(
         return None
     return tuple(
         min(float(value) - float(limit[0]), float(limit[1]) - float(value))
+        for value, limit in zip(values, limits, strict=True)
+    )
+
+
+def clamp_joint_targets(
+    values: Sequence[float],
+    limits: Sequence[Sequence[float]],
+) -> tuple[float, ...]:
+    return tuple(
+        min(max(float(value), float(limit[0])), float(limit[1]))
         for value, limit in zip(values, limits, strict=True)
     )
 
