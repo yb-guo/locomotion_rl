@@ -31,6 +31,7 @@ RSL-RL runner or the mjlab task implementation.
 - `008-command-and-actuator-alignment.md`
 - `009-ankle-pitch-residual.md`
 - `010-target-clamp-probe.md`
+- `011-remaining-alignment-diagnosis.md`
 
 ## Acceptance
 
@@ -118,6 +119,10 @@ RSL-RL runner or the mjlab task implementation.
   modestly lower ankle-pitch RMS error. This shows the target can be made valid
   without breaking the rollout, but posture is not materially fixed by clamping
   alone.
+- 2026-05-17 Ran offline diagnosis on the unclamped/clamped H200 trace pair.
+  Remaining issues are upstream raw target range, production action-history
+  semantics if clamping becomes real, unvalidated actuator-force utilization,
+  and posture/style mismatch that is not solved by target validity alone.
 
 ## Review
 
@@ -149,6 +154,11 @@ fields.
 The trace-only clamp probe now runs on H200. It confirms target/limit mismatch
 is real and correctable at the sent-target layer, but not sufficient to solve
 the whole gait alignment issue.
+
+Further diagnosis after clamping found no single larger downstream bug. The
+next route should validate the upstream contract: official SONIC joint ranges,
+effective action history semantics, and whether mjlab exposes a trustworthy
+clipped actuator force signal.
 
 Verification:
 
