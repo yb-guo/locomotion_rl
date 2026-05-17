@@ -62,13 +62,17 @@ Ranked hypotheses before probing:
   ```
 
   Per task rule, I did not download a new upstream repo.
+- 2026-05-17 User gave explicit install permission. See `017` for the official
+  source/environment bootstrap. The official Python MuJoCo sim entry point is
+  now importable on H200, but the official C++ deploy loop is still blocked by
+  missing TensorRT.
 
 ## Review
 
-Result: blocked for direct official sim2sim execution until an upstream checkout
-and sim/deploy environment are provided or explicit permission is given to fetch
-them.
+Result: unblocked for Python-side official sim-loop probing, still blocked for
+the official C++ deploy loop.
 
 The static source audit from `013` still stands, but it is not a runtime
-feedback loop. Continue with `016`, which can test the falsifiable
-soft-vs-hard-limit hypothesis inside the existing mjlab H200 loop.
+feedback loop. Continue with a minimal official sim-loop probe that records the
+same target/action contract fields. If the exact C++ deploy loop is required,
+installing TensorRT must happen first.

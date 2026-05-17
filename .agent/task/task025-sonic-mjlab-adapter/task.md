@@ -37,6 +37,7 @@ RSL-RL runner or the mjlab task implementation.
 - `014-effective-action-history-probe.md`
 - `015-official-sim2sim-target-contract.md`
 - `016-official-limit-overlay-probe.md`
+- `017-official-install-bootstrap.md`
 
 ## Acceptance
 
@@ -162,6 +163,13 @@ RSL-RL runner or the mjlab task implementation.
   overlay. It reduced max target clipping only from `1.1099` to `1.0712` and
   slightly worsened tracking, falsifying the hypothesis that mjlab's narrower
   soft ankle-pitch range is the primary cause.
+- 2026-05-17 After explicit install permission, staged official
+  `NVlabs/GR00T-WholeBodyControl` source on H200 at commit `0a87181` under
+  `/mnt/workspace/users/guoyubo/agent_workspace/official/GR00T-WholeBodyControl`.
+  The official deploy layout now symlinks to the existing task025 SONIC ONNX
+  artifacts, and a pragmatic `.venv_sim` can import the official MuJoCo sim
+  stack and show `gear_sonic/scripts/run_sim_loop.py --help`. The official C++
+  deploy build remains blocked by missing TensorRT headers/libraries.
 
 ## Review
 
@@ -218,6 +226,10 @@ current mjlab closed loop. A true official sim2sim target trace is now the next
 missing feedback loop, but it requires an upstream checkout/environment or
 explicit permission to fetch one.
 
+The official source checkout/environment is now partially staged after explicit
+install permission. Python MuJoCo sim entry is importable; C++ deploy is not
+buildable yet because TensorRT is absent on H200.
+
 Verification:
 
 - `PYTHONPATH=src python -m pytest -p no:cacheprovider`
@@ -260,6 +272,12 @@ Verification:
 - H200 `seed=123`, 400-step raw-history official ankle hard-limit overlay:
   no done, `abs_pitch_p95=0.1247`, `root_z_final=0.7438`,
   `joint_error_rms_mean=0.1517`, `target_clip_absmax_max=1.0712`.
+- H200 official install bootstrap:
+  `gear_sonic/scripts/run_sim_loop.py --help` passed inside
+  `/mnt/workspace/users/guoyubo/agent_workspace/official/
+  GR00T-WholeBodyControl/.venv_sim`; C++ deploy `cmake` configure failed at
+  `FindTensorRT.cmake` because `NvInferVersion.h` / `libnvinfer.so*` were not
+  present.
 - `PYTHONPATH=src python -m pytest tests/test_mjlab_sonic_alignment_trace.py
   tests/test_scalar_action_bridge.py tests/test_sonic_controller.py -q`
   passed: `26 passed` with only the existing local pytest cache permission
