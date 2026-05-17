@@ -5,6 +5,7 @@ import math
 import pytest
 
 from h200_locomotion_lab.tools.mjlab_sonic_alignment_trace import (
+    SoftLimitClampedMjlabG1RobotBackend,
     clamp_joint_targets,
     joint_limit_margins,
     planner_root_velocity,
@@ -15,6 +16,58 @@ from h200_locomotion_lab.tools.mjlab_sonic_alignment_trace import (
     top_joint_fraction_below,
     zero_fields,
 )
+from h200_locomotion_lab.envs.genesis_adapter import G1_29DOF_JOINT_ORDER
+from h200_locomotion_lab.envs.robot_backend import G1MotorCommand
+from h200_locomotion_lab.runtime import ScalarActionBridge
+
+
+class FakeTraceData:
+    def __init__(self) -> None:
+        self.root_link_pos_w = [[0.0, 0.0, 0.8]]
+        self.root_link_quat_w = [[1.0, 0.0, 0.0, 0.0]]
+        self.root_link_ang_vel_b = [[0.0, 0.0, 0.0]]
+        self.joint_pos = [[0.0] * 29]
+        self.joint_vel = [[0.0] * 29]
+        self.soft_joint_pos_limits = [[[-1.0, 1.0] for _ in range(29)]]
+
+
+class FakeTraceRobot:
+    def __init__(self) -> None:
+        self.joint_names = G1_29DOF_JOINT_ORDER
+        self.data = FakeTraceData()
+
+
+class FakeTraceActionTerm:
+    def __init__(self) -> None:
+        self.target_names = list(G1_29DOF_JOINT_ORDER)
+        self.scale = [[1.0] * 29]
+        self.offset = [[0.0] * 29]
+        self.raw_action = None
+
+
+class FakeTraceActionManager:
+    def __init__(self) -> None:
+        self.action_term = FakeTraceActionTerm()
+
+    def get_term(self, name: str) -> FakeTraceActionTerm:
+        assert name == "joint_pos"
+        return self.action_term
+
+
+class FakeTraceEnv:
+    def __init__(self) -> None:
+        self.robot = FakeTraceRobot()
+        self.scene = {"robot": self.robot}
+        self.action_manager = FakeTraceActionManager()
+
+
+def identity_bridge() -> ScalarActionBridge:
+    return ScalarActionBridge(
+        action_dim=29,
+        command_to_policy=tuple(range(29)),
+        default_angles_command=(0.0,) * 29,
+        action_scale_command=(1.0,) * 29,
+    )
 
 
 def test_quat_to_rpy_identity() -> None:
@@ -173,6 +226,48 @@ def test_clamp_joint_targets() -> None:
         (-2.0, 0.5, 2.0),
         ((-1.0, 1.0), (0.0, 1.0), (-1.0, 1.0)),
     ) == pytest.approx((-1.0, 0.5, 1.0))
+
+
+def test_clamped_backend_preserves_raw_action_history_by_default() -> None:
+    env = FakeTraceEnv()
+    env.robot.data.soft_joint_pos_limits[0][0] = [-0.5, 0.5]
+    backend = SoftLimitClampedMjlabG1RobotBackend(env, action_bridge=identity_bridge())
+    raw_action = (2.0,) + (0.0,) * 28
+    raw_targets = (2.0,) + (0.0,) * 28
+
+    backend.write_command(
+        G1MotorCommand(
+            raw_action_isaaclab=raw_action,
+            motor_position_targets_mujoco=raw_targets,
+        )
+    )
+
+    assert backend._last_command.raw_action_isaaclab[0] == pytest.approx(2.0)
+    assert backend._last_command.motor_position_targets_mujoco[0] == pytest.approx(0.5)
+    assert backend.read_state().last_action_isaaclab[0] == pytest.approx(2.0)
+
+
+def test_clamped_backend_can_use_effective_action_history() -> None:
+    env = FakeTraceEnv()
+    env.robot.data.soft_joint_pos_limits[0][0] = [-0.5, 0.5]
+    backend = SoftLimitClampedMjlabG1RobotBackend(
+        env,
+        action_bridge=identity_bridge(),
+        history_action_source="effective",
+    )
+    raw_action = (2.0,) + (0.0,) * 28
+    raw_targets = (2.0,) + (0.0,) * 28
+
+    backend.write_command(
+        G1MotorCommand(
+            raw_action_isaaclab=raw_action,
+            motor_position_targets_mujoco=raw_targets,
+        )
+    )
+
+    assert backend._last_command.raw_action_isaaclab[0] == pytest.approx(0.5)
+    assert backend._last_command.motor_position_targets_mujoco[0] == pytest.approx(0.5)
+    assert backend.read_state().last_action_isaaclab[0] == pytest.approx(0.5)
 
 
 def test_top_joint_fraction_above() -> None:

@@ -33,6 +33,8 @@ RSL-RL runner or the mjlab task implementation.
 - `010-target-clamp-probe.md`
 - `011-remaining-alignment-diagnosis.md`
 - `012-action-history-and-range-trace.md`
+- `013-official-sonic-contract-audit.md`
+- `014-effective-action-history-probe.md`
 
 ## Acceptance
 
@@ -129,6 +131,23 @@ RSL-RL runner or the mjlab task implementation.
   against mjlab soft range `[-0.8029, 0.4538]`; target clamp changes effective
   left ankle pitch action by up to `2.5344`, too large to treat as a small
   safety correction.
+- 2026-05-17 Audited official `NVlabs/GR00T-WholeBodyControl`
+  `gear_sonic_deploy` G1 sources. Official G1 ankle-pitch hard range is
+  `[-0.87267, 0.5236]`, still far below the observed left ankle-pitch raw
+  target max `1.5653`. The G1 deploy reference constructs targets as
+  `action * action_scale + default_angle`, records `last_action` as raw policy
+  output, and did not show deploy-side target clipping with effective-history
+  writeback.
+- 2026-05-17 Added trace-only `--history-action-source raw|effective`. The
+  effective mode inverts clamped sent targets back through the same
+  `ScalarActionBridge` and feeds that value into the next decoder history while
+  leaving the formal mjlab backend unchanged.
+- 2026-05-17 Ran H200 raw/effective action-history A/B under the clamped best
+  baseline. Effective history reduced max target clipping from `1.1099` to
+  `0.6781` and left ankle-pitch raw target max from `1.5636` to `1.1319`, but
+  did not materially improve rollout quality: both runs had no done, similar
+  pitch, similar height, similar forward velocity, and nearly unchanged joint
+  error.
 
 ## Review
 
@@ -171,6 +190,14 @@ official SONIC deploy-side clip including effective action history, or treat the
 mjlab ankle soft limits as an asset mismatch and test a trace-only limit widening
 patch.
 
+Official source audit did not find an explicit SONIC deploy-side clamp or
+effective-history writeback. Instead, official deploy appears to use raw policy
+action in `last_action`, while the official G1 ankle-pitch hard limit is still
+well below the observed raw target peak. The effective-history trace confirms
+history semantics matter by reducing later target extremes, but it does not
+solve posture or tracking. Production clamping should stay blocked until the
+upstream joint-limit/asset contract is resolved.
+
 Verification:
 
 - `PYTHONPATH=src python -m pytest -p no:cacheprovider`
@@ -203,5 +230,16 @@ Verification:
   no done, `abs_pitch_p95=0.1241`, `root_z_final=0.7441`,
   `joint_error_rms_mean=0.1500`, left ankle pitch raw target exceeds soft high
   by `1.1116 rad`, and effective action delta reaches `2.5344`.
+- H200 `seed=123`, 400-step clamped history-source traces:
+  - raw history: no done, `abs_pitch_p95=0.1241`,
+    `root_z_final=0.7464`, `joint_error_rms_mean=0.1488`,
+    `target_clip_absmax_max=1.1099`.
+  - effective history: no done, `abs_pitch_p95=0.1216`,
+    `root_z_final=0.7435`, `joint_error_rms_mean=0.1492`,
+    `target_clip_absmax_max=0.6781`.
+- `PYTHONPATH=src python -m pytest tests/test_mjlab_sonic_alignment_trace.py
+  tests/test_scalar_action_bridge.py tests/test_sonic_controller.py -q`
+  passed: `25 passed` with only the existing local pytest cache permission
+  warning.
 - `python -m ruff check ...` was not run because `ruff` is not installed in the
   local Python environment.

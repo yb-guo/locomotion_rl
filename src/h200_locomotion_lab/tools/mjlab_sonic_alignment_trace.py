@@ -108,6 +108,7 @@ def main() -> None:
     parser.add_argument("--sonic-default-reset", action="store_true")
     parser.add_argument("--sonic-hip-pitch-actuator", action="store_true")
     parser.add_argument("--clamp-targets-to-soft-limits", action="store_true")
+    parser.add_argument("--history-action-source", choices=("raw", "effective"), default="raw")
     parser.add_argument("--disable-terminations", action="store_true")
     args = parser.parse_args()
 
@@ -118,14 +119,18 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     raw_env = build_mjlab_env(args)
+    action_bridge = build_action_bridge(args.sonic_action_scale_mult)
     backend: MjlabG1RobotBackend = (
-        SoftLimitClampedMjlabG1RobotBackend(raw_env)
+        SoftLimitClampedMjlabG1RobotBackend(
+            raw_env,
+            action_bridge=effective_action_bridge(action_bridge),
+            history_action_source=args.history_action_source,
+        )
         if args.clamp_targets_to_soft_limits
         else MjlabG1RobotBackend(raw_env)
     )
     probe = TraceProbeState()
     provider = build_online_provider(args, probe)
-    action_bridge = build_action_bridge(args.sonic_action_scale_mult)
     runtime = ScalarG1Runtime(
         backend,
         provider,
@@ -283,8 +288,18 @@ def set_sonic_hip_pitch_actuator(cfg: Any) -> None:
 class SoftLimitClampedMjlabG1RobotBackend(MjlabG1RobotBackend):
     """Trace-only backend that clamps motor position targets to mjlab soft limits."""
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *args: Any,
+        action_bridge: ScalarActionBridge | None = None,
+        history_action_source: str = "raw",
+        **kwargs: Any,
+    ) -> None:
         super().__init__(*args, **kwargs)
+        if history_action_source not in ("raw", "effective"):
+            raise ValueError("history_action_source must be 'raw' or 'effective'")
+        self.action_bridge = effective_action_bridge(action_bridge)
+        self.history_action_source = history_action_source
         self.last_unclamped_command: G1MotorCommand | None = None
         self.last_target_clip_delta: tuple[float, ...] = (0.0,) * SONIC_ACTION_DIM
 
@@ -313,9 +328,14 @@ class SoftLimitClampedMjlabG1RobotBackend(MjlabG1RobotBackend):
                 strict=True,
             )
         )
+        history_action = command.raw_action_isaaclab
+        if self.history_action_source == "effective":
+            history_action = self.action_bridge.command_targets_to_policy_action(
+                clamped_targets
+            )
         super().write_command(
             G1MotorCommand(
-                raw_action_isaaclab=command.raw_action_isaaclab,
+                raw_action_isaaclab=history_action,
                 motor_position_targets_mujoco=clamped_targets,
             )
         )
@@ -678,6 +698,7 @@ def summarize_alignment_trace(
             "sonic_default_reset": bool(args.sonic_default_reset),
             "sonic_hip_pitch_actuator": bool(args.sonic_hip_pitch_actuator),
             "clamp_targets_to_soft_limits": bool(args.clamp_targets_to_soft_limits),
+            "history_action_source": args.history_action_source,
             "mode": int(args.mode),
             "target_vel": float(args.target_vel),
             "height": float(args.height),
