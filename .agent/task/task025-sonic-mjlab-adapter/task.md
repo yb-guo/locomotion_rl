@@ -41,6 +41,7 @@ RSL-RL runner or the mjlab task implementation.
 - `018-official-sim2sim-runtime.md`
 - `019-official-dds-lowstate-probe.md`
 - `020-official-deploy-lowstate-instrumentation.md`
+- `021-official-vs-mjlab-action-trace-comparison.md`
 
 ## Acceptance
 
@@ -209,6 +210,17 @@ RSL-RL runner or the mjlab task implementation.
   transitioned into `CONTROL`, reported policy loop timing with fresh LowState,
   and wrote non-empty official CSV logs (`1237` rows each in `action.csv`,
   `q.csv`, `dq.csv`, and `token_state.csv`).
+- 2026-05-18 Compared restored official deploy CSV logs against mjlab adapter
+  raw/effective-history traces. Official deploy's `action.csv` records raw
+  policy actions; the motor target is reconstructed as
+  `default_angles[i] + action_buffer[isaaclab_to_mujoco[i]] * g1_action_scale[i]`.
+  Official SONIC itself commands targets far outside the official G1 XML joint
+  ranges: left/right ankle-pitch target violation absmax was `1.5687` /
+  `1.4553 rad`, while measured ankle `q` stayed mostly inside limits. The
+  mjlab left ankle-pitch raw target violation (`1.1099 rad` against mjlab soft
+  limits) is therefore not an adapter-only limit bug. Effective-history feedback
+  reduced later target excursions (`1.1099 -> 0.6781`) but did not materially
+  improve posture, height, velocity, or mean joint tracking.
 
 ## Review
 
@@ -276,6 +288,16 @@ The apparent LowState freshness blocker was a test harness lifetime issue:
 keeping the sim publisher alive long enough lets the restored official deploy
 stay in `WAIT_FOR_CONTROL`, and piping the keyboard start key `]` moves it into
 `CONTROL` with non-empty official CSV logs.
+
+The official-vs-mjlab comparison reframes the ankle issue. "Raw target outside
+joint limit" is part of the observed official deploy behavior, not a standalone
+adapter defect. Official deploy sends out-of-range servo targets and relies on
+the plant/simulator constraints for realized joint motion. Therefore production
+mjlab should keep raw-action history and should not default to trace-only target
+clamping unless we intentionally define a new controller contract. The next
+comparison should match motion input, either by running official planner mode
+with a forward command or by replaying the same official reference motion in the
+mjlab adapter.
 
 Verification:
 
@@ -356,6 +378,12 @@ Verification:
   and wrote `1237` rows each to official `action.csv`, `q.csv`, `dq.csv`, and
   `token_state.csv` under
   `/mnt/workspace/users/guoyubo/agent_workspace/official/GR00T-WholeBodyControl/gear_sonic_deploy/outputs/task025/official_start_control_smoke/deploy_logs`.
+- H200 official-vs-mjlab comparison:
+  `/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/outputs/task025/official_vs_mjlab_compare/key_stats.json`
+  generated from official deploy CSV and mjlab trace JSON. Official
+  left/right ankle-pitch targets exceeded official hard limits by `1.5687` /
+  `1.4553 rad`; mjlab raw-history left/right ankle-pitch targets exceeded
+  mjlab soft limits by `1.1099` / `0.3611 rad`.
 - `PYTHONPATH=src python -m pytest tests/test_mjlab_sonic_alignment_trace.py
   tests/test_scalar_action_bridge.py tests/test_sonic_controller.py -q`
   passed: `26 passed` with only the existing local pytest cache permission
