@@ -42,6 +42,7 @@ RSL-RL runner or the mjlab task implementation.
 - `019-official-dds-lowstate-probe.md`
 - `020-official-deploy-lowstate-instrumentation.md`
 - `021-official-vs-mjlab-action-trace-comparison.md`
+- `022-matched-input-official-planner-comparison.md`
 
 ## Acceptance
 
@@ -221,6 +222,18 @@ RSL-RL runner or the mjlab task implementation.
   limits) is therefore not an adapter-only limit bug. Effective-history feedback
   reduced later target excursions (`1.1099 -> 0.6781`) but did not materially
   improve posture, height, velocity, or mean joint tracking.
+- 2026-05-18 Ran matched-input official planner-forward comparisons. Official
+  `g1_deploy_onnx_ref` plus official Python MuJoCo sim produced non-empty
+  planner-mode logs for both `WALK` and `SLOW_WALK target_vel=0.5` inputs. The
+  matched `SLOW_WALK target_vel=0.5` run logged `planner_control_fraction=1.0`,
+  `1240` rows, `base_pitch_abs_p95=0.1446`, left/right ankle target violation
+  absmax `1.7254` / `1.3656 rad`, and ankle target-minus-q RMS `0.4215` /
+  `0.3863`. The mjlab best motion-context `target_vel=0.5` 400-step baseline
+  remained stable with `abs_pitch_p95=0.1229`, `root_z_final=0.7443`,
+  `root_lin_vel_b_x_mean=0.7051`, and ankle joint-error RMS `0.4369` /
+  `0.4004`. The result points away from controller I/O or planner-context
+  target range as the remaining primary issue; the next diagnostic should
+  compare plant/contact/actuator response under official planner/target motion.
 
 ## Review
 
@@ -257,6 +270,14 @@ Further diagnosis after clamping found no single larger downstream bug. The
 next route should validate the upstream contract: official SONIC joint ranges,
 effective action history semantics, and whether mjlab exposes a trustworthy
 clipped actuator force signal.
+
+The official upstream contract is now clearer: raw target excursions outside
+joint limits are normal in official deploy, including in planner-forward mode.
+Matched planner input did not make official actions smaller than mjlab's. Keep
+the adapter on raw-history, unclamped fidelity by default. The remaining work
+should shift from action clipping to same-trajectory plant response: replay or
+sample official `planner_motion.csv` / `target_motion.csv` through mjlab and
+compare measured q, base pitch, and contact/actuator response.
 
 The detailed action/range trace narrows the next decision: either mirror an
 official SONIC deploy-side clip including effective action history, or treat the
