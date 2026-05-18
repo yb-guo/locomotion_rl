@@ -43,6 +43,7 @@ RSL-RL runner or the mjlab task implementation.
 - `020-official-deploy-lowstate-instrumentation.md`
 - `021-official-vs-mjlab-action-trace-comparison.md`
 - `022-matched-input-official-planner-comparison.md`
+- `023-official-motion-replay-plant-response.md`
 
 ## Acceptance
 
@@ -234,6 +235,19 @@ RSL-RL runner or the mjlab task implementation.
   `0.4004`. The result points away from controller I/O or planner-context
   target range as the remaining primary issue; the next diagnostic should
   compare plant/contact/actuator response under official planner/target motion.
+- 2026-05-18 Added and ran official motion replay diagnostics in mjlab. Official
+  `target_motion.csv` is a per-control-step current-motion qpos stream, while
+  `planner_motion.csv` is segmented replan dumps. Directly commanding
+  `target_motion.csv` joint positions in mjlab is a stress test, not the
+  official controller contract, and it repeatedly terminated with
+  `abs_pitch_p95=0.8887`, `root_z_final=0.2375`, and contact-force max about
+  `2380 N`. The more faithful fixed-motion SONIC decoder replay also
+  repeatedly terminated: official deploy first 400 rows had
+  `abs_pitch_p95=0.1548` and motor-target residual RMS `0.7858`, while mjlab
+  under the same motion-conditioned decoder route had `abs_pitch_p95=1.0294`,
+  `root_z_final=0.6301`, `root_z_min=0.2480`, residual RMS `0.7160`, and large
+  contact impulses. This points to whole-body plant/contact/actuator response,
+  not a remaining target-range or action-history bug.
 
 ## Review
 
@@ -278,6 +292,15 @@ the adapter on raw-history, unclamped fidelity by default. The remaining work
 should shift from action clipping to same-trajectory plant response: replay or
 sample official `planner_motion.csv` / `target_motion.csv` through mjlab and
 compare measured q, base pitch, and contact/actuator response.
+
+The same-trajectory replay now shows that plant response is the main remaining
+axis. Under the official fixed motion input, mjlab's aggregate joint residual
+is comparable to official, but base pitch, root height, contact impulses, and
+termination behavior are much worse. The next route should narrow lower-body
+plant/contact causes: hip/knee/ankle actuator constants, foot contact geometry
+and friction, and reset/base-state alignment. Treat mjlab `actuator_force`
+utilization cautiously until the signal is validated, because some reported
+utilization values exceed one by large factors.
 
 The detailed action/range trace narrows the next decision: either mirror an
 official SONIC deploy-side clip including effective action history, or treat the
