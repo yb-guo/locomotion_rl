@@ -5,7 +5,11 @@ import math
 import pytest
 
 from h200_locomotion_lab.tools.mjlab_sonic_alignment_trace import (
+    OFFICIAL_G1_JOINT_ARMATURE,
+    OFFICIAL_G1_JOINT_DAMPING,
+    OFFICIAL_G1_JOINT_FRICTIONLOSS,
     SoftLimitClampedMjlabG1RobotBackend,
+    apply_official_passive_joint_overlay,
     clamp_joint_targets,
     joint_limit_margins,
     planner_root_velocity,
@@ -59,6 +63,35 @@ class FakeTraceEnv:
         self.robot = FakeTraceRobot()
         self.scene = {"robot": self.robot}
         self.action_manager = FakeTraceActionManager()
+
+
+class FakeActuatorCfg:
+    def __init__(self) -> None:
+        self.armature = 123.0
+        self.frictionloss = 456.0
+
+
+class FakeJoint:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.damping = 0.0
+
+
+class FakeSpec:
+    def __init__(self) -> None:
+        self.joints = [
+            FakeJoint("floating_base_joint"),
+            FakeJoint("left_hip_pitch_joint"),
+            FakeJoint("left_ankle_pitch_joint"),
+        ]
+
+
+class FakeRobotCfgForOverlay:
+    def __init__(self) -> None:
+        self.actuator = FakeActuatorCfg()
+        self.articulation = type("FakeArticulation", (), {"actuators": (self.actuator,)})()
+        self.spec = FakeSpec()
+        self.spec_fn = lambda: self.spec
 
 
 def identity_bridge() -> ScalarActionBridge:
@@ -293,6 +326,24 @@ def test_clamped_backend_can_use_official_ankle_pitch_hard_limits() -> None:
     assert backend._last_command.motor_position_targets_mujoco[
         left_ankle_pitch_index
     ] == pytest.approx(0.5236)
+
+
+def test_official_passive_joint_overlay_keeps_freejoint_and_sets_passive_fields() -> None:
+    robot_cfg = FakeRobotCfgForOverlay()
+
+    apply_official_passive_joint_overlay(robot_cfg)
+    spec = robot_cfg.spec_fn()
+    updated_actuator = robot_cfg.articulation.actuators[0]
+
+    assert robot_cfg.actuator.armature == pytest.approx(123.0)
+    assert robot_cfg.actuator.frictionloss == pytest.approx(456.0)
+    assert updated_actuator.armature == pytest.approx(OFFICIAL_G1_JOINT_ARMATURE)
+    assert updated_actuator.frictionloss == pytest.approx(
+        OFFICIAL_G1_JOINT_FRICTIONLOSS
+    )
+    assert spec.joints[0].damping == pytest.approx(0.0)
+    assert spec.joints[1].damping == pytest.approx(OFFICIAL_G1_JOINT_DAMPING)
+    assert spec.joints[2].damping == pytest.approx(OFFICIAL_G1_JOINT_DAMPING)
 
 
 def test_top_joint_fraction_above() -> None:

@@ -20,6 +20,7 @@ from h200_locomotion_lab.sonic.g1_policy_bridge import (
     get_default_sonic_g1_action_bridge,
 )
 from h200_locomotion_lab.tools.mjlab_sonic_alignment_trace import (
+    OFFICIAL_PLANT_OVERLAY_CHOICES,
     TraceProbeState,
     build_action_bridge,
     build_mjlab_env,
@@ -91,6 +92,11 @@ def main() -> None:
     parser.add_argument("--disable-startup-randomization", action="store_true")
     parser.add_argument("--sonic-default-reset", action="store_true")
     parser.add_argument("--sonic-hip-pitch-actuator", action="store_true")
+    parser.add_argument(
+        "--official-plant-overlay",
+        choices=OFFICIAL_PLANT_OVERLAY_CHOICES,
+        default="none",
+    )
     parser.add_argument("--disable-terminations", action="store_true")
     args = parser.parse_args()
 
@@ -157,6 +163,7 @@ def main() -> None:
         "disable_startup_randomization": bool(args.disable_startup_randomization),
         "sonic_default_reset": bool(args.sonic_default_reset),
         "sonic_hip_pitch_actuator": bool(args.sonic_hip_pitch_actuator),
+        "official_plant_overlay": args.official_plant_overlay,
         "sonic_action_scale_mult": float(args.sonic_action_scale_mult),
         "seed": args.seed,
         "motion_csv": str(Path(args.motion_csv)),

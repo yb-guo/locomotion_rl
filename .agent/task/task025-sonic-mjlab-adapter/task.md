@@ -45,6 +45,7 @@ RSL-RL runner or the mjlab task implementation.
 - `022-matched-input-official-planner-comparison.md`
 - `023-official-motion-replay-plant-response.md`
 - `024-lower-body-plant-contact-actuator-audit.md`
+- `025-official-plant-overlay-probe.md`
 
 ## Acceptance
 
@@ -260,6 +261,19 @@ RSL-RL runner or the mjlab task implementation.
   actuator-derived joint armature, default joint frictionloss `0.0`, and MuJoCo
   position actuators. The next probe should be a trace-only official-plant
   overlay, split into passive-joint and foot-contact ablations.
+- 2026-05-18 Added trace-only `--official-plant-overlay` diagnostic for the
+  official-motion replay and online alignment trace builders. It defaults to
+  `none` and can independently probe official-like passive joint fields,
+  official-like box foot contact, or both together without changing SONIC I/O.
+- 2026-05-18 Ran H200 400-step official-plant overlay ablations on the fixed
+  official-motion SONIC decoder replay. None of the overlays fixed the failure:
+  `none` had 14 done events and `abs_pitch_p95=0.9208`; `passive-joints` had
+  13 done and `abs_pitch_p95=0.9656`; `contact` had 12 done and
+  `abs_pitch_p95=0.9953`; combined passive/contact had 13 done and
+  `abs_pitch_p95=0.9787`. The simple passive-joint and foot-contact hypotheses
+  are therefore not sufficient. The next probe should target torque
+  realization: official external PD torque clipping versus mjlab built-in
+  position actuator dynamics.
 
 ## Review
 
@@ -319,6 +333,13 @@ most likely remaining gap is not SONIC I/O but the MuJoCo plant contract:
 official runtime foot contact, passive joint fields, and torque realization do
 not match mjlab's current G1 asset/task realization. The next useful comparison
 is a reversible official-plant overlay in mjlab, not more target clipping.
+
+The first official-plant overlay narrowed this further. Copying official-like
+passive joint fields and replacing foot capsule contact with box-sole contact
+did not stabilize the fixed official-motion replay. Treat those as ruled out as
+standalone fixes. The remaining plant-contract target is actuator/torque
+realization: official deploy/sim computes and clips external PD torque from
+LowCmd, while mjlab's adapter currently drives built-in position actuators.
 
 The detailed action/range trace narrows the next decision: either mirror an
 official SONIC deploy-side clip including effective action history, or treat the

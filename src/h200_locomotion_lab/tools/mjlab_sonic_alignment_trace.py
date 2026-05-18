@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -35,6 +36,19 @@ from h200_locomotion_lab.sonic.planner_runner import (
 
 STARTUP_RANDOMIZATION_EVENTS = ("foot_friction", "encoder_bias", "base_com")
 OFFICIAL_G1_ANKLE_PITCH_LIMIT = (-0.87267, 0.5236)
+OFFICIAL_PLANT_OVERLAY_CHOICES = (
+    "none",
+    "passive-joints",
+    "contact",
+    "passive-joints-and-contact",
+)
+OFFICIAL_G1_JOINT_DAMPING = 0.05
+OFFICIAL_G1_JOINT_ARMATURE = 0.01
+OFFICIAL_G1_JOINT_FRICTIONLOSS = 0.2
+OFFICIAL_G1_SOLE_SIZE = (0.085, 0.03, 0.005)
+OFFICIAL_G1_SOLE_POS = (0.035, 0.0, -0.03)
+OFFICIAL_G1_SOLE_GEOM_RE = r"^(left|right)_official_sole_collision$"
+MJLAB_G1_FOOT_CAPSULE_GEOM_RE = r"^(left|right)_foot[1-7]_collision$"
 
 
 @dataclass
@@ -108,6 +122,11 @@ def main() -> None:
     parser.add_argument("--disable-startup-randomization", action="store_true")
     parser.add_argument("--sonic-default-reset", action="store_true")
     parser.add_argument("--sonic-hip-pitch-actuator", action="store_true")
+    parser.add_argument(
+        "--official-plant-overlay",
+        choices=OFFICIAL_PLANT_OVERLAY_CHOICES,
+        default="none",
+    )
     parser.add_argument("--clamp-targets-to-soft-limits", action="store_true")
     parser.add_argument(
         "--clamp-limit-source",
@@ -191,6 +210,10 @@ def build_mjlab_env(args: argparse.Namespace):
         set_sonic_default_reset(cfg)
     if args.sonic_hip_pitch_actuator:
         set_sonic_hip_pitch_actuator(cfg)
+    apply_official_plant_overlay(
+        cfg,
+        getattr(args, "official_plant_overlay", "none"),
+    )
     return ManagerBasedRlEnv(cfg=cfg, device=args.device, render_mode=None)
 
 
@@ -278,8 +301,7 @@ def set_sonic_hip_pitch_actuator(cfg: Any) -> None:
             if name != ".*_hip_pitch_joint"
         )
         if names:
-            actuator.target_names_expr = names
-            actuators.append(actuator)
+            actuators.append(clone_actuator_cfg(actuator, target_names_expr=names))
     actuators.append(
         BuiltinPositionActuatorCfg(
             target_names_expr=(".*_hip_pitch_joint",),
@@ -290,6 +312,143 @@ def set_sonic_hip_pitch_actuator(cfg: Any) -> None:
         )
     )
     articulation.actuators = tuple(actuators)
+
+
+def apply_official_plant_overlay(cfg: Any, overlay: str) -> None:
+    """Apply trace-only official MuJoCo plant approximations to mjlab config."""
+
+    if overlay not in OFFICIAL_PLANT_OVERLAY_CHOICES:
+        raise ValueError(f"unknown official plant overlay: {overlay}")
+    if overlay == "none":
+        return
+    robot_cfg = cfg.scene.entities["robot"]
+    if overlay in ("passive-joints", "passive-joints-and-contact"):
+        apply_official_passive_joint_overlay(robot_cfg)
+    if overlay in ("contact", "passive-joints-and-contact"):
+        apply_official_foot_contact_overlay(robot_cfg)
+
+
+def apply_official_passive_joint_overlay(robot_cfg: Any) -> None:
+    """Mirror official runtime passive joint fields without changing PD gains."""
+
+    articulation = getattr(robot_cfg, "articulation", None)
+    actuators = getattr(articulation, "actuators", None)
+    if actuators:
+        updated = []
+        for actuator in actuators:
+            fields: dict[str, float] = {}
+            if hasattr(actuator, "armature"):
+                fields["armature"] = OFFICIAL_G1_JOINT_ARMATURE
+            if hasattr(actuator, "frictionloss"):
+                fields["frictionloss"] = OFFICIAL_G1_JOINT_FRICTIONLOSS
+            updated.append(clone_actuator_cfg(actuator, **fields) if fields else actuator)
+        articulation.actuators = tuple(updated)
+    wrap_spec_fn_for_official_joint_damping(robot_cfg)
+
+
+def clone_actuator_cfg(actuator: Any, **updates: Any) -> Any:
+    try:
+        return replace(actuator, **updates)
+    except TypeError:
+        cloned = copy.copy(actuator)
+        for key, value in updates.items():
+            setattr(cloned, key, value)
+        return cloned
+
+
+def wrap_spec_fn_for_official_joint_damping(robot_cfg: Any) -> None:
+    if getattr(robot_cfg, "_h200_official_joint_damping_wrapped", False):
+        return
+    original_spec_fn = robot_cfg.spec_fn
+
+    def spec_fn():
+        spec = original_spec_fn()
+        for joint in getattr(spec, "joints", ()):
+            if getattr(joint, "name", "") == "floating_base_joint":
+                continue
+            if hasattr(joint, "damping"):
+                joint.damping = OFFICIAL_G1_JOINT_DAMPING
+        return spec
+
+    robot_cfg.spec_fn = spec_fn
+    robot_cfg._h200_official_joint_damping_wrapped = True
+
+
+def apply_official_foot_contact_overlay(robot_cfg: Any) -> None:
+    """Approximate official runtime foot contact while preserving other geoms."""
+
+    from mjlab.utils.spec_config import CollisionCfg
+
+    wrap_spec_fn_for_official_foot_boxes(robot_cfg)
+    robot_cfg.collisions = (
+        CollisionCfg(
+            geom_names_expr=(r".*_collision$",),
+            contype={
+                MJLAB_G1_FOOT_CAPSULE_GEOM_RE: 0,
+                OFFICIAL_G1_SOLE_GEOM_RE: 1,
+                r".*_collision$": 1,
+            },
+            conaffinity={
+                MJLAB_G1_FOOT_CAPSULE_GEOM_RE: 0,
+                OFFICIAL_G1_SOLE_GEOM_RE: 1,
+                r".*_collision$": 1,
+            },
+            condim={
+                OFFICIAL_G1_SOLE_GEOM_RE: 3,
+                r".*_collision$": 1,
+            },
+            priority={
+                OFFICIAL_G1_SOLE_GEOM_RE: 1,
+                r".*_collision$": 0,
+            },
+            friction={
+                OFFICIAL_G1_SOLE_GEOM_RE: (1.0,),
+                r".*_collision$": (1.0,),
+            },
+        ),
+    )
+
+
+def wrap_spec_fn_for_official_foot_boxes(robot_cfg: Any) -> None:
+    if getattr(robot_cfg, "_h200_official_foot_boxes_wrapped", False):
+        return
+    original_spec_fn = robot_cfg.spec_fn
+
+    def spec_fn():
+        spec = original_spec_fn()
+        add_official_foot_box_geoms(spec)
+        return spec
+
+    robot_cfg.spec_fn = spec_fn
+    robot_cfg._h200_official_foot_boxes_wrapped = True
+
+
+def add_official_foot_box_geoms(spec: Any) -> None:
+    import mujoco
+
+    for side in ("left", "right"):
+        body = spec.body(f"{side}_ankle_roll_link")
+        if body is None:
+            raise ValueError(f"missing {side}_ankle_roll_link body")
+        sole_name = f"{side}_official_sole_collision"
+        if spec.geom(sole_name) is None:
+            sole = body.add_geom(
+                name=sole_name,
+                type=mujoco.mjtGeom.mjGEOM_BOX,
+                size=OFFICIAL_G1_SOLE_SIZE,
+                pos=OFFICIAL_G1_SOLE_POS,
+            )
+            sole.group = 3
+            sole.condim = 3
+            sole.contype = 1
+            sole.conaffinity = 1
+            sole.priority = 1
+            sole.friction[0] = 1.0
+        for index in range(1, 8):
+            capsule = spec.geom(f"{side}_foot{index}_collision")
+            if capsule is not None:
+                capsule.contype = 0
+                capsule.conaffinity = 0
 
 
 class SoftLimitClampedMjlabG1RobotBackend(MjlabG1RobotBackend):
@@ -713,6 +872,7 @@ def summarize_alignment_trace(
             "disable_startup_randomization": bool(args.disable_startup_randomization),
             "sonic_default_reset": bool(args.sonic_default_reset),
             "sonic_hip_pitch_actuator": bool(args.sonic_hip_pitch_actuator),
+            "official_plant_overlay": getattr(args, "official_plant_overlay", "none"),
             "clamp_targets_to_soft_limits": bool(args.clamp_targets_to_soft_limits),
             "clamp_limit_source": args.clamp_limit_source,
             "history_action_source": args.history_action_source,
