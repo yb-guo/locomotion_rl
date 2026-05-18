@@ -34,6 +34,7 @@ H200 Locomotion Lab 的 agent 入口。
 - `task/task023-franka-current-payload-estimation/task.md`
 - `task/task024-unitree-current-ckpt-render/task.md`
 - `task/task025-sonic-mjlab-adapter/task.md`
+- `task/task026-official-sonic-direct-mujoco-env/task.md`
 
 ## Consensus
 
