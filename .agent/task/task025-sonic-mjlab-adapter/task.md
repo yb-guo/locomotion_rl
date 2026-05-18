@@ -39,6 +39,7 @@ RSL-RL runner or the mjlab task implementation.
 - `016-official-limit-overlay-probe.md`
 - `017-official-install-bootstrap.md`
 - `018-official-sim2sim-runtime.md`
+- `019-official-dds-lowstate-probe.md`
 
 ## Acceptance
 
@@ -189,6 +190,13 @@ RSL-RL runner or the mjlab task implementation.
   `Lost LowState data connection from robot` and the deploy CSV logs stay
   empty. The remaining blocker is continuous C++ subscriber updates from the
   Python sim publisher, not TensorRT/model loading or adapter code.
+- 2026-05-18 Added a minimal C++ `rt/lowstate` subscriber probe built against
+  the same bundled Unitree SDK and CycloneDDS libraries as official
+  `g1_deploy_onnx_ref`. With the official Python MuJoCo sim publisher live on
+  `lo`, the probe received continuous `LowState_` callbacks even with the same
+  subscriber queue depth `1` used by official deploy (`count=98` to `988` over
+  the 5 second probe window). This falsifies the hypothesis that Python sim to
+  C++ Unitree SDK DDS delivery is generally broken.
 
 ## Review
 
@@ -319,6 +327,12 @@ Verification:
   with the fixed DDS Python stack, deploy reached `Init Done` but exited before
   control with `Lost LowState data connection from robot`; deploy CSV files
   remained empty.
+- H200 official C++ LowState subscriber probe:
+  `/mnt/workspace/users/guoyubo/agent_workspace/official/lowstate_cpp_probe`
+  built against official bundled `unitree_sdk2` and, while the official Python
+  sim loop published `rt/lowstate`, received continuous callbacks with
+  `InitChannel(..., 1)`: `count=98`, `197`, `296`, `395`, `494`, `593`, `691`,
+  `790`, `889`, `988`.
 - `PYTHONPATH=src python -m pytest tests/test_mjlab_sonic_alignment_trace.py
   tests/test_scalar_action_bridge.py tests/test_sonic_controller.py -q`
   passed: `26 passed` with only the existing local pytest cache permission
