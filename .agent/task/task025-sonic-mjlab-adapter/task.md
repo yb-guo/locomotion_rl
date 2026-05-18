@@ -44,6 +44,7 @@ RSL-RL runner or the mjlab task implementation.
 - `021-official-vs-mjlab-action-trace-comparison.md`
 - `022-matched-input-official-planner-comparison.md`
 - `023-official-motion-replay-plant-response.md`
+- `024-lower-body-plant-contact-actuator-audit.md`
 
 ## Acceptance
 
@@ -248,6 +249,17 @@ RSL-RL runner or the mjlab task implementation.
   `root_z_final=0.6301`, `root_z_min=0.2480`, residual RMS `0.7160`, and large
   contact impulses. This points to whole-body plant/contact/actuator response,
   not a remaining target-range or action-history bug.
+- 2026-05-18 Added lower-body plant/contact/actuator audit. Disabling mjlab
+  startup randomization for the fixed official-motion SONIC decoder replay did
+  not materially fix the failure: the 400-step run still had 13 done events,
+  `abs_pitch_p95=0.9449`, `root_z_min=0.1989`, and
+  `joint_error_rms_mean=0.7406`. The strongest remaining mismatch is the plant
+  contract: official runtime uses one box sole per foot, floor/default friction
+  `1.0`, passive joint `armature/frictionloss` fields, and external PD torque
+  clipping, while mjlab uses multi-capsule feet, flat-task foot friction `0.6`,
+  actuator-derived joint armature, default joint frictionloss `0.0`, and MuJoCo
+  position actuators. The next probe should be a trace-only official-plant
+  overlay, split into passive-joint and foot-contact ablations.
 
 ## Review
 
@@ -301,6 +313,12 @@ plant/contact causes: hip/knee/ankle actuator constants, foot contact geometry
 and friction, and reset/base-state alignment. Treat mjlab `actuator_force`
 utilization cautiously until the signal is validated, because some reported
 utilization values exceed one by large factors.
+
+The lower-body audit falsified startup randomization as the primary cause. The
+most likely remaining gap is not SONIC I/O but the MuJoCo plant contract:
+official runtime foot contact, passive joint fields, and torque realization do
+not match mjlab's current G1 asset/task realization. The next useful comparison
+is a reversible official-plant overlay in mjlab, not more target clipping.
 
 The detailed action/range trace narrows the next decision: either mirror an
 official SONIC deploy-side clip including effective action history, or treat the
