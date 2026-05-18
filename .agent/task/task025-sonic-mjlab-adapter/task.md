@@ -40,6 +40,7 @@ RSL-RL runner or the mjlab task implementation.
 - `017-official-install-bootstrap.md`
 - `018-official-sim2sim-runtime.md`
 - `019-official-dds-lowstate-probe.md`
+- `020-official-deploy-lowstate-instrumentation.md`
 
 ## Acceptance
 
@@ -197,6 +198,17 @@ RSL-RL runner or the mjlab task implementation.
   subscriber queue depth `1` used by official deploy (`count=98` to `988` over
   the 5 second probe window). This falsifies the hypothesis that Python sim to
   C++ Unitree SDK DDS delivery is generally broken.
+- 2026-05-18 Instrumented official `g1_deploy_onnx_ref` around
+  `LowStateHandler` and `CheckSafety`, then restored the temporary patch. With
+  a longer-lived official Python sim publisher, the full deploy process kept
+  receiving fresh LowState after `Init Done`; `CheckSafety` saw about
+  `0.1-5 ms` LowState age, not the `500 ms` absent threshold. The earlier
+  `Lost LowState` was therefore a harness timing artifact from killing the sim
+  publisher too early during deploy startup.
+- 2026-05-18 Ran restored official deploy with stdin start key `]`. It
+  transitioned into `CONTROL`, reported policy loop timing with fresh LowState,
+  and wrote non-empty official CSV logs (`1237` rows each in `action.csv`,
+  `q.csv`, `dq.csv`, and `token_state.csv`).
 
 ## Review
 
@@ -260,9 +272,10 @@ buildable yet because TensorRT is absent on H200.
 `018` has moved the official runtime further: C++ deploy now builds and loads
 the task025 SONIC artifacts through TensorRT, and the official Python sim loop
 publishes continuous LowState under the official `cyclonedds==0.10.2` stack.
-Full official sim2sim control is still blocked because `g1_deploy_onnx_ref`
-receives enough LowState to finish `INIT` but then fails the 500 ms LowState
-freshness check before writing any control CSV rows.
+The apparent LowState freshness blocker was a test harness lifetime issue:
+keeping the sim publisher alive long enough lets the restored official deploy
+stay in `WAIT_FOR_CONTROL`, and piping the keyboard start key `]` moves it into
+`CONTROL` with non-empty official CSV logs.
 
 Verification:
 
@@ -333,6 +346,16 @@ Verification:
   sim loop published `rt/lowstate`, received continuous callbacks with
   `InitChannel(..., 1)`: `count=98`, `197`, `296`, `395`, `494`, `593`, `691`,
   `790`, `889`, `988`.
+- H200 official deploy LowState instrumentation:
+  callbacks continued through `Init Done` and `CheckSafety` saw fresh
+  LowState age around `0.1-5 ms`; the temporary debug patch was restored and
+  removed from the official source.
+- H200 restored official start-control smoke:
+  piping `]` into stdin produced
+  `[Control] DEBUG: operator_state.start=true, transitioning to CONTROL state`
+  and wrote `1237` rows each to official `action.csv`, `q.csv`, `dq.csv`, and
+  `token_state.csv` under
+  `/mnt/workspace/users/guoyubo/agent_workspace/official/GR00T-WholeBodyControl/gear_sonic_deploy/outputs/task025/official_start_control_smoke/deploy_logs`.
 - `PYTHONPATH=src python -m pytest tests/test_mjlab_sonic_alignment_trace.py
   tests/test_scalar_action_bridge.py tests/test_sonic_controller.py -q`
   passed: `26 passed` with only the existing local pytest cache permission
