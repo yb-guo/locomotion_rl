@@ -73,10 +73,25 @@ Planned slices:
 - 2026-05-19 Diagnose audit: every task028 subtask must have a minimal closed
   loop with a concrete command/script, pass/fail criteria, and evidence path.
   Missing subtask docs for 003-006 were added.
+- 2026-05-19 Completed subtask 001/002 first-pass env contract and asset
+  prototype. Implemented upstream `Unitree-G1-Gripper-Flat` with fixed
+  31-dim action contract `[body29, gripper_left, gripper_right]`. H200 smoke
+  evidence:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task028/asset_contract/g1_gripper_flat_smoke.json`.
+- 2026-05-19 Completed subtask 003 PPO smoke. `Unitree-G1-Gripper-Flat`
+  trained for 2 iterations with the existing MLP PPO stack, actor output dim
+  31, and saved `model_1.pt`. Short checkpoint-load eval passed as a smoke:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task028/ppo_smoke/g1_gripper_env64_iter2_model1_short_eval.json`.
+- 2026-05-19 Completed subtask 004 randomization curriculum smoke. Added
+  explicit stage task IDs for control, contact, encoder/noise,
+  mass/COM/inertia, motor/PD, and combined randomization. All six stages
+  preserved action dim 31 / actor obs 104 / critic obs 119 and passed 64-env,
+  2-iteration PPO smoke on H200. Inspect artifacts are under:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task028/randomization_curriculum/inspect/`.
 
 ## Review
 
-Status: planned.
+Status: in progress.
 
 The main risk is confusing two experiments: environment learnability and policy
 architecture. This task intentionally separates them. The first pass should
@@ -91,3 +106,8 @@ open/close action dimensions. Variable topology, padding, masks, full
 dexterous hands, action-token decoding, and a generic morphology asset
 generator are explicitly deferred. Object manipulation and gripper contact
 tasks are also deferred.
+
+Completed so far: fixed-topology environment contract, G1-like gripper
+asset/task prototype, first MLP PPO smoke, and staged randomization curriculum
+smoke. Next slice is 005: closed-loop eval and render evidence from a saved
+checkpoint.

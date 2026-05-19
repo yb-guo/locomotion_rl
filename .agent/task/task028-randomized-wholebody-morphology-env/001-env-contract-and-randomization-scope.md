@@ -86,10 +86,18 @@ Evidence:
 
 - 2026-05-19 Opened after the user confirmed not to support variable topology
   or variable DoF in the first pass.
+- 2026-05-19 Contract validated by the 002 implementation smoke. The active
+  first-pass task is `Unitree-G1-Gripper-Flat`; action order is fixed as
+  `body_joint_pos` 29 dims followed by `gripper_joint_pos` 2 dims, total
+  action dim 31. Actor observation shape is 104 and critic observation shape
+  is 119 in the flat task smoke.
 
 ## Review
 
-Status: planned.
+Status: passed for the first-pass fixed-topology contract.
 
-The pass condition for this subtask is a written env contract precise enough to
-implement without changing policy architecture.
+The pass condition for this subtask was a written env contract precise enough
+to implement without changing policy architecture. The 002 smoke confirms the
+contract is implementable with the existing MJLab/RSL-RL MLP action interface:
+fixed topology, fixed action order `[body29, gripper_left, gripper_right]`,
+no variable-DoF padding/masks, and no gripper object-contact task.

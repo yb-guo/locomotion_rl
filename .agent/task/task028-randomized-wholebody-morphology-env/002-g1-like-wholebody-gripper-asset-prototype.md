@@ -71,14 +71,45 @@ User decision:
   2-DoF gripper action term second, so policy action order is `[body29,
   gripper2]` even though the physical gripper joints live under the wrist
   bodies.
+- 2026-05-19 Implemented the upstream prototype in new namespaces, without
+  modifying the original `unitree_g1` baseline:
+  - asset package:
+    `/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/src/assets/robots/unitree_g1_gripper`
+  - MJCF:
+    `/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/src/assets/robots/unitree_g1_gripper/xmls/g1_gripper.xml`
+  - task config package:
+    `/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/src/tasks/velocity/config/g1_gripper`
+  Reproducibility artifact:
+  `.agent/task/task028-randomized-wholebody-morphology-env/artifacts/task028_create_g1_gripper_task.py`.
+- 2026-05-19 Registered `Unitree-G1-Gripper-Flat` and
+  `Unitree-G1-Gripper-Rough`. Verified registration with
+  `PYTHONPATH=. /mnt/workspace/users/guoyubo/conda_envs/unitree-rl-mjlab/bin/python scripts/list_envs.py --keyword Gripper`.
+- 2026-05-19 First inspect smoke failed during reward setup because
+  `std_standing` already had a catch-all `".*"` pattern and the gripper
+  override added `".*_gripper_joint"`, producing duplicate reward std matches.
+  Fixed by only adding explicit gripper std entries for walking/running; the
+  standing regime keeps the original catch-all.
+- 2026-05-19 Second inspect smoke reached env init and action manager setup,
+  then failed because the inspect script assumed a 4-item env `step()` return.
+  Fixed the script to support both 4-item and 5-item step APIs.
+- 2026-05-19 Final H200 inspect smoke passed and wrote:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task028/asset_contract/g1_gripper_flat_smoke.json`.
+  Evidence: `nq=38`, `nv=37`, `nu=31`, `njnt=32`; gripper joints are
+  `left_gripper_joint` and `right_gripper_joint`; action terms are
+  `body_joint_pos` with 29 dims and `gripper_joint_pos` with 2 dims; total
+  action dim is 31; actor obs shape is `[1, 104]`; critic obs shape is
+  `[1, 119]`; 10 zero-action steps had finite observations and no done events.
+  Inspect artifact:
+  `.agent/task/task028-randomized-wholebody-morphology-env/artifacts/task028_inspect_g1_gripper_asset.py`.
 
 ## Review
 
-Status: planned.
+Status: passed.
 
-The main risk is adding too much manipulation complexity before walking is
-stable. This slice should produce an asset that can stand, walk, and survive
-closed-loop eval with grippers included in the dynamics.
+The implemented prototype stays on the verified Unitree MJLab stack while
+adding two simple policy-controlled gripper slide joints. It keeps gripper
+contact disabled for the first locomotion loop and preserves a stable policy
+contract through two explicit action terms.
 
 Implementation recommendation:
 
@@ -98,6 +129,9 @@ Implementation recommendation:
 - Register `Unitree-G1-Gripper-Flat` by copying the existing G1 velocity task
   registration and replacing `get_g1_robot_cfg()` / `G1_ACTION_SCALE` with the
   gripper variant.
+
+The first smoke evidence satisfies the minimum pass condition for this subtask.
+It does not yet prove learnability; that belongs to 003.
 
 ## Minimal Closed Loop
 
