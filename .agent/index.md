@@ -35,6 +35,7 @@ H200 Locomotion Lab 的 agent 入口。
 - `task/task023-franka-current-payload-estimation/task.md`
 - `task/task027-unitree-mjlab-g1-from-scratch/task.md`
 - `task/task028-randomized-wholebody-morphology-env/task.md`
+- `task/task029-motor-only-randomization-and-failure-baseline/task.md`
 
 ## Consensus
 
