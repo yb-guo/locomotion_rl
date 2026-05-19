@@ -32,6 +32,7 @@ H200 Locomotion Lab 的 agent 入口。
 - `task/task021-genesis-alignment-bundle/task.md`
 - `task/task022-ankle-roll-contact-patch-ablation/task.md`
 - `task/task023-base-attitude-height-stabilization/task.md`
+- `task/task023-franka-current-payload-estimation/task.md`
 
 ## Consensus
 
