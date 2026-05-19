@@ -7,7 +7,7 @@ use the real packages.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -18,7 +18,7 @@ from h200_locomotion_lab.robots import (
 )
 
 
-ACTION_JOINT_GROUPS = ("all", "legs", "legs_waist")
+ACTION_JOINT_GROUPS = ("all", "legs", "legs_waist", "legs_no_ankle_roll")
 LEG_JOINT_SUFFIXES = (
     "_hip_pitch_joint",
     "_hip_roll_joint",
@@ -27,6 +27,62 @@ LEG_JOINT_SUFFIXES = (
     "_ankle_pitch_joint",
     "_ankle_roll_joint",
 )
+
+
+@dataclass(frozen=True, slots=True)
+class GenesisRigidContactSolverConfig:
+    """Optional Genesis rigid contact/solver overrides for ``gs.Scene``."""
+
+    contact_resolve_time: float | None = None
+    enable_collision: bool | None = None
+    enable_joint_limit: bool | None = None
+    enable_self_collision: bool | None = None
+    enable_neutral_collision: bool | None = None
+    enable_adjacent_collision: bool | None = None
+    disable_constraint: bool | None = None
+    max_collision_pairs: int | None = None
+    constraint_solver: str | None = None
+    iterations: int | None = None
+    tolerance: float | None = None
+    ls_iterations: int | None = None
+    ls_tolerance: float | None = None
+    noslip_iterations: int | None = None
+    noslip_tolerance: float | None = None
+    sparse_solve: bool | None = None
+    constraint_timeconst: float | None = None
+    use_contact_island: bool | None = None
+    box_box_detection: bool | None = None
+    max_dynamic_constraints: int | None = None
+    enable_multi_contact: bool | None = None
+    enable_mujoco_compatibility: bool | None = None
+
+    def to_genesis_kwargs(self) -> dict[str, Any]:
+        return {
+            field.name: getattr(self, field.name)
+            for field in fields(self)
+            if getattr(self, field.name) is not None
+        }
+
+    def report(self) -> dict[str, Any]:
+        kwargs = self.to_genesis_kwargs()
+        return {
+            "boundary": "gs.Scene(rigid_options=gs.options.RigidOptions(...))",
+            "configured": bool(kwargs),
+            "requested_rigid_options": kwargs,
+            "unset_fields": [
+                field.name for field in fields(self) if getattr(self, field.name) is None
+            ],
+            "missing": (
+                [
+                    {
+                        "path": "vectorized_genesis_backend.rigid_contact_solver",
+                        "reason": "unset_defaults",
+                    }
+                ]
+                if not kwargs
+                else []
+            ),
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +112,9 @@ class VectorizedGenesisConfig:
     motor_kv_mult: float = 1.0
     motor_force_limit_mult: float = 1.0
     require_asset_path: bool = True
+    rigid_contact_solver: GenesisRigidContactSolverConfig = field(
+        default_factory=GenesisRigidContactSolverConfig
+    )
 
     def __post_init__(self) -> None:
         if self.n_envs <= 0:
@@ -74,6 +133,9 @@ class VectorizedGenesisConfig:
             raise ValueError("motor_kv_mult must be positive")
         if self.motor_force_limit_mult <= 0.0:
             raise ValueError("motor_force_limit_mult must be positive")
+
+    def contact_solver_config_report(self) -> dict[str, Any]:
+        return self.rigid_contact_solver.report()
 
 
 @dataclass(frozen=True, slots=True)
@@ -332,12 +394,32 @@ class VectorizedGenesisBackend:
             for value in self.tensor_device_report().values()
         )
 
+    def contact_solver_config_report(self) -> dict[str, Any]:
+        report = self.config.contact_solver_config_report()
+        report["applied_rigid_options"] = self._rigid_options_applied
+        report["rigid_options_class_present"] = self._rigid_options_class_present
+        if report["configured"] and not self._rigid_options_applied:
+            report["missing"] = [
+                *report["missing"],
+                {
+                    "path": "vectorized_genesis_backend.rigid_options_class",
+                    "reason": "genesis_rigid_options_unavailable",
+                },
+            ]
+        return report
+
     def _build_scene(self) -> tuple[Any, Any]:
         self._init_genesis()
         sim_options = self._make_sim_options()
+        self._rigid_options_class_present = False
+        self._rigid_options_applied = False
+        rigid_options = self._make_rigid_options()
         scene_kwargs = {"show_viewer": self.config.show_viewer}
         if sim_options is not None:
             scene_kwargs["sim_options"] = sim_options
+        if rigid_options is not None:
+            scene_kwargs["rigid_options"] = rigid_options
+            self._rigid_options_applied = True
         scene = self.gs.Scene(**scene_kwargs)
         if self.config.add_plane and hasattr(getattr(self.gs, "morphs", None), "Plane"):
             scene.add_entity(self.gs.morphs.Plane())
@@ -352,6 +434,10 @@ class VectorizedGenesisBackend:
             self.gs.init(backend=backend_value, logging_level=self.config.logging_level)
         except TypeError:
             self.gs.init(backend=backend_value)
+        except Exception as exc:
+            if "already initialized" in str(exc):
+                return
+            raise
 
     def _make_sim_options(self) -> Any | None:
         options = getattr(self.gs, "options", None)
@@ -361,6 +447,39 @@ class VectorizedGenesisBackend:
             return options.SimOptions(dt=self.profile.training_contract.sim_dt_s)
         except TypeError:
             return options.SimOptions()
+
+    def _make_rigid_options(self) -> Any | None:
+        kwargs = self.config.rigid_contact_solver.to_genesis_kwargs()
+        if not kwargs:
+            return None
+        options = getattr(self.gs, "options", None)
+        if options is None or not hasattr(options, "RigidOptions"):
+            return None
+        self._rigid_options_class_present = True
+        kwargs = dict(kwargs)
+        if "constraint_solver" in kwargs:
+            kwargs["constraint_solver"] = self._resolve_constraint_solver(
+                kwargs["constraint_solver"]
+            )
+        return options.RigidOptions(**kwargs)
+
+    def _resolve_constraint_solver(self, value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+        constraint_solver = getattr(self.gs, "constraint_solver", None)
+        if constraint_solver is None:
+            return value
+        for name in ("Newton", "CG"):
+            if value == name or value.lower() == name.lower():
+                if hasattr(constraint_solver, name):
+                    return getattr(constraint_solver, name)
+        available_names = sorted(
+            name for name in dir(constraint_solver) if not name.startswith("_")
+        )
+        raise ValueError(
+            "Unsupported Genesis constraint_solver "
+            f"{value!r}; available names: {available_names}"
+        )
 
     def _maybe_import_torch(self) -> Any | None:
         if self.config.backend != "cuda":
@@ -480,8 +599,13 @@ class VectorizedGenesisBackend:
             is_leg = joint_name.startswith(("left_", "right_")) and joint_name.endswith(
                 LEG_JOINT_SUFFIXES
             )
+            is_ankle_roll = joint_name.endswith("_ankle_roll_joint")
             is_waist = joint_name == "waist_yaw_joint"
-            if is_leg or (action_joint_group == "legs_waist" and is_waist):
+            if is_leg and not (
+                action_joint_group == "legs_no_ankle_roll" and is_ankle_roll
+            ):
+                values.append(1.0)
+            elif action_joint_group == "legs_waist" and is_waist:
                 values.append(1.0)
             else:
                 values.append(0.0)

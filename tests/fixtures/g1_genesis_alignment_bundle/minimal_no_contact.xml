@@ -1,0 +1,7 @@
+<mujoco>
+  <worldbody>
+    <body name="minimal">
+      <geom name="floor" />
+    </body>
+  </worldbody>
+</mujoco>

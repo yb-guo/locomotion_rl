@@ -3,6 +3,7 @@ import sys
 import pytest
 
 from h200_locomotion_lab.envs.vectorized_genesis_backend import (
+    GenesisRigidContactSolverConfig,
     VectorizedGenesisBackend,
     VectorizedGenesisConfig,
     tensor_shape,
@@ -144,6 +145,38 @@ def test_vectorized_genesis_backend_can_freeze_non_leg_action_targets() -> None:
     )
 
 
+def test_vectorized_genesis_backend_can_freeze_ankle_roll_action_targets() -> None:
+    backend = VectorizedGenesisBackend(
+        VectorizedGenesisConfig(
+            n_envs=1,
+            backend="cpu",
+            logical_cuda_device="cpu",
+            require_asset_path=False,
+            action_joint_group="legs_no_ankle_roll",
+        ),
+        genesis_module=_FakeGenesisModule(),
+        profile=load_g1_27dof_nohand_profile(),
+    )
+    backend.reset()
+
+    backend.step([[1.0] * backend.action_dim])
+
+    ankle_roll_action_index = backend.profile.actuator_order.index(
+        "left_ankle_roll_joint"
+    )
+    ankle_pitch_action_index = backend.profile.actuator_order.index(
+        "left_ankle_pitch_joint"
+    )
+    ankle_roll_dof_index = backend.motor_dof_indices[ankle_roll_action_index]
+    ankle_pitch_dof_index = backend.motor_dof_indices[ankle_pitch_action_index]
+    assert backend.robot.positions[0][ankle_roll_dof_index] == pytest.approx(
+        backend.default_positions_values[ankle_roll_action_index]
+    )
+    assert backend.robot.positions[0][ankle_pitch_dof_index] != pytest.approx(
+        backend.default_positions_values[ankle_pitch_action_index]
+    )
+
+
 def test_vectorized_genesis_backend_rejects_wrong_action_shape() -> None:
     backend = _make_backend(n_envs=2)
 
@@ -218,6 +251,121 @@ def test_vectorized_genesis_backend_device_report_is_non_cuda_for_fake_backend()
     assert backend.tensor_device_ok()
 
 
+def test_vectorized_genesis_backend_leaves_rigid_options_unset_by_default() -> None:
+    backend = _make_backend(n_envs=1)
+
+    assert "rigid_options" not in backend.gs.scene_calls[0]
+    assert backend.contact_solver_config_report()["configured"] is False
+    assert backend.contact_solver_config_report()["applied_rigid_options"] is False
+
+
+def test_vectorized_genesis_backend_passes_configured_rigid_options() -> None:
+    backend = VectorizedGenesisBackend(
+        VectorizedGenesisConfig(
+            n_envs=1,
+            backend="cpu",
+            logical_cuda_device="cpu",
+            require_asset_path=False,
+            rigid_contact_solver=GenesisRigidContactSolverConfig(
+                enable_collision=True,
+                enable_mujoco_compatibility=True,
+                iterations=8,
+                tolerance=1e-4,
+            ),
+        ),
+        genesis_module=_FakeGenesisModule(),
+        profile=load_g1_27dof_nohand_profile(),
+    )
+
+    rigid_options = backend.scene.rigid_options
+    assert rigid_options.kwargs == {
+        "enable_collision": True,
+        "enable_mujoco_compatibility": True,
+        "iterations": 8,
+        "tolerance": 1e-4,
+    }
+    report = backend.contact_solver_config_report()
+    assert report["configured"] is True
+    assert report["applied_rigid_options"] is True
+    assert report["requested_rigid_options"] == rigid_options.kwargs
+
+
+def test_vectorized_genesis_backend_maps_constraint_solver_string_to_genesis_enum() -> None:
+    backend = VectorizedGenesisBackend(
+        VectorizedGenesisConfig(
+            n_envs=1,
+            backend="cpu",
+            logical_cuda_device="cpu",
+            require_asset_path=False,
+            rigid_contact_solver=GenesisRigidContactSolverConfig(
+                constraint_solver="Newton",
+                iterations=8,
+            ),
+        ),
+        genesis_module=_FakeGenesisModule(),
+        profile=load_g1_27dof_nohand_profile(),
+    )
+
+    assert backend.scene.rigid_options.kwargs == {
+        "constraint_solver": _FakeGenesisModule.constraint_solver.Newton,
+        "iterations": 8,
+    }
+    assert backend.contact_solver_config_report()["requested_rigid_options"] == {
+        "constraint_solver": "Newton",
+        "iterations": 8,
+    }
+
+
+def test_vectorized_genesis_backend_rejects_unknown_constraint_solver_string() -> None:
+    with pytest.raises(
+        ValueError,
+        match="Unsupported Genesis constraint_solver 'bad'.*CG.*Newton",
+    ):
+        VectorizedGenesisBackend(
+            VectorizedGenesisConfig(
+                n_envs=1,
+                backend="cpu",
+                logical_cuda_device="cpu",
+                require_asset_path=False,
+                rigid_contact_solver=GenesisRigidContactSolverConfig(
+                    constraint_solver="bad",
+                ),
+            ),
+            genesis_module=_FakeGenesisModule(),
+            profile=load_g1_27dof_nohand_profile(),
+        )
+
+
+def test_vectorized_genesis_backend_reuses_already_initialized_genesis_module() -> None:
+    genesis = _FakeGenesisModule()
+    VectorizedGenesisBackend(
+        VectorizedGenesisConfig(
+            n_envs=1,
+            backend="cpu",
+            logical_cuda_device="cpu",
+            require_asset_path=False,
+        ),
+        genesis_module=genesis,
+        profile=load_g1_27dof_nohand_profile(),
+    )
+    genesis.raise_already_initialized = True
+
+    backend = VectorizedGenesisBackend(
+        VectorizedGenesisConfig(
+            n_envs=1,
+            backend="cpu",
+            logical_cuda_device="cpu",
+            require_asset_path=False,
+            rigid_contact_solver=GenesisRigidContactSolverConfig(constraint_solver="Newton"),
+        ),
+        genesis_module=genesis,
+        profile=load_g1_27dof_nohand_profile(),
+    )
+
+    assert len(genesis.scene_calls) == 2
+    assert backend.contact_solver_config_report()["applied_rigid_options"] is True
+
+
 def test_27dof_profile_order_matches_fake_robot_inventory() -> None:
     backend = _make_backend(n_envs=1)
 
@@ -240,10 +388,18 @@ def _make_backend(n_envs: int) -> VectorizedGenesisBackend:
 class _FakeGenesisModule:
     cpu = "fake-cpu"
 
+    class constraint_solver:
+        Newton = object()
+        CG = object()
+
     class options:
         class SimOptions:
             def __init__(self, dt: float) -> None:
                 self.dt = dt
+
+        class RigidOptions:
+            def __init__(self, **kwargs: object) -> None:
+                self.kwargs = kwargs
 
     class morphs:
         class Plane:
@@ -255,18 +411,29 @@ class _FakeGenesisModule:
 
     def __init__(self) -> None:
         self.init_calls: list[tuple[str, str]] = []
+        self.scene_calls: list[dict[str, object]] = []
+        self.raise_already_initialized = False
 
     def init(self, backend: str, logging_level: str) -> None:
+        if self.raise_already_initialized:
+            raise RuntimeError("Genesis already initialized.")
         self.init_calls.append((backend, logging_level))
 
-    def Scene(self, show_viewer: bool, sim_options: object) -> "_FakeScene":
-        return _FakeScene(show_viewer=show_viewer, sim_options=sim_options)
+    def Scene(self, **kwargs: object) -> "_FakeScene":
+        self.scene_calls.append(kwargs)
+        return _FakeScene(**kwargs)
 
 
 class _FakeScene:
-    def __init__(self, show_viewer: bool, sim_options: object) -> None:
+    def __init__(
+        self,
+        show_viewer: bool,
+        sim_options: object,
+        rigid_options: object | None = None,
+    ) -> None:
         self.show_viewer = show_viewer
         self.sim_options = sim_options
+        self.rigid_options = rigid_options
         self.step_count = 0
         self.n_envs = 0
         self.robot = _FakeRobot()

@@ -40,6 +40,7 @@ class G1VelocityTrackingConfig:
     base_height_sigma: float = 0.10
     base_height_reward_scale: float = 0.0
     action_rate_penalty_scale: float = 0.01
+    joint_velocity_penalty_scale: float = 0.0
     joint_deviation_penalty_scale: float = 0.05
     termination_penalty: float = 0.0
 
@@ -109,9 +110,14 @@ class G1VelocityTrackingVectorizedEnv:
             action=clipped_action,
             previous_action=previous_action,
         )
+        episode_lengths = self._copy_episode_lengths()
         self.last_action = clipped_action
         done_env_ids = self._done_env_ids(done)
         reset_count = self._env_ids_count(done_env_ids)
+        completed_episode_lengths = self._select_episode_lengths(
+            episode_lengths,
+            done_env_ids,
+        )
         if reset_count:
             self.backend.reset(done_env_ids)
             self._reset_bookkeeping(done_env_ids)
@@ -126,6 +132,9 @@ class G1VelocityTrackingVectorizedEnv:
             "observation_dim": self.observation_dim,
             "reset_count": reset_count,
             "components": components,
+            "episode_lengths": episode_lengths,
+            "completed_episode_lengths": completed_episode_lengths,
+            "full_env_reset_wave": reset_count == self.n_envs,
         }
         return G1VelocityTrackingStep(
             observation=observation,
@@ -227,6 +236,7 @@ class G1VelocityTrackingVectorizedEnv:
             -base_height_error / self.config.base_height_sigma
         )
         action_rate_penalty = (action - previous_action).square().mean(dim=1)
+        joint_velocity_penalty = state.dof_vel.square().mean(dim=1)
         joint_error = self._sub(state.dof_pos, self.backend.default_positions)
         joint_deviation_penalty = joint_error.square().mean(dim=1)
         height_bad = (root_height < self.config.height_min) | (
@@ -247,6 +257,7 @@ class G1VelocityTrackingVectorizedEnv:
             + self.config.upright_reward_scale * upright
             + self.config.base_height_reward_scale * tracking_base_height
             - self.config.action_rate_penalty_scale * action_rate_penalty
+            - self.config.joint_velocity_penalty_scale * joint_velocity_penalty
             - self.config.joint_deviation_penalty_scale * joint_deviation_penalty
             + termination_penalty
         )
@@ -257,6 +268,7 @@ class G1VelocityTrackingVectorizedEnv:
             "tracking_base_height": tracking_base_height,
             "upright": upright,
             "action_rate_penalty": action_rate_penalty,
+            "joint_velocity_penalty": joint_velocity_penalty,
             "joint_deviation_penalty": joint_deviation_penalty,
             "termination_penalty": termination_penalty,
             "height_bad": height_bad,
@@ -277,6 +289,7 @@ class G1VelocityTrackingVectorizedEnv:
         root_vel = as_rows(state.root_vel)
         root_ang = as_rows(state.root_ang_vel)
         dof_pos = as_rows(state.dof_pos)
+        dof_vel = as_rows(state.dof_vel)
         commands = as_rows(self.commands)
         actions = as_rows(action)
         previous_actions = as_rows(previous_action)
@@ -290,6 +303,7 @@ class G1VelocityTrackingVectorizedEnv:
         tracking_base_height: list[float] = []
         upright_values: list[float] = []
         action_rate_penalty: list[float] = []
+        joint_velocity_penalty: list[float] = []
         joint_deviation_penalty: list[float] = []
         termination_penalty_values: list[float] = []
         height_bad_values: list[bool] = []
@@ -310,6 +324,7 @@ class G1VelocityTrackingVectorizedEnv:
             joint_penalty = sum(
                 (value - baseline) ** 2 for value, baseline in zip(dof_pos[index], default)
             ) / self.action_dim
+            joint_velocity = sum(value**2 for value in dof_vel[index]) / self.action_dim
             item_reward = (
                 self.config.alive_reward
                 + self.config.lin_vel_reward_scale * tracking_lin
@@ -317,6 +332,7 @@ class G1VelocityTrackingVectorizedEnv:
                 + self.config.upright_reward_scale * upright
                 + self.config.base_height_reward_scale * tracking_height
                 - self.config.action_rate_penalty_scale * action_penalty
+                - self.config.joint_velocity_penalty_scale * joint_velocity
                 - self.config.joint_deviation_penalty_scale * joint_penalty
             )
             height_bad = (
@@ -342,6 +358,7 @@ class G1VelocityTrackingVectorizedEnv:
             tracking_base_height.append(tracking_height)
             upright_values.append(upright)
             action_rate_penalty.append(action_penalty)
+            joint_velocity_penalty.append(joint_velocity)
             joint_deviation_penalty.append(joint_penalty)
             termination_penalty_values.append(termination_penalty)
             height_bad_values.append(height_bad)
@@ -355,6 +372,7 @@ class G1VelocityTrackingVectorizedEnv:
             "tracking_base_height": tracking_base_height,
             "upright": upright_values,
             "action_rate_penalty": action_rate_penalty,
+            "joint_velocity_penalty": joint_velocity_penalty,
             "joint_deviation_penalty": joint_deviation_penalty,
             "termination_penalty": termination_penalty_values,
             "height_bad": height_bad_values,
@@ -438,6 +456,16 @@ class G1VelocityTrackingVectorizedEnv:
             self.episode_lengths += 1
             return
         self.episode_lengths = [value + 1 for value in self.episode_lengths]
+
+    def _copy_episode_lengths(self) -> Any:
+        if self.torch is not None and is_tensor_like(self.episode_lengths):
+            return self.episode_lengths.clone()
+        return list(self.episode_lengths)
+
+    def _select_episode_lengths(self, episode_lengths: Any, env_ids: Any) -> Any:
+        if is_tensor_like(episode_lengths):
+            return episode_lengths[env_ids]
+        return [episode_lengths[env_index] for env_index in env_ids]
 
     def _done_env_ids(self, done: Any) -> Any:
         if self.torch is not None and is_tensor_like(done):
