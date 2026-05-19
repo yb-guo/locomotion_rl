@@ -42,7 +42,24 @@ Evidence:
 
 - 2026-05-19 Opened during diagnose audit to prevent premature policy
   complexity.
+- 2026-05-19 Reviewed completed 001-005 evidence. The fixed-topology gripper
+  environment has stable obs/action shape, staged randomization toggles,
+  MLP PPO smoke, deterministic eval pass, randomized holdout eval pass, and
+  render evidence.
+- 2026-05-19 Wrote readiness report:
+  `.agent/task/task028-randomized-wholebody-morphology-env/artifacts/task028_policy_swap_readiness_report.md`.
 
 ## Review
 
-Status: planned.
+Status: passed.
+
+The environment is ready for a next policy-only fixed-topology experiment. The
+recommended next task is to keep the `Unitree-G1-Gripper-Flat-*` env family and
+the 31-action output contract unchanged, then replace only the policy model or
+observation encoder. A LocoFormer-style first pass should decode into the same
+flat action vector and should compare directly against the MLP
+`model_600.pt` baseline.
+
+Not ready in this task: variable topology, variable DoF, padding/masks, full
+dexterous hands, generic morphology asset generation, gripper manipulation
+contacts, delay/smoothing randomization, and multi-term ONNX export metadata.

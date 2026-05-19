@@ -88,10 +88,20 @@ Planned slices:
   preserved action dim 31 / actor obs 104 / critic obs 119 and passed 64-env,
   2-iteration PPO smoke on H200. Inspect artifacts are under:
   `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task028/randomization_curriculum/inspect/`.
+- 2026-05-19 Completed subtask 005. `Unitree-G1-Gripper-Flat-Combined`
+  `model_600.pt` passed deterministic eval and randomized holdout eval, then
+  rendered an 8-second EGL video with midframe and gripper action stats. Eval
+  and render artifacts are under:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task028/eval_render/`.
+- 2026-05-19 Completed subtask 006 readiness review. The environment is ready
+  for a next fixed-topology policy-only experiment, using the same 104-dim
+  actor observation and 31-dim action contract. Variable topology, full
+  dexterous manipulation, delay/smoothing randomization, and multi-term ONNX
+  metadata export remain deferred.
 
 ## Review
 
-Status: in progress.
+Status: passed.
 
 The main risk is confusing two experiments: environment learnability and policy
 architecture. This task intentionally separates them. The first pass should
@@ -107,7 +117,8 @@ dexterous hands, action-token decoding, and a generic morphology asset
 generator are explicitly deferred. Object manipulation and gripper contact
 tasks are also deferred.
 
-Completed so far: fixed-topology environment contract, G1-like gripper
-asset/task prototype, first MLP PPO smoke, and staged randomization curriculum
-smoke. Next slice is 005: closed-loop eval and render evidence from a saved
-checkpoint.
+The task produced a runnable fixed-topology G1-like whole-body gripper
+environment family in upstream Unitree MJLab, verified it with existing MLP PPO,
+added staged randomization controls, and captured closed-loop eval/render
+evidence from a saved checkpoint. The next task should be a policy-only
+experiment on top of the stable `Unitree-G1-Gripper-Flat-*` contract.
