@@ -33,6 +33,7 @@ H200 Locomotion Lab 的 agent 入口。
 - `task/task022-ankle-roll-contact-patch-ablation/task.md`
 - `task/task023-base-attitude-height-stabilization/task.md`
 - `task/task023-franka-current-payload-estimation/task.md`
+- `task/task027-unitree-mjlab-g1-from-scratch/task.md`
 
 ## Consensus
 
