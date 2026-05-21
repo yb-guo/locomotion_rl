@@ -151,10 +151,17 @@ Evidence:
 - 2026-05-21 Existing-policy dynamic switch eval is split by speed: fixed
   `1.2 m/s` passed, fixed `1.6 m/s` failed. The accepted task029 checkpoint
   does not yet satisfy the task030 online adaptation target at `1.6 m/s`.
+- 2026-05-21 Completed subtask 003 by referencing task029 accepted clean and
+  persistent fixed-speed `1.6 m/s` JSON evidence and adding isolated dynamic
+  single-failure evals. The `1.6 m/s` bottleneck is dynamic `left_knee_joint`
+  dead/recovery: isolated dynamic `single-left-knee` failed with
+  `zero_fall_ratio=0.1914`, while isolated dynamic `single-right-hip-yaw`
+  passed with `zero_fall_ratio=1.0`.
 
 ## Review
 
-Status: in progress. Subtasks 001 and 002 have JSON evidence and pass. Subtask
-003 has the key dynamic-switch baseline but is still partial because isolated
-dynamic single-failure and clean/persistent task030 report links remain to be
-recorded before training.
+Status: in progress. Subtasks 001, 002, and 003 have JSON evidence and pass.
+The next closed loop is subtask 004: train the unchanged `104 -> 31` MLP PPO
+policy on a dynamic failure distribution at fixed `1.6 m/s`, with extra focus
+on left-knee onset and recovery, while preserving task029 clean and persistent
+robustness.

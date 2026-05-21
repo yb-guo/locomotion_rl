@@ -29,6 +29,17 @@ Do not change:
 - reward stack except for scheduler-compatible bookkeeping if needed
 - robot topology, link inertial values, or contact randomization
 
+Entry decision from subtask 003:
+
+- Start from task029 accepted `Fast1p6 model_4700.pt`.
+- First train/evaluate fixed `1.6 m/s`; do not advance to `1.8` or `2.0 m/s`
+  until dynamic `1.6 m/s` passes.
+- Bias the first dynamic distribution toward `left_knee_joint` dead/recovery,
+  because isolated dynamic `single-left-knee` failed while isolated dynamic
+  `single-right-hip-yaw` passed.
+- Preserve the original mix shape, but make the dynamic single-failure bucket
+  left-knee-heavy for the first smoke and H200 run.
+
 Pass:
 
 - 64-env smoke proves the dynamic task can train from the selected checkpoint.
