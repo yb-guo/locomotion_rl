@@ -41,9 +41,19 @@ Fail:
   memory to a later task only if the scope expands to locked joints, stuck
   commands, multi-motor simultaneous dynamic faults, longer hidden actuator
   delays, or harder terrain.
+- 2026-05-21 Broader per-joint dynamic single-onset grid changed the decision
+  boundary. The same MLP is sufficient for the specified dynamic-switch route,
+  but not for arbitrary full-dead mid-episode onset across all leg joints:
+  `model_5349.pt` passed only `8/12`, all-joint onset fine-tune passed `7/12`,
+  and focused onset fine-tune passed `6/12`.
+- 2026-05-21 Updated decision: do not add history inside Task030 after the fact.
+  Close this task as a scoped MLP baseline and open a later task for arbitrary
+  dynamic-onset adaptation. That later task should change at least one of:
+  speed/onset curriculum, observation history, recurrent state, or
+  LocoFormer-style context.
 
 ## Review
 
-Status: pass. The decision is evidence-based: final `2.0 m/s` dynamic switch
-multi-seed s5 and task029 full regression both pass for the MLP checkpoint, so
-Task030 should not change policy architecture.
+Status: partial. Evidence supports keeping Task030 as an MLP baseline for the
+specified dynamic-switch route, but the broader all-joint dynamic-onset grid is
+a concrete failure mode for a later memory/curriculum task.

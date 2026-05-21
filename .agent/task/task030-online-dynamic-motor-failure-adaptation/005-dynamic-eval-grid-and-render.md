@@ -110,13 +110,32 @@ Fail:
   `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task030/dynamic_failure_speed_expansion/render_model5349_kneehiproll_dynamic_vx2p0`.
   Local copies:
   `D:\guoyubo.9\Documents\New project 2\_worktrees\h200-locomotion-lab-task030-online-dynamic-failure\outputs\task030\render_model5349_kneehiproll_dynamic_vx2p0\`.
+- 2026-05-21 Added a stricter per-joint dynamic single-onset grid at fixed
+  `2.0 m/s` for the accepted `model_5349.pt`. This broader route does not pass:
+  `pass_count=8/12`; failed dynamic full-dead onset cases are
+  `left_hip_pitch_joint`, `left_hip_yaw_joint`, `right_hip_pitch_joint`, and
+  `right_knee_joint`. Summary:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task030/dynamic_failure_speed_expansion/eval_model5349_kneehiproll_vx2p0_dynamic_onset_grid/task030_dynamic_onset_grid_summary.json`.
+- 2026-05-21 Tried an all-joint dynamic-onset guard stage from `model_5349.pt`.
+  Final `model_5428.pt` did not improve the broader onset grid:
+  `pass_count=7/12`; failed cases include hip pitch/yaw and right knee. Summary:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task030/dynamic_failure_speed_expansion/eval_model5428_alljoint_vx2p0_dynamic_onset_grid/task030_dynamic_onset_grid_summary.json`.
+- 2026-05-21 Tried a focused dynamic-onset guard stage from `model_5349.pt` for
+  the failed joints. Final `model_5468.pt` also did not close the broader onset
+  grid and regressed to `pass_count=6/12`. Summary:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task030/dynamic_failure_speed_expansion/eval_model5468_focus_vx2p0_dynamic_onset_grid/task030_dynamic_onset_grid_summary.json`.
 
 ## Review
 
-Status: pass. The staged ladder closed in order at `1.6 -> 1.8 -> 2.0 m/s`.
-Final accepted checkpoint is `model_5349.pt` from the knee+hip-roll `2.0 m/s`
-guard run. Evidence includes task029 full regression, dynamic-switch
-multi-seed s5, and final clean/single/switch videos. The final render JSONs
-confirm non-empty videos and `done_count=0`; manual video review should still
-be used before any hardware-facing claim, but the subtask gate has JSON and
-render evidence.
+Status: partial. The staged ladder closed in order at `1.6 -> 1.8 -> 2.0 m/s`
+for the specified task030 dynamic-switch route. The best scoped checkpoint is
+`model_5349.pt` from the knee+hip-roll `2.0 m/s` guard run; it passes task029
+full regression, dynamic-switch multi-seed s5, and final clean/single/switch
+renders with `done_count=0`.
+
+The stricter all-leg per-joint dynamic single-onset grid does not pass. Two
+additional MLP-only onset guard attempts (`model_5428.pt`, `model_5468.pt`)
+failed to close it and made the grid worse. Do not claim full arbitrary
+mid-episode motor-failure robustness from Task030. Treat `model_5349.pt` as the
+best scoped dynamic-switch checkpoint and move arbitrary onset adaptation to a
+later task with a changed curriculum and likely explicit history/memory.

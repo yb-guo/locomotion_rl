@@ -195,11 +195,21 @@ Evidence:
   `104 -> 31`, receives no explicit fault labels, and is sufficient for the
   first-pass dynamic weak/dead motor adaptation setting through fixed
   `2.0 m/s`. No history policy is added in Task030.
+- 2026-05-21 Tightened subtask 005 with a broader fixed `2.0 m/s` per-joint
+  dynamic single-onset grid. The scoped accepted checkpoint `model_5349.pt`
+  passed only `8/12` cases; all-joint onset fine-tune `model_5428.pt` passed
+  `7/12`; focused onset fine-tune `model_5468.pt` passed `6/12`. The broader
+  arbitrary onset route is not closed by the current MLP/curriculum.
 
 ## Review
 
-Status: pass. Subtasks 001-006 have Route/Log/Review evidence. Task030 closes
-with an MLP-only policy that reaches the staged target `2.0 m/s` while
-preserving task029 clean/persistent/dead-grid robustness and passing dynamic
-switch multi-seed plus render gates. Hardware-facing claims remain out of
-scope; this is a MuJoCo/MJLab sim training and eval closure.
+Status: partial. Subtasks 001-006 have Route/Log/Review evidence. Task030
+produced a scoped MLP-only checkpoint, `model_5349.pt`, that reaches fixed
+`2.0 m/s` for the specified dynamic-switch route while preserving task029
+clean/persistent/dead-grid robustness and passing render gates.
+
+The stricter arbitrary per-joint mid-episode dynamic onset route is not solved:
+hip-pitch/hip-yaw/right-knee onset failures remain after two additional
+MLP-only guard attempts. Hardware-facing claims remain out of scope. The next
+task should target arbitrary dynamic-onset adaptation with a changed curriculum
+and likely explicit history/memory.
