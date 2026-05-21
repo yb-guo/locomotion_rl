@@ -141,9 +141,20 @@ Evidence:
   window.
 - 2026-05-21 User decision: final speed target is `2.0 m/s`, reached through
   staged gates.
+- 2026-05-21 Created new local worktree and branch for execution:
+  `D:\guoyubo.9\Documents\New project 2\_worktrees\h200-locomotion-lab-task030-online-dynamic-failure`,
+  branch `codex/task030-online-dynamic-failure`.
+- 2026-05-21 Added and ran H200 artifacts for subtasks 001-003. Subtask 001
+  contract inspect passed with actor obs/action `104 -> 31` unchanged and no
+  explicit fault labels in actor observations. Subtask 002 deterministic
+  scheduler trace passed with the required mid-episode transition template.
+- 2026-05-21 Existing-policy dynamic switch eval is split by speed: fixed
+  `1.2 m/s` passed, fixed `1.6 m/s` failed. The accepted task029 checkpoint
+  does not yet satisfy the task030 online adaptation target at `1.6 m/s`.
 
 ## Review
 
-Status: open. This task is a diagnosis-first training task. The first
-acceptance gate is not training reward; it is a deterministic scheduler trace
-plus baseline eval of the existing task029 policy.
+Status: in progress. Subtasks 001 and 002 have JSON evidence and pass. Subtask
+003 has the key dynamic-switch baseline but is still partial because isolated
+dynamic single-failure and clean/persistent task030 report links remain to be
+recorded before training.
