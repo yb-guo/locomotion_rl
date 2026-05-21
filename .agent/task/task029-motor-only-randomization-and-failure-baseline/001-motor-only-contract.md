@@ -72,11 +72,21 @@ Evidence:
 
 - 2026-05-19 Opened with the user-approved boundary: actor does not see motor
   failure labels, while critic may receive privileged motor information.
+- 2026-05-19 H200 inspect passed. Evidence:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task029/motor_only_contract/summary.json`.
+  Six MotorOnly tasks passed the contract checks with `action_dim=31`,
+  `actor_obs=104`, and `critic_obs=119`.
+- 2026-05-19 Inspect confirmed actor corruption is false and forbidden
+  link/contact/sensor/push events are absent. Temporary `PYTHONPATH` stubs were
+  used only for missing inspect-time dependencies and did not modify the conda
+  environment.
 
 ## Review
 
-Status: pending.
+Status: passed.
 
-This subtask is the gate that keeps task029 from becoming a mixed dynamics
-randomization task. Do not start training until the motor-only stage can be
-inspected and the forbidden randomization list is machine-checked.
+The motor-only contract is machine-checked for the first acceptance stage.
+Task028-compatible action and actor-observation dimensions are preserved, the
+critic has the expected larger privileged observation shape, and no forbidden
+link/contact/sensor/push randomization was active in the inspected MotorOnly
+tasks.

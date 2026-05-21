@@ -61,11 +61,25 @@ Evidence:
 - 2026-05-19 Opened from the task029 plan. The task028 `MotorPd` stage is a
   starting point only; task029 must split and strengthen motor primitives
   instead of using one broad bundle.
+- 2026-05-19 H200 smoke passed. Evidence:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task029/motor_primitives/motor_primitive_smoke_summary.json`.
+  Six primitive stages ran with 64 envs for 2 PPO iterations on `gpu0`:
+  `control`, `kp_kd`, `strength`, `damping_friction`, `armature`, and
+  `combined`.
+- 2026-05-19 Each primitive smoke produced `model_1.pt`, agent/env YAML, and a
+  TensorBoard event file. `upload-model` was false, and no residual training
+  process remained after the runs.
+- 2026-05-19 Torque noise, torque bias, and deadband were not included in this
+  pass because MJLab does not expose ready-made reliable APIs for those knobs.
+  They require a later actuator-wrapper implementation and should not be
+  treated as covered by this subtask's H200 pass.
 
 ## Review
 
-Status: pending.
+Status: passed.
 
-This subtask should not prove final robustness. It should prove that each
-motor-side primitive is implemented, inspectable, independently toggleable, and
-smoke-runnable before being combined.
+The available MJLab motor-side primitives are implemented as independently
+toggleable stages and are smoke-runnable before being combined. This pass covers
+control, `kp/kd`, strength, damping/friction, armature, and combined motor-side
+randomization only. Torque noise, torque bias, and deadband remain deferred to
+an actuator-wrapper slice.
