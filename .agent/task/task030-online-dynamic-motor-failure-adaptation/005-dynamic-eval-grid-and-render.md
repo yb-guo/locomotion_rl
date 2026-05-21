@@ -55,9 +55,68 @@ Fail:
   `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task030/dynamic_failure_mlp_train/render_model5200_dynamic_switch_vx1p6/task030-render-model5200-dynamic-switch-vx1p6-failure_indistribution_forward_0p5.mp4`.
   Local copy:
   `D:\guoyubo.9\Documents\New project 2\_worktrees\h200-locomotion-lab-task030-online-dynamic-failure\outputs\task030\render_model5200_dynamic_switch_vx1p6\task030-render-model5200-dynamic-switch-vx1p6.mp4`.
+- 2026-05-21 Extended to fixed `1.8 m/s`. Initial probe from `model_5200.pt`
+  failed only on a `max_gravity_xy_after_onset` outlier. A short fixed-speed
+  dynamic micro run reached dynamic-switch pass at `model_5239.pt`, but task029
+  full regression failed only `dead_motor_grid_07_right_knee_joint`.
+- 2026-05-21 Added a right-knee guard rehearsal stage on H200 and resumed from
+  `model_5239.pt`. Accepted fixed `1.8 m/s` checkpoint:
+  `/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task030_dynamic_004_train/2026-05-21_15-51-26_005_rightknee_vx1p8_from5239_env8192_iter40_gpu1_seed30530/model_5278.pt`.
+  Task029 full regression passed, including the previous bottleneck:
+  `dead_motor_grid_07_right_knee_joint` with `zero_fall_ratio=0.734375`,
+  `lin=0.37535613775253296`, `yaw=0.44515153765678406`. Aggregate:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task030/dynamic_failure_speed_expansion/eval_model5278_rightknee_vx1p8_task029_regression_full_grid/task029_eval_failure_aggregate.json`.
+- 2026-05-21 Fixed `1.8 m/s` dynamic switch multi-seed s5 passed for
+  `model_5278.pt`: `pass_count=5/5`, `zero_fall_ratio_min=1.0`,
+  `recovery_success_ratio_min=1.0`,
+  `post_recovery_lin_vel_error_mean_max=0.1514013409614563`,
+  `post_recovery_yaw_vel_error_mean_max=0.2030811458826065`,
+  `max_gravity_xy_after_onset_max=0.15313367545604706`. Summary:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task030/dynamic_failure_speed_expansion/eval_model5278_rightknee_vx1p8_dynamic_switch_s5/task030_dynamic_switch_multiseed_s5_summary.json`.
+- 2026-05-21 Rendered fixed `1.8 m/s` dynamic-switch and single-right-knee
+  videos for `model_5278.pt`; both cases `pass=true`, `done_count=0`, 500
+  frames at 50 FPS. H200 render directory:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task030/dynamic_failure_speed_expansion/render_model5278_rightknee_dynamic_vx1p8`.
+  Local copies:
+  `D:\guoyubo.9\Documents\New project 2\_worktrees\h200-locomotion-lab-task030-online-dynamic-failure\outputs\task030\render_model5278_rightknee_dynamic_vx1p8\`.
+- 2026-05-21 Extended to fixed `2.0 m/s`. Probe from the accepted `1.8 m/s`
+  checkpoint failed only on the same posture-outlier metric
+  (`max_gravity_xy_after_onset=0.952745795249939`) while fall/recovery and
+  tracking metrics were already within threshold. A short `2.0 m/s` dynamic
+  micro run produced `model_5317.pt`, which passed dynamic-switch eval but
+  failed task029 full regression on `dead_motor_grid_07_right_knee_joint`.
+- 2026-05-21 A right-knee-only `2.0 m/s` rehearsal fixed right knee but shifted
+  the bottleneck to `dead_motor_grid_04_left_hip_roll_joint`. A mixed
+  knee+hip-roll guard stage balanced those failure modes and produced the final
+  accepted `2.0 m/s` checkpoint:
+  `/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task030_dynamic_004_train/2026-05-21_17-35-22_005_kneehiproll_vx2p0_from5320_env8192_iter30_gpu1_seed30750/model_5349.pt`.
+- 2026-05-21 Final fixed `2.0 m/s` task029 full regression passed for
+  `model_5349.pt`: aggregate `pass=true`, clean pass, motor-primitives pass,
+  in-distribution persistent failure pass, doubled holdout pass, and all 12
+  forced-dead grid cases pass. Bottleneck grid cases after balancing:
+  `dead_motor_grid_04_left_hip_roll_joint zero_fall_ratio=1.0` and
+  `dead_motor_grid_07_right_knee_joint zero_fall_ratio=0.6171875`. Aggregate:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task030/dynamic_failure_speed_expansion/eval_model5349_kneehiproll_vx2p0_task029_regression_full_grid/task029_eval_failure_aggregate.json`.
+- 2026-05-21 Final fixed `2.0 m/s` dynamic switch multi-seed s5 passed for
+  `model_5349.pt`: `pass_count=5/5`, `zero_fall_ratio_min=1.0`,
+  `recovery_success_ratio_min=1.0`,
+  `post_recovery_lin_vel_error_mean_max=0.1684277504682541`,
+  `post_recovery_yaw_vel_error_mean_max=0.19378596544265747`,
+  `max_gravity_xy_after_onset_max=0.14636270701885223`. Summary:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task030/dynamic_failure_speed_expansion/eval_model5349_kneehiproll_vx2p0_dynamic_switch_s5/task030_dynamic_switch_multiseed_s5_summary.json`.
+- 2026-05-21 Rendered final fixed `2.0 m/s` clean, single-right-knee dynamic,
+  and switch dynamic videos for `model_5349.pt`; all cases `pass=true`,
+  `done_count=0`, 500 frames at 50 FPS. H200 render directory:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task030/dynamic_failure_speed_expansion/render_model5349_kneehiproll_dynamic_vx2p0`.
+  Local copies:
+  `D:\guoyubo.9\Documents\New project 2\_worktrees\h200-locomotion-lab-task030-online-dynamic-failure\outputs\task030\render_model5349_kneehiproll_dynamic_vx2p0\`.
 
 ## Review
 
-Status: open. Fixed `1.6 m/s` has an accepted checkpoint and one dynamic-switch
-render from subtask 004, but this subtask still needs full dynamic single/grid
-coverage and staged `1.8 -> 2.0 m/s` evidence.
+Status: pass. The staged ladder closed in order at `1.6 -> 1.8 -> 2.0 m/s`.
+Final accepted checkpoint is `model_5349.pt` from the knee+hip-roll `2.0 m/s`
+guard run. Evidence includes task029 full regression, dynamic-switch
+multi-seed s5, and final clean/single/switch videos. The final render JSONs
+confirm non-empty videos and `done_count=0`; manual video review should still
+be used before any hardware-facing claim, but the subtask gate has JSON and
+render evidence.

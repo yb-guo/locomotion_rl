@@ -179,12 +179,27 @@ Evidence:
   accepted `model_5200.pt`; render case `pass=true`, `done_count=0`, 500 frames
   at 50 FPS. Local copy:
   `D:\guoyubo.9\Documents\New project 2\_worktrees\h200-locomotion-lab-task030-online-dynamic-failure\outputs\task030\render_model5200_dynamic_switch_vx1p6\task030-render-model5200-dynamic-switch-vx1p6.mp4`.
+- 2026-05-21 Completed subtask 005 speed expansion. Fixed `1.8 m/s` accepted
+  checkpoint:
+  `/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task030_dynamic_004_train/2026-05-21_15-51-26_005_rightknee_vx1p8_from5239_env8192_iter40_gpu1_seed30530/model_5278.pt`.
+  Fixed `2.0 m/s` accepted checkpoint:
+  `/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task030_dynamic_004_train/2026-05-21_17-35-22_005_kneehiproll_vx2p0_from5320_env8192_iter30_gpu1_seed30750/model_5349.pt`.
+- 2026-05-21 Final fixed `2.0 m/s` evidence for `model_5349.pt`: task029 full
+  regression aggregate `pass=true`; dynamic-switch multi-seed s5
+  `pass_count=5/5`, `zero_fall_ratio_min=1.0`,
+  `recovery_success_ratio_min=1.0`,
+  `max_gravity_xy_after_onset_max=0.14636270701885223`; final clean,
+  single-right-knee dynamic, and switch dynamic renders all produced 500-frame
+  50 FPS videos with `done_count=0`.
+- 2026-05-21 Completed subtask 006 decision. The current MLP actor remains
+  `104 -> 31`, receives no explicit fault labels, and is sufficient for the
+  first-pass dynamic weak/dead motor adaptation setting through fixed
+  `2.0 m/s`. No history policy is added in Task030.
 
 ## Review
 
-Status: in progress. Subtasks 001, 002, 003, and 004 have JSON evidence and
-pass. Fixed `1.6 m/s` dynamic MLP training is closed on `model_5200.pt` while
-preserving task029 clean/persistent robustness. The remaining task030 work is
-subtask 005: full dynamic eval/render coverage and staged speed expansion to
-`1.8` then `2.0 m/s`; do not claim final task pass until those gates have JSON
-and render evidence.
+Status: pass. Subtasks 001-006 have Route/Log/Review evidence. Task030 closes
+with an MLP-only policy that reaches the staged target `2.0 m/s` while
+preserving task029 clean/persistent/dead-grid robustness and passing dynamic
+switch multi-seed plus render gates. Hardware-facing claims remain out of
+scope; this is a MuJoCo/MJLab sim training and eval closure.
