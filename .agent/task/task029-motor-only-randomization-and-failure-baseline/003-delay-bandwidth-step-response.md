@@ -48,11 +48,24 @@ Evidence:
 
 - 2026-05-19 Opened because task028 deferred delay/smoothing after finding it
   likely requires actuator-wrapper work rather than a simple event toggle.
+- 2026-05-19 H200 step-response validation passed. Evidence:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task029/delay_bandwidth_step_response/summary.json`.
+  The harness preserved `action_dim=31` and `actor_obs=104`.
+- 2026-05-19 Step-response assertions passed: baseline raw action remained
+  unmutated and had no delay; delay-only shifted the applied target; low-pass
+  had no delay and smoothed the first step; delay+low-pass shifted the smoothed
+  applied target.
+- 2026-05-19 Key timing values: `step_at=3`, `delay_steps=2`,
+  `low_pass_alpha=0.35`, target joint `left_knee_joint`,
+  `action_scale` approximately `0.350661`, baseline `target_delta` at step 3
+  approximately `0.350661`, low-pass step 3 approximately `0.122731`, and
+  delay-only applied at step 5.
 
 ## Review
 
-Status: pending.
+Status: passed.
 
-This is a timing-boundary diagnostic subtask. It should finish with a fast,
-deterministic harness that can catch off-by-one delay and incorrect filter
-placement before any long H200 training run starts.
+The deterministic harness verifies the timing boundary before PPO training.
+Delay placement, low-pass placement, and raw-action logging behavior are covered
+by saved JSON evidence, including the expected two-step shift and first-step
+low-pass smoothing magnitude.

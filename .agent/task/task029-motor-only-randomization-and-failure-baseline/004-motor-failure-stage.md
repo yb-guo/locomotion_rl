@@ -59,11 +59,39 @@ Evidence:
 
 - 2026-05-19 Opened after the user approved persistent episode-start weak/dead
   leg motor failure as task029's first acceptance target.
+- 2026-05-19 Implemented
+  `Unitree-G1-Gripper-Flat-MotorOnly-Failure` with a reset-mode
+  `motor_failure` event. The event resolves leg targets by joint name, records
+  joint names / ctrl ids / action indices / failure type / scale, restores
+  default `actuator_forcerange` for reset envs, then applies weak/dead scales.
+- 2026-05-19 Initial per-env reset diagnostic caught that the custom event had
+  not declared `actuator_forcerange` as a domain randomization field, so model
+  field writes were not isolated per env. Fixed by decorating
+  `task029_motor_failure` with `@requires_model_fields("actuator_forcerange")`.
+- 2026-05-19 Verification evidence saved under
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task029/motor_failure_stage/`:
+  - `inspect/motor_failure_inspect_summary.json`: pass. Train/play configs have
+    only `reset_base`, `reset_robot_joints`, and `motor_failure` events;
+    `motor_failure` is reset mode; action dim is 31; actor obs is 104; actor
+    terms do not expose motor/failure/fault/scale; critic has no failure
+    privileged info.
+  - `diagnostics/motor_failure_diagnostics_summary.json`: pass. Sampler proves
+    0-2 failures per reset, leg-only targets, weak range 0.3-0.7, dead range
+    0.0-0.1, and per-env reset default-restore plus scaled reapply.
+  - `diagnostics/motor_failure_forced_trace.json`: pass. Same-action
+    default/weak/dead trace shows the selected leg actuator force range scales
+    and actuator force decreases default > weak > dead.
+  - `smoke/motor_failure_smoke_summary.json`: pass. 64 env, 2 PPO iterations
+    produced `model_1.pt`, params YAML, TensorBoard event, and no residual
+    `scripts/train.py` processes.
+- 2026-05-19 Actor leak probe covered train/play config terms, functions,
+  params, actor shape, and action dim. Runner-level rollout observation hook
+  probing was not performed in 004, so this is not a full robustness pass.
 
 ## Review
 
-Status: pending.
+Status: passed for 004 stage smoke.
 
-This subtask should prove the fault model is real and diagnosable before using
-it for convergence claims. A passing PPO smoke alone is not enough; the forced
-single-motor trace is required.
+This only passes the 004 motor-failure stage smoke. It does not mark 005-007 or
+full robustness complete. Runner-level actor observation plumbing remains a
+later hardening check.
