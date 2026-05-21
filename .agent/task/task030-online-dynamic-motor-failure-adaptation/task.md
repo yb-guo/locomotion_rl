@@ -157,11 +157,34 @@ Evidence:
   dead/recovery: isolated dynamic `single-left-knee` failed with
   `zero_fall_ratio=0.1914`, while isolated dynamic `single-right-hip-yaw`
   passed with `zero_fall_ratio=1.0`.
+- 2026-05-21 Completed subtask 004 for fixed `1.6 m/s`. The accepted checkpoint
+  is
+  `/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task030_dynamic_004_train/2026-05-21_15-03-09_004_persistent_rehearsal_continue5164_env8192_iter40_gpu1_seed30051/model_5200.pt`.
+  It was reached by randomized dynamic training, canonical dynamic-switch
+  micro fine-tune, and persistent all-critical rehearsal. The actor/action
+  contract remains `104 -> 31` with no explicit actor fault labels.
+- 2026-05-21 Dynamic switch multi-seed s5 passed for accepted `model_5200.pt`:
+  `pass_count=5/5`, `zero_fall_ratio_min=1.0`,
+  `recovery_success_ratio_min=1.0`,
+  `post_recovery_lin_vel_error_mean_max=0.158173069357872`,
+  `post_recovery_yaw_vel_error_mean_max=0.21012352406978607`,
+  `max_gravity_xy_after_onset_max=0.18700484931468964`. Summary:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task030/dynamic_failure_mlp_train/eval_model5200_rehearsal2_dynamic_switch_s5/task030_dynamic_switch_multiseed_s5_summary.json`.
+- 2026-05-21 Task029 full clean/persistent regression also passed for accepted
+  `model_5200.pt`: aggregate `pass=true`, complete 12-case forced-dead grid,
+  clean pass, motor-primitives pass, in-distribution persistent failure pass,
+  and doubled holdout pass. Aggregate:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task030/dynamic_failure_mlp_train/eval_model5200_rehearsal2_task029_regression_vx1p6_full_grid/task029_eval_failure_aggregate.json`.
+- 2026-05-21 Rendered fixed `1.6 m/s` deterministic dynamic-switch video for
+  accepted `model_5200.pt`; render case `pass=true`, `done_count=0`, 500 frames
+  at 50 FPS. Local copy:
+  `D:\guoyubo.9\Documents\New project 2\_worktrees\h200-locomotion-lab-task030-online-dynamic-failure\outputs\task030\render_model5200_dynamic_switch_vx1p6\task030-render-model5200-dynamic-switch-vx1p6.mp4`.
 
 ## Review
 
-Status: in progress. Subtasks 001, 002, and 003 have JSON evidence and pass.
-The next closed loop is subtask 004: train the unchanged `104 -> 31` MLP PPO
-policy on a dynamic failure distribution at fixed `1.6 m/s`, with extra focus
-on left-knee onset and recovery, while preserving task029 clean and persistent
-robustness.
+Status: in progress. Subtasks 001, 002, 003, and 004 have JSON evidence and
+pass. Fixed `1.6 m/s` dynamic MLP training is closed on `model_5200.pt` while
+preserving task029 clean/persistent robustness. The remaining task030 work is
+subtask 005: full dynamic eval/render coverage and staged speed expansion to
+`1.8` then `2.0 m/s`; do not claim final task pass until those gates have JSON
+and render evidence.

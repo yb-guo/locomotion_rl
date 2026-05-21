@@ -44,7 +44,20 @@ Fail:
 ## Log
 
 - 2026-05-21 Opened.
+- 2026-05-21 Subtask 004 produced the first fixed `1.6 m/s` accepted
+  checkpoint for this eval/render stage:
+  `/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task030_dynamic_004_train/2026-05-21_15-03-09_004_persistent_rehearsal_continue5164_env8192_iter40_gpu1_seed30051/model_5200.pt`.
+  Dynamic switch multi-seed s5 and task029 full clean/persistent regression
+  both pass for that checkpoint.
+- 2026-05-21 Rendered one fixed `1.6 m/s` deterministic dynamic-switch case for
+  `model_5200.pt`; case `pass=true`, `done_count=0`, 500 frames at 50 FPS.
+  Video:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task030/dynamic_failure_mlp_train/render_model5200_dynamic_switch_vx1p6/task030-render-model5200-dynamic-switch-vx1p6-failure_indistribution_forward_0p5.mp4`.
+  Local copy:
+  `D:\guoyubo.9\Documents\New project 2\_worktrees\h200-locomotion-lab-task030-online-dynamic-failure\outputs\task030\render_model5200_dynamic_switch_vx1p6\task030-render-model5200-dynamic-switch-vx1p6.mp4`.
 
 ## Review
 
-Status: open.
+Status: open. Fixed `1.6 m/s` has an accepted checkpoint and one dynamic-switch
+render from subtask 004, but this subtask still needs full dynamic single/grid
+coverage and staged `1.8 -> 2.0 m/s` evidence.
