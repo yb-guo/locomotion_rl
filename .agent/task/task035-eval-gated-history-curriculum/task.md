@@ -153,10 +153,23 @@ Evidence root:
     full validation pass;
   - both remained non-promotable because `2.0 m/s` regressed on dynamic switch
     and full dead-grid.
+- 2026-05-28 Executed subtask 007 on H200. Added explicit `0.4/1.2/2.0 m/s`
+  speed-bin command sampling and a focused hard-case stage. Key evidence:
+  - speed-bin continuation from `model_5350` produced `model_5362`, which
+    passed `1.2/2.0 m/s` full validation but failed `0.4 m/s` left hip
+    yaw/roll dead-grid:
+    `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/full_validation_model5362_bins_from5350/task035_full_validation_summary.json`;
+  - speed-bin continuation from `model_5397` produced `model_5416`, which
+    passed `0.4/1.2 m/s` full validation but failed `2.0 m/s` right hip
+    pitch/right knee dead-grid:
+    `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/full_validation_model5416_bins_from5397/task035_full_validation_summary.json`;
+  - hard-case continuations restored several `2.0 m/s` fast gates but still
+    failed the full low-speed matrix:
+    `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/full_validation_model5369_hardcase_gpu0/task035_full_validation_summary.json`.
 
 ## Review
 
-Status: reopened for subtask 007. Existing Task035 checkpoint remains
-`candidate_only`, not promoted. The next curriculum step must gate
-`0.4/1.2/2.0 m/s` together, because narrow low-speed repair can break the
-previous high-speed behavior.
+Status: candidate-only, not promoted. Task035/007 was executed and did not find
+a checkpoint that passes `0.4/1.2/2.0 m/s` full dead-grid plus dynamic gates
+together. The evidence points to a policy/conditioning ceiling rather than a
+single missing PPO continuation.

@@ -87,8 +87,23 @@ Acceptance:
   `model_5397.pt` passes `0.4/1.2 m/s` full validation but fails `2.0 m/s`.
 - 2026-05-28 Added an H200 patch-script update so Task035 can train on explicit
   low/mid/high speed bins while keeping the actor observation contract unchanged.
+- 2026-05-28 Ran two speed-bin continuations from `model_5350.pt` and
+  `model_5397.pt`. No final checkpoint passed the protected full matrix:
+  - `model_5362` from `5350` passed `1.2/2.0 m/s` but failed `0.4 m/s`
+    left hip yaw/roll dead-grid;
+  - `model_5416` from `5397` passed `0.4/1.2 m/s` but failed `2.0 m/s`
+    right hip pitch/right knee dead-grid.
+- 2026-05-28 Added and ran a focused hard-case stage over
+  `left_hip_yaw_joint`, `left_hip_roll_joint`, `right_hip_pitch_joint`, and
+  `right_knee_joint`. It restored high-speed fast gates in several
+  continuations but did not close the full matrix:
+  - best hard-case candidates from `5362` still failed `0.4 m/s` dead-grid;
+  - hard-case continuations from `5397` did not pass the `2.0 m/s`
+    right-knee/right-hip-pitch fast gate.
 
 ## Review
 
-Status: route set, not executed. No checkpoint is promotable from this subtask
-yet.
+Status: executed, no checkpoint promotable. Evidence supports keeping Task035
+open as `candidate_only_not_promoted`; the current MLP curriculum can protect
+either low/mid speed or high speed, but the tested short continuations did not
+produce one checkpoint that passes all protected gates together.

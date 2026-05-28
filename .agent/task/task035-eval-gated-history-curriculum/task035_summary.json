@@ -30,9 +30,55 @@
   },
   "follow_up_subtask": {
     "id": "007-multi-objective-low-mid-high-curriculum",
-    "status": "route_set_not_executed",
+    "status": "executed_no_promoted_checkpoint",
     "reason": "Low-speed focused follow-up fixed 0.4/1.2 m/s but regressed 2.0 m/s, so the next curriculum step must gate low/mid/high speeds together under Task035.",
     "folded_evidence_json": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task036/full_validation_model_5397/task036_full_validation_summary.json"
   },
-  "decision": "Do not promote Task035 model_5369. Keep model_5350 as a scoped 2.0 m/s candidate only; continue curriculum work in Task035 subtask 007 with simultaneous low/mid/high eval gates."
+  "subtask_007_results": {
+    "status": "no_pass",
+    "speed_bin_patch": true,
+    "train_runs": [
+      "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task035_eval_gated_curriculum_train/2026-05-28_19-54-16_035_007_bins_from5350_env8192_iter20_gpu0_seed3507601",
+      "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task035_eval_gated_curriculum_train/2026-05-28_19-54-16_035_007_bins_from5397_env8192_iter20_gpu1_seed3508601",
+      "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task035_eval_gated_curriculum_train/2026-05-28_20-29-46_035_007_hardcase_from5362_env8192_iter8_gpu0_seed3514001",
+      "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task035_eval_gated_curriculum_train/2026-05-28_20-29-46_035_007_hardcase_from5362_env8192_iter8_gpu1_seed3515001",
+      "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task035_eval_gated_curriculum_train/2026-05-28_21-00-36_035_007_hardcase_from5397_env8192_iter8_gpu0_seed3522001",
+      "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task035_eval_gated_curriculum_train/2026-05-28_21-00-36_035_007_hardcase_from5397_env8192_iter8_gpu1_seed3523001"
+    ],
+    "key_full_validations": {
+      "model5362_bins_from5350": {
+        "pass": false,
+        "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/full_validation_model5362_bins_from5350/task035_full_validation_summary.json",
+        "passed_speeds": [1.2, 2.0],
+        "failed_0p4_joints": ["left_hip_yaw_joint", "left_hip_roll_joint"]
+      },
+      "model5416_bins_from5397": {
+        "pass": false,
+        "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/full_validation_model5416_bins_from5397/task035_full_validation_summary.json",
+        "passed_speeds": [0.4, 1.2],
+        "failed_2p0_joints": ["right_hip_pitch_joint", "right_knee_joint"]
+      },
+      "model5368_hardcase_gpu0": {
+        "pass": false,
+        "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/full_validation_model5368_hardcase_gpu0/task035_full_validation_summary.json",
+        "passed_speeds": [1.2, 2.0],
+        "failed_0p4_joints": ["left_hip_yaw_joint", "left_hip_roll_joint", "right_hip_roll_joint", "right_knee_joint"]
+      },
+      "model5369_hardcase_gpu0": {
+        "pass": false,
+        "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/full_validation_model5369_hardcase_gpu0/task035_full_validation_summary.json",
+        "passed_speeds": [1.2, 2.0],
+        "failed_0p4_joints": ["left_hip_yaw_joint", "left_hip_roll_joint", "right_knee_joint"]
+      }
+    },
+    "fast_sweeps": [
+      "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/checkpoint_sweep_007_bins_from5350/task035_checkpoint_sweep_fast_gate_summary.json",
+      "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/checkpoint_sweep_007_bins_from5397/task035_checkpoint_sweep_fast_gate_summary.json",
+      "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/checkpoint_sweep_007_hardcase_gpu0/task035_checkpoint_sweep_fast_gate_summary.json",
+      "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/checkpoint_sweep_007_hardcase_gpu1/task035_checkpoint_sweep_fast_gate_summary.json",
+      "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/checkpoint_sweep_007_hardcase5397_gpu0/task035_checkpoint_sweep_fast_gate_summary.json",
+      "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/checkpoint_sweep_007_hardcase5397_gpu1/task035_checkpoint_sweep_fast_gate_summary.json"
+    ]
+  },
+  "decision": "Do not promote Task035 model_5369 or any Task035/007 continuation. Keep model_5350 as a scoped 2.0 m/s candidate only. Task035/007 evidence shows simultaneous 0.4/1.2/2.0 dead-motor robustness is not closed by short MLP curriculum alone."
 }
