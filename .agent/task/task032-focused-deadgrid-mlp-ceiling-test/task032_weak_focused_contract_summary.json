@@ -1,0 +1,81 @@
+{
+  "contract": {
+    "action_dim": 31,
+    "actor_obs_dim": 104,
+    "clean_thresholds": {
+      "gravity_xy_mean": 0.8,
+      "lin_vel_error_mean": 0.8,
+      "yaw_vel_error_mean": 0.8,
+      "zero_fall_ratio": 0.9
+    },
+    "dynamic_thresholds": {
+      "max_gravity_xy_after_onset": 0.8,
+      "post_recovery_lin_vel_error_mean": 0.8,
+      "post_recovery_yaw_vel_error_mean": 0.8,
+      "recovery_success_ratio": 0.75,
+      "zero_fall_ratio": 0.9
+    },
+    "eval_speeds": [
+      0.4,
+      0.8,
+      1.2,
+      1.6,
+      2.0
+    ],
+    "forbidden_actor_state": [
+      "failure labels",
+      "fault labels",
+      "motor scales",
+      "failure masks",
+      "active joint ids",
+      "case ids",
+      "speed-bin ids"
+    ],
+    "forward_speed_range": [
+      0.4,
+      2.0
+    ],
+    "level_a_cases": [
+      "clean",
+      "persistent"
+    ],
+    "level_b_cases": [
+      "task030_canonical_dynamic_switch"
+    ],
+    "level_c_status": "diagnostic_only"
+  },
+  "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/weak_focused_contract/task031_unified_speed_contract_summary.json",
+  "pass": false,
+  "rows": [
+    {
+      "action_dim": 31,
+      "actor_obs_dim": 104,
+      "critic_obs_dim": 119,
+      "events": [
+        "motor_failure",
+        "phase_randomization",
+        "reset_base",
+        "reset_robot_joints"
+      ],
+      "forbidden_actor_terms": [],
+      "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/weak_focused_contract/vx0p4/task030_dynamic_failure_contract_summary.json",
+      "pass": false,
+      "speed": 0.4
+    },
+    {
+      "action_dim": 31,
+      "actor_obs_dim": 104,
+      "critic_obs_dim": 119,
+      "events": [
+        "motor_failure",
+        "phase_randomization",
+        "reset_base",
+        "reset_robot_joints"
+      ],
+      "forbidden_actor_terms": [],
+      "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/weak_focused_contract/vx2p0/task030_dynamic_failure_contract_summary.json",
+      "pass": false,
+      "speed": 2.0
+    }
+  ]
+}

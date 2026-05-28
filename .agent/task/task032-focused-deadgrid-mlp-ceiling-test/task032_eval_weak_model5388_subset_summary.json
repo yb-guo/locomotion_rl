@@ -1,0 +1,175 @@
+{
+  "cases": [
+    "dead_grid",
+    "dynamic_switch"
+  ],
+  "checkpoint": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task032_mlp_ceiling_train/2026-05-28_10-18-24_032_weak_focused_from5349_env8192_iter40_gpu1_seed3203203/model_5388.pt",
+  "failed": [
+    {
+      "case": "dead_grid",
+      "json_path": null,
+      "speed": 0.4
+    },
+    {
+      "case": "dead_grid",
+      "json_path": null,
+      "speed": 1.6
+    },
+    {
+      "case": "dead_grid",
+      "json_path": null,
+      "speed": 2.0
+    }
+  ],
+  "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/eval_weak_model5388_subset/task031_eval_speed_matrix_summary.json",
+  "pass": false,
+  "rows": [
+    {
+      "cases": [
+        {
+          "case": "dead_grid",
+          "count": 12,
+          "failed": [
+            {
+              "case": "dead_motor_grid_04_left_hip_roll_joint",
+              "gravity_xy_mean": 0.1511770784854889,
+              "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/eval_weak_model5388_subset/vx0p4/task029_clean_persistent/dead_motor_grid_04_left_hip_roll_joint.json",
+              "lin_vel_error_mean": 0.3536101281642914,
+              "yaw_vel_error_mean": 0.35592666268348694,
+              "zero_fall_ratio": 0.0
+            },
+            {
+              "case": "dead_motor_grid_07_right_knee_joint",
+              "gravity_xy_mean": 0.10654309391975403,
+              "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/eval_weak_model5388_subset/vx0p4/task029_clean_persistent/dead_motor_grid_07_right_knee_joint.json",
+              "lin_vel_error_mean": 0.5308171510696411,
+              "yaw_vel_error_mean": 0.7242751121520996,
+              "zero_fall_ratio": 0.0
+            }
+          ],
+          "pass": false,
+          "pass_count": 10
+        },
+        {
+          "case": "dynamic_switch",
+          "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/eval_weak_model5388_subset/vx0p4/dynamic_switch/task030_dynamic_eval_switch_vx0p4.json",
+          "max_gravity_xy_after_onset": 0.09746050834655762,
+          "pass": true,
+          "post_recovery_lin_vel_error_mean": 0.1226610615849495,
+          "post_recovery_yaw_vel_error_mean": 0.16348038613796234,
+          "recovery_success_ratio": 1.0,
+          "zero_fall_ratio": 1.0
+        }
+      ],
+      "dynamic_json": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/eval_weak_model5388_subset/vx0p4/dynamic_switch/task030_dynamic_eval_switch_vx0p4.json",
+      "pass": false,
+      "speed": 0.4,
+      "task029_json": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/eval_weak_model5388_subset/vx0p4/task029_clean_persistent/task029_eval_failure_aggregate.json"
+    },
+    {
+      "cases": [
+        {
+          "case": "dead_grid",
+          "count": 12,
+          "failed": [
+            {
+              "case": "dead_motor_grid_01_left_hip_yaw_joint",
+              "gravity_xy_mean": 0.05361192673444748,
+              "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/eval_weak_model5388_subset/vx1p6/task029_clean_persistent/dead_motor_grid_01_left_hip_yaw_joint.json",
+              "lin_vel_error_mean": 0.2781935930252075,
+              "yaw_vel_error_mean": 0.23258033394813538,
+              "zero_fall_ratio": 0.765625
+            },
+            {
+              "case": "dead_motor_grid_07_right_knee_joint",
+              "gravity_xy_mean": 0.0445934496819973,
+              "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/eval_weak_model5388_subset/vx1p6/task029_clean_persistent/dead_motor_grid_07_right_knee_joint.json",
+              "lin_vel_error_mean": 0.3261132538318634,
+              "yaw_vel_error_mean": 0.5496477484703064,
+              "zero_fall_ratio": 0.875
+            }
+          ],
+          "pass": false,
+          "pass_count": 10
+        },
+        {
+          "case": "dynamic_switch",
+          "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/eval_weak_model5388_subset/vx1p6/dynamic_switch/task030_dynamic_eval_switch_vx1p6.json",
+          "max_gravity_xy_after_onset": 0.1482924520969391,
+          "pass": true,
+          "post_recovery_lin_vel_error_mean": 0.17819395661354065,
+          "post_recovery_yaw_vel_error_mean": 0.17513775825500488,
+          "recovery_success_ratio": 1.0,
+          "zero_fall_ratio": 1.0
+        }
+      ],
+      "dynamic_json": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/eval_weak_model5388_subset/vx1p6/dynamic_switch/task030_dynamic_eval_switch_vx1p6.json",
+      "pass": false,
+      "speed": 1.6,
+      "task029_json": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/eval_weak_model5388_subset/vx1p6/task029_clean_persistent/task029_eval_failure_aggregate.json"
+    },
+    {
+      "cases": [
+        {
+          "case": "dead_grid",
+          "count": 12,
+          "failed": [
+            {
+              "case": "dead_motor_grid_01_left_hip_yaw_joint",
+              "gravity_xy_mean": 0.10073983669281006,
+              "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/eval_weak_model5388_subset/vx2p0/task029_clean_persistent/dead_motor_grid_01_left_hip_yaw_joint.json",
+              "lin_vel_error_mean": 0.7463182806968689,
+              "yaw_vel_error_mean": 0.3656303882598877,
+              "zero_fall_ratio": 0.0078125
+            },
+            {
+              "case": "dead_motor_grid_04_left_hip_roll_joint",
+              "gravity_xy_mean": 0.07703270018100739,
+              "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/eval_weak_model5388_subset/vx2p0/task029_clean_persistent/dead_motor_grid_04_left_hip_roll_joint.json",
+              "lin_vel_error_mean": 0.5381008386611938,
+              "yaw_vel_error_mean": 0.39886778593063354,
+              "zero_fall_ratio": 0.4140625
+            },
+            {
+              "case": "dead_motor_grid_05_left_knee_joint",
+              "gravity_xy_mean": 0.05837387219071388,
+              "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/eval_weak_model5388_subset/vx2p0/task029_clean_persistent/dead_motor_grid_05_left_knee_joint.json",
+              "lin_vel_error_mean": 0.8104191422462463,
+              "yaw_vel_error_mean": 0.2024993598461151,
+              "zero_fall_ratio": 1.0
+            },
+            {
+              "case": "dead_motor_grid_07_right_knee_joint",
+              "gravity_xy_mean": 0.06699436902999878,
+              "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/eval_weak_model5388_subset/vx2p0/task029_clean_persistent/dead_motor_grid_07_right_knee_joint.json",
+              "lin_vel_error_mean": 0.4993596076965332,
+              "yaw_vel_error_mean": 0.5679628252983093,
+              "zero_fall_ratio": 0.5234375
+            }
+          ],
+          "pass": false,
+          "pass_count": 8
+        },
+        {
+          "case": "dynamic_switch",
+          "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/eval_weak_model5388_subset/vx2p0/dynamic_switch/task030_dynamic_eval_switch_vx2p0.json",
+          "max_gravity_xy_after_onset": 0.15391401946544647,
+          "pass": true,
+          "post_recovery_lin_vel_error_mean": 0.23651808500289917,
+          "post_recovery_yaw_vel_error_mean": 0.20195603370666504,
+          "recovery_success_ratio": 1.0,
+          "zero_fall_ratio": 1.0
+        }
+      ],
+      "dynamic_json": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/eval_weak_model5388_subset/vx2p0/dynamic_switch/task030_dynamic_eval_switch_vx2p0.json",
+      "pass": false,
+      "speed": 2.0,
+      "task029_json": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task032/eval_weak_model5388_subset/vx2p0/task029_clean_persistent/task029_eval_failure_aggregate.json"
+    }
+  ],
+  "speeds": [
+    0.4,
+    1.6,
+    2.0
+  ]
+}

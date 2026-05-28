@@ -143,4 +143,9 @@ Evidence root:
 
 ## Review
 
-Status: planned. No Task031 implementation or H200 training evidence yet.
+Status: active. Contract gate and Level B canonical dynamic-switch multiseed
+gate have evidence and pass. Canonical clean/switch low/mid/high render review
+also passes with `done_count=0`. Level C arbitrary onset diagnostic is complete
+and still fails `8/36` cases, as expected for diagnostic-only scope. Level A
+forced persistent dead-grid remains unresolved, so Task031 is not passed under
+the original written gates.
