@@ -14,6 +14,7 @@ FUNCTIONS = r'''
 
 TASK035_SPEED_BINS = (0.4, 1.2, 2.0)
 TASK035_SPEED_BIN_WEIGHTS = (0.34, 0.33, 0.33)
+TASK035_HARDCASE_SPEED_BIN_WEIGHTS = (0.45, 0.10, 0.45)
 
 TASK035_BALANCED_MOTOR_FAILURE_JOINTS = (
   "left_hip_pitch_joint",
@@ -31,12 +32,24 @@ TASK035_BALANCED_MOTOR_FAILURE_JOINTS = (
 )
 
 
-def _configure_task035_speed_bin_command(cfg: ManagerBasedRlEnvCfg) -> None:
+TASK035_HARDCASE_MOTOR_FAILURE_JOINTS = (
+  "left_hip_yaw_joint",
+  "left_hip_roll_joint",
+  "right_hip_pitch_joint",
+  "right_knee_joint",
+)
+
+
+def _configure_task035_speed_bin_command(
+  cfg: ManagerBasedRlEnvCfg,
+  *,
+  weights: tuple[float, float, float] = TASK035_SPEED_BIN_WEIGHTS,
+) -> None:
   """Use explicit low/mid/high forward-speed bins for eval-gated training."""
   _configure_task029_forward_speed_command(cfg, min_speed=0.4, max_speed=2.0)
   twist_cmd = cfg.commands["twist"]
   twist_cmd.lin_vel_x_choices = TASK035_SPEED_BINS
-  twist_cmd.lin_vel_x_choice_weights = TASK035_SPEED_BIN_WEIGHTS
+  twist_cmd.lin_vel_x_choice_weights = weights
 
 
 def _add_task035_balanced_persistent_stage(
@@ -67,6 +80,19 @@ def _add_task035_balanced_persistent_stage(
     params["dead_scale_range"] = (0.0, 0.10)
   else:
     raise ValueError(f"unknown task035 stage: {stage}")
+
+
+def _add_task035_hardcase_persistent_stage(cfg: ManagerBasedRlEnvCfg) -> None:
+  """Task035 focused hard-case persistent motor-failure curriculum."""
+  _add_motor_failure_stage(cfg)
+  params = cfg.events["motor_failure"].params
+  params["max_failed_motors"] = 1
+  params["single_dead_joint_names"] = TASK035_HARDCASE_MOTOR_FAILURE_JOINTS
+  params["single_dead_probability"] = 0.95
+  params["dead_probability"] = 0.55
+  params["weak_scale_range"] = (0.45, 0.80)
+  params["dead_scale_range"] = (0.05, 0.20)
+  _add_task029_phase_randomization(cfg)
 
 
 def unitree_g1_gripper_flat_task035_clean_unified_env_cfg(
@@ -109,6 +135,17 @@ def unitree_g1_gripper_flat_task035_forced_deadgrid_env_cfg(
   _strip_randomization(cfg)
   _add_task035_balanced_persistent_stage(cfg, stage="deadgrid")
   _configure_task035_speed_bin_command(cfg)
+  return cfg
+
+
+def unitree_g1_gripper_flat_task035_hardcase_persistent_env_cfg(
+  play: bool = False,
+) -> ManagerBasedRlEnvCfg:
+  """Create Task035 focused low/high hard-case failure rehearsal env."""
+  cfg = unitree_g1_gripper_flat_env_cfg(play=play)
+  _strip_randomization(cfg)
+  _add_task035_hardcase_persistent_stage(cfg)
+  _configure_task035_speed_bin_command(cfg, weights=TASK035_HARDCASE_SPEED_BIN_WEIGHTS)
   return cfg
 '''
 
@@ -162,6 +199,7 @@ IMPORT_LINES = (
   "  unitree_g1_gripper_flat_task035_weak_persistent_env_cfg,\n"
   "  unitree_g1_gripper_flat_task035_mixed_persistent_env_cfg,\n"
   "  unitree_g1_gripper_flat_task035_forced_deadgrid_env_cfg,\n"
+  "  unitree_g1_gripper_flat_task035_hardcase_persistent_env_cfg,\n"
 )
 
 
@@ -205,6 +243,14 @@ register_mjlab_task(
 )
 
 register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task035-HardCasePersistent-FrozenBase-Fast2p0",
+  env_cfg=unitree_g1_gripper_flat_task035_hardcase_persistent_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task035_hardcase_persistent_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task033StackMlpK4FrozenBaseRunner,
+)
+
+register_mjlab_task(
   task_id="Unitree-G1-Gripper-Flat-Task035-DynamicSwitch-FrozenBase-Fast1p6",
   env_cfg=unitree_g1_gripper_flat_dynamic_failure_train_fast1p6_env_cfg(),
   play_env_cfg=unitree_g1_gripper_flat_dynamic_failure_train_fast1p6_env_cfg(play=True),
@@ -227,11 +273,46 @@ def patch_env_cfgs(path: Path) -> None:
     text = replace_once(text, anchor, FUNCTIONS + anchor)
   if "TASK035_SPEED_BINS" not in text:
     anchor = "TASK035_BALANCED_MOTOR_FAILURE_JOINTS = (\n"
-    text = replace_once(text, anchor, "TASK035_SPEED_BINS = (0.4, 1.2, 2.0)\nTASK035_SPEED_BIN_WEIGHTS = (0.34, 0.33, 0.33)\n\n" + anchor)
+    text = replace_once(text, anchor, "TASK035_SPEED_BINS = (0.4, 1.2, 2.0)\nTASK035_SPEED_BIN_WEIGHTS = (0.34, 0.33, 0.33)\nTASK035_HARDCASE_SPEED_BIN_WEIGHTS = (0.45, 0.10, 0.45)\n\n" + anchor)
+  if "TASK035_HARDCASE_SPEED_BIN_WEIGHTS" not in text:
+    text = replace_once(
+      text,
+      "TASK035_SPEED_BIN_WEIGHTS = (0.34, 0.33, 0.33)\n\n",
+      "TASK035_SPEED_BIN_WEIGHTS = (0.34, 0.33, 0.33)\nTASK035_HARDCASE_SPEED_BIN_WEIGHTS = (0.45, 0.10, 0.45)\n\n",
+    )
+  if "TASK035_HARDCASE_MOTOR_FAILURE_JOINTS" not in text:
+    anchor = "  \"right_ankle_roll_joint\",\n)\n\n"
+    hardcase = '''\
+  "right_ankle_roll_joint",
+)
+
+TASK035_HARDCASE_MOTOR_FAILURE_JOINTS = (
+  "left_hip_yaw_joint",
+  "left_hip_roll_joint",
+  "right_hip_pitch_joint",
+  "right_knee_joint",
+)
+
+'''
+    text = replace_once(text, anchor, hardcase)
   if "def _configure_task035_speed_bin_command(" not in text:
     anchor = "\n\ndef _add_task035_balanced_persistent_stage(\n"
     helper = '''\
 
+def _configure_task035_speed_bin_command(
+  cfg: ManagerBasedRlEnvCfg,
+  *,
+  weights: tuple[float, float, float] = TASK035_SPEED_BIN_WEIGHTS,
+) -> None:
+  """Use explicit low/mid/high forward-speed bins for eval-gated training."""
+  _configure_task029_forward_speed_command(cfg, min_speed=0.4, max_speed=2.0)
+  twist_cmd = cfg.commands["twist"]
+  twist_cmd.lin_vel_x_choices = TASK035_SPEED_BINS
+  twist_cmd.lin_vel_x_choice_weights = weights
+'''
+    text = replace_once(text, anchor, helper + anchor)
+  elif "weights: tuple[float, float, float]" not in text:
+    old_helper = '''\
 def _configure_task035_speed_bin_command(cfg: ManagerBasedRlEnvCfg) -> None:
   """Use explicit low/mid/high forward-speed bins for eval-gated training."""
   _configure_task029_forward_speed_command(cfg, min_speed=0.4, max_speed=2.0)
@@ -239,7 +320,53 @@ def _configure_task035_speed_bin_command(cfg: ManagerBasedRlEnvCfg) -> None:
   twist_cmd.lin_vel_x_choices = TASK035_SPEED_BINS
   twist_cmd.lin_vel_x_choice_weights = TASK035_SPEED_BIN_WEIGHTS
 '''
-    text = replace_once(text, anchor, helper + anchor)
+    new_helper = '''\
+def _configure_task035_speed_bin_command(
+  cfg: ManagerBasedRlEnvCfg,
+  *,
+  weights: tuple[float, float, float] = TASK035_SPEED_BIN_WEIGHTS,
+) -> None:
+  """Use explicit low/mid/high forward-speed bins for eval-gated training."""
+  _configure_task029_forward_speed_command(cfg, min_speed=0.4, max_speed=2.0)
+  twist_cmd = cfg.commands["twist"]
+  twist_cmd.lin_vel_x_choices = TASK035_SPEED_BINS
+  twist_cmd.lin_vel_x_choice_weights = weights
+'''
+    text = replace_once(text, old_helper, new_helper)
+  if "def _add_task035_hardcase_persistent_stage(" not in text:
+    anchor = "\n\ndef unitree_g1_gripper_flat_task035_clean_unified_env_cfg(\n"
+    stage = '''\
+
+def _add_task035_hardcase_persistent_stage(cfg: ManagerBasedRlEnvCfg) -> None:
+  """Task035 focused hard-case persistent motor-failure curriculum."""
+  _add_motor_failure_stage(cfg)
+  params = cfg.events["motor_failure"].params
+  params["max_failed_motors"] = 1
+  params["single_dead_joint_names"] = TASK035_HARDCASE_MOTOR_FAILURE_JOINTS
+  params["single_dead_probability"] = 0.95
+  params["dead_probability"] = 0.55
+  params["weak_scale_range"] = (0.45, 0.80)
+  params["dead_scale_range"] = (0.05, 0.20)
+  _add_task029_phase_randomization(cfg)
+'''
+    text = replace_once(text, anchor, stage + anchor)
+  if "def unitree_g1_gripper_flat_task035_hardcase_persistent_env_cfg(" not in text:
+    anchor = "\n\n\ndef _add_motor_failure_stage(cfg: ManagerBasedRlEnvCfg) -> None:\n"
+    if anchor not in text:
+      anchor = "\n\nTASK036_LOW_SPEED_FAILURE_JOINTS = (\n"
+    env_fn = '''\
+
+def unitree_g1_gripper_flat_task035_hardcase_persistent_env_cfg(
+  play: bool = False,
+) -> ManagerBasedRlEnvCfg:
+  """Create Task035 focused low/high hard-case failure rehearsal env."""
+  cfg = unitree_g1_gripper_flat_env_cfg(play=play)
+  _strip_randomization(cfg)
+  _add_task035_hardcase_persistent_stage(cfg)
+  _configure_task035_speed_bin_command(cfg, weights=TASK035_HARDCASE_SPEED_BIN_WEIGHTS)
+  return cfg
+'''
+    text = replace_once(text, anchor, env_fn + anchor)
   task035_start = text.find("def unitree_g1_gripper_flat_task035_clean_unified_env_cfg(")
   task035_end = text.find("\n\ndef _add_motor_failure_stage(", task035_start)
   if task035_start >= 0 and task035_end > task035_start:
@@ -271,19 +398,41 @@ def patch_init(path: Path) -> None:
     "  unitree_g1_gripper_flat_task032_hard_focused_env_cfg,\n",
     "  unitree_g1_gripper_flat_task031_focused_deadgrid_env_cfg,\n",
   )
-  if IMPORT_LINES not in text:
+  import_block = "".join(IMPORT_LINES)
+  if import_block not in text:
     for anchor in import_anchor_candidates:
       if anchor in text:
-        text = replace_once(text, anchor, anchor + "".join(IMPORT_LINES))
+        text = replace_once(text, anchor, anchor + import_block)
         break
     else:
       raise RuntimeError("no env cfg import anchor found")
+  hardcase_import = "  unitree_g1_gripper_flat_task035_hardcase_persistent_env_cfg,\n"
+  if hardcase_import not in text:
+    anchor = "  unitree_g1_gripper_flat_task035_forced_deadgrid_env_cfg,\n"
+    text = replace_once(text, anchor, anchor + hardcase_import)
   if "Task033StackMlpK4FrozenBaseRunner" not in text:
     runner_anchor = "from mjlab.rl import MjlabOnPolicyRunner\n"
     text = replace_once(text, runner_anchor, runner_anchor + RUNNER_IMPORT)
   task_id = "Unitree-G1-Gripper-Flat-Task035-CleanUnified-FrozenBase-Fast2p0"
   if task_id not in text:
     text = text.rstrip() + "\n\n" + REGISTERS.strip() + "\n"
+  hardcase_task_id = "Unitree-G1-Gripper-Flat-Task035-HardCasePersistent-FrozenBase-Fast2p0"
+  if task_id in text and hardcase_task_id not in text:
+    anchor = '''\
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task035-DynamicSwitch-FrozenBase-Fast1p6",
+'''
+    hardcase_register = '''\
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task035-HardCasePersistent-FrozenBase-Fast2p0",
+  env_cfg=unitree_g1_gripper_flat_task035_hardcase_persistent_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task035_hardcase_persistent_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task033StackMlpK4FrozenBaseRunner,
+)
+
+'''
+    text = replace_once(text, anchor, hardcase_register + anchor)
   path.write_text(text, encoding="utf-8")
 
 
