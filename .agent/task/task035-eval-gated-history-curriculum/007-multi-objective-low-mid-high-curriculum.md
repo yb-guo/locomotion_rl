@@ -66,10 +66,12 @@ Stage proposal:
 
 First bounded experiment:
 
-1. start from `model_5350.pt` or `model_5397.pt`, but record which one;
-2. run env8192 with low LR and save every 1-2 iterations;
-3. sweep non-final checkpoints on focused low/mid/high gates;
-4. run full matrix only for candidates that pass focused gates.
+1. patch Task035 command sampling to draw `lin_vel_x` from explicit
+   `0.4/1.2/2.0 m/s` bins instead of a continuous range;
+2. start from `model_5350.pt` or `model_5397.pt`, but record which one;
+3. run env8192 with low LR and save every 1-2 iterations;
+4. sweep non-final checkpoints on focused low/mid/high gates;
+5. run full matrix only for candidates that pass focused gates.
 
 Acceptance:
 
@@ -83,6 +85,8 @@ Acceptance:
   Task035 subtask.
 - 2026-05-28 Folded in follow-up evidence from the prior low-speed repair run:
   `model_5397.pt` passes `0.4/1.2 m/s` full validation but fails `2.0 m/s`.
+- 2026-05-28 Added an H200 patch-script update so Task035 can train on explicit
+  low/mid/high speed bins while keeping the actor observation contract unchanged.
 
 ## Review
 

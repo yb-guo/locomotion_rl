@@ -12,6 +12,9 @@ ROOT = Path("/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mj
 
 FUNCTIONS = r'''
 
+TASK035_SPEED_BINS = (0.4, 1.2, 2.0)
+TASK035_SPEED_BIN_WEIGHTS = (0.34, 0.33, 0.33)
+
 TASK035_BALANCED_MOTOR_FAILURE_JOINTS = (
   "left_hip_pitch_joint",
   "left_hip_yaw_joint",
@@ -26,6 +29,14 @@ TASK035_BALANCED_MOTOR_FAILURE_JOINTS = (
   "right_ankle_pitch_joint",
   "right_ankle_roll_joint",
 )
+
+
+def _configure_task035_speed_bin_command(cfg: ManagerBasedRlEnvCfg) -> None:
+  """Use explicit low/mid/high forward-speed bins for eval-gated training."""
+  _configure_task029_forward_speed_command(cfg, min_speed=0.4, max_speed=2.0)
+  twist_cmd = cfg.commands["twist"]
+  twist_cmd.lin_vel_x_choices = TASK035_SPEED_BINS
+  twist_cmd.lin_vel_x_choice_weights = TASK035_SPEED_BIN_WEIGHTS
 
 
 def _add_task035_balanced_persistent_stage(
@@ -64,7 +75,7 @@ def unitree_g1_gripper_flat_task035_clean_unified_env_cfg(
   """Create Task035 clean unified-speed rehearsal env over 0.4..2.0 m/s."""
   cfg = unitree_g1_gripper_flat_env_cfg(play=play)
   _strip_randomization(cfg)
-  _configure_task029_forward_speed_command(cfg, min_speed=0.4, max_speed=2.0)
+  _configure_task035_speed_bin_command(cfg)
   return cfg
 
 
@@ -75,7 +86,7 @@ def unitree_g1_gripper_flat_task035_weak_persistent_env_cfg(
   cfg = unitree_g1_gripper_flat_env_cfg(play=play)
   _strip_randomization(cfg)
   _add_task035_balanced_persistent_stage(cfg, stage="weak")
-  _configure_task029_forward_speed_command(cfg, min_speed=0.4, max_speed=2.0)
+  _configure_task035_speed_bin_command(cfg)
   return cfg
 
 
@@ -86,7 +97,7 @@ def unitree_g1_gripper_flat_task035_mixed_persistent_env_cfg(
   cfg = unitree_g1_gripper_flat_env_cfg(play=play)
   _strip_randomization(cfg)
   _add_task035_balanced_persistent_stage(cfg, stage="mixed")
-  _configure_task029_forward_speed_command(cfg, min_speed=0.4, max_speed=2.0)
+  _configure_task035_speed_bin_command(cfg)
   return cfg
 
 
@@ -97,8 +108,52 @@ def unitree_g1_gripper_flat_task035_forced_deadgrid_env_cfg(
   cfg = unitree_g1_gripper_flat_env_cfg(play=play)
   _strip_randomization(cfg)
   _add_task035_balanced_persistent_stage(cfg, stage="deadgrid")
-  _configure_task029_forward_speed_command(cfg, min_speed=0.4, max_speed=2.0)
+  _configure_task035_speed_bin_command(cfg)
   return cfg
+'''
+
+
+VELOCITY_COMMAND_RESAMPLE_OLD = (
+  "    self.vel_command_b[env_ids, 0] = r.uniform_(*self.cfg.ranges.lin_vel_x)\n"
+)
+
+
+VELOCITY_COMMAND_RESAMPLE_NEW = '''\
+    lin_vel_x_choices = getattr(self.cfg, "lin_vel_x_choices", None)
+    if lin_vel_x_choices is None:
+      self.vel_command_b[env_ids, 0] = r.uniform_(*self.cfg.ranges.lin_vel_x)
+    else:
+      choices = torch.as_tensor(
+        lin_vel_x_choices,
+        device=self.device,
+        dtype=self.vel_command_b.dtype,
+      )
+      weights = getattr(self.cfg, "lin_vel_x_choice_weights", None)
+      if weights is None:
+        choice_ids = torch.randint(
+          len(lin_vel_x_choices),
+          (len(env_ids),),
+          device=self.device,
+        )
+      else:
+        probabilities = torch.as_tensor(weights, device=self.device, dtype=torch.float32)
+        probabilities = probabilities / probabilities.sum()
+        choice_ids = torch.multinomial(
+          probabilities,
+          len(env_ids),
+          replacement=True,
+        )
+      self.vel_command_b[env_ids, 0] = choices[choice_ids]
+'''
+
+
+VELOCITY_COMMAND_CFG_OLD = "  init_velocity_prob: float = 0.0\n"
+
+
+VELOCITY_COMMAND_CFG_NEW = '''\
+  init_velocity_prob: float = 0.0
+  lin_vel_x_choices: tuple[float, ...] | None = None
+  lin_vel_x_choice_weights: tuple[float, ...] | None = None
 '''
 
 
@@ -170,6 +225,42 @@ def patch_env_cfgs(path: Path) -> None:
   if "def unitree_g1_gripper_flat_task035_clean_unified_env_cfg(" not in text:
     anchor = "\n\ndef _add_motor_failure_stage(cfg: ManagerBasedRlEnvCfg) -> None:\n"
     text = replace_once(text, anchor, FUNCTIONS + anchor)
+  if "TASK035_SPEED_BINS" not in text:
+    anchor = "TASK035_BALANCED_MOTOR_FAILURE_JOINTS = (\n"
+    text = replace_once(text, anchor, "TASK035_SPEED_BINS = (0.4, 1.2, 2.0)\nTASK035_SPEED_BIN_WEIGHTS = (0.34, 0.33, 0.33)\n\n" + anchor)
+  if "def _configure_task035_speed_bin_command(" not in text:
+    anchor = "\n\ndef _add_task035_balanced_persistent_stage(\n"
+    helper = '''\
+
+def _configure_task035_speed_bin_command(cfg: ManagerBasedRlEnvCfg) -> None:
+  """Use explicit low/mid/high forward-speed bins for eval-gated training."""
+  _configure_task029_forward_speed_command(cfg, min_speed=0.4, max_speed=2.0)
+  twist_cmd = cfg.commands["twist"]
+  twist_cmd.lin_vel_x_choices = TASK035_SPEED_BINS
+  twist_cmd.lin_vel_x_choice_weights = TASK035_SPEED_BIN_WEIGHTS
+'''
+    text = replace_once(text, anchor, helper + anchor)
+  task035_start = text.find("def unitree_g1_gripper_flat_task035_clean_unified_env_cfg(")
+  task035_end = text.find("\n\ndef _add_motor_failure_stage(", task035_start)
+  if task035_start >= 0 and task035_end > task035_start:
+    task035_block = text[task035_start:task035_end].replace(
+      "  _configure_task029_forward_speed_command(cfg, min_speed=0.4, max_speed=2.0)\n  return cfg\n",
+      "  _configure_task035_speed_bin_command(cfg)\n  return cfg\n",
+    )
+    text = text[:task035_start] + task035_block + text[task035_end:]
+  path.write_text(text, encoding="utf-8")
+
+
+def patch_velocity_command(path: Path) -> None:
+  text = path.read_text(encoding="utf-8")
+  if 'getattr(self.cfg, "lin_vel_x_choices", None)' not in text:
+    text = replace_once(
+      text,
+      VELOCITY_COMMAND_RESAMPLE_OLD,
+      VELOCITY_COMMAND_RESAMPLE_NEW,
+    )
+  if "lin_vel_x_choice_weights" not in text:
+    text = replace_once(text, VELOCITY_COMMAND_CFG_OLD, VELOCITY_COMMAND_CFG_NEW)
   path.write_text(text, encoding="utf-8")
 
 
@@ -206,8 +297,11 @@ def main() -> None:
   args = parse_args()
   cfg_path = args.root / "src/tasks/velocity/config/g1_gripper/env_cfgs.py"
   init_path = args.root / "src/tasks/velocity/config/g1_gripper/__init__.py"
+  command_path = args.root / "src/tasks/velocity/mdp/velocity_command.py"
+  patch_velocity_command(command_path)
   patch_env_cfgs(cfg_path)
   patch_init(init_path)
+  print(command_path)
   print(cfg_path)
   print(init_path)
 
