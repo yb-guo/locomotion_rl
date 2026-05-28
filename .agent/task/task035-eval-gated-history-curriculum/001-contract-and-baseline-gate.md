@@ -41,8 +41,22 @@ Inherited thresholds:
 ## Log
 
 - 2026-05-28 Created.
+- 2026-05-28 H200 baseline gate initially exposed script/env issues, not policy
+  failures:
+  - `model5350_baseline_gate`: missing `IPython`;
+  - `model5350_baseline_gate_rerun1`: missing `platformdirs` through `wandb`;
+  - `model5350_baseline_gate_rerun2`: missing `src.tasks`;
+  - early rerun3 dynamic failures used the wrong eval task id.
+- 2026-05-28 Fixed runbook script to reuse `/tmp/task029_ipython_stub`, include
+  external MJLab on `PYTHONPATH`, and pass the Task034 dynamic task id
+  `Unitree-G1-Gripper-Flat-Task033-StackMlpK4-DynamicMotorFailure-Fast1p6`.
+- 2026-05-28 Corrected baseline gate passed at `2.0 m/s`:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/model5350_baseline_gate_rerun3/task035_model5350_baseline_gate_summary.json`.
+  Result: dynamic switch `3/3` seeds pass with `zero_fall_ratio=1.0` and
+  `recovery_success_ratio=1.0`; full 12-joint dead-grid `3/3` seeds pass
+  `12/12`.
 
 ## Review
 
-Status: ready. This subtask is complete when the baseline gate has JSON
-evidence, not when the task document exists.
+Status: passed for the scoped `2.0 m/s` baseline gate. This does not validate
+low-speed dead-grid robustness.

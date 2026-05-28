@@ -2,17 +2,50 @@
 set -euo pipefail
 
 ROOT="${ROOT:-/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter}"
+MJLAB_ROOT="${MJLAB_ROOT:-/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab}"
 PY="${PY:-/mnt/workspace/users/guoyubo/conda_envs/unitree-rl-mjlab/bin/python}"
 CHECKPOINT="${CHECKPOINT:-/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task033_stackmlp_k4_frozenbase_focused/2026-05-28_12-40-56_033_frozenbase_focused_from5349_env8192_iter30_gpu1_seed3303362_lr1e5/model_5350.pt}"
 OUT="${OUT:-${ROOT}/outputs/task035/model5350_baseline_gate}"
 DEVICE="${DEVICE:-cuda:0}"
-NUM_ENVS="${NUM_ENVS:-128}"
+DYNAMIC_TASK="${DYNAMIC_TASK:-Unitree-G1-Gripper-Flat-Task033-StackMlpK4-DynamicMotorFailure-Fast1p6}"
+DEADGRID_TASK="${DEADGRID_TASK:-Unitree-G1-Gripper-Flat-Task033-StackMlpK4-FocusedDeadGrid-Fast2p0}"
+DYNAMIC_NUM_ENVS="${DYNAMIC_NUM_ENVS:-256}"
+DEADGRID_NUM_ENVS="${DEADGRID_NUM_ENVS:-128}"
 STEPS="${STEPS:-500}"
+RUN_DYNAMIC="${RUN_DYNAMIC:-1}"
+RUN_DEADGRID="${RUN_DEADGRID:-1}"
 
 mkdir -p "${OUT}"
 cd "${ROOT}"
 
-export PYTHONPATH="${ROOT}/src:${PYTHONPATH:-}"
+IPYTHON_STUB="${OUT}/_ipython_stub"
+TASK029_HEADLESS_STUB="${TASK029_HEADLESS_STUB:-/tmp/task029_ipython_stub}"
+mkdir -p "${IPYTHON_STUB}/IPython"
+cat > "${IPYTHON_STUB}/IPython/__init__.py" <<'PY'
+__version__ = "task035-headless-stub"
+PY
+cat > "${IPYTHON_STUB}/IPython/display.py" <<'PY'
+class HTML:
+    def __init__(self, data=None, *args, **kwargs):
+        self.data = data
+
+class Image:
+    def __init__(self, data=None, *args, **kwargs):
+        self.data = data
+
+class Video:
+    def __init__(self, data=None, *args, **kwargs):
+        self.data = data
+
+def display(*args, **kwargs):
+    return None
+PY
+
+if [[ -d "${TASK029_HEADLESS_STUB}" ]]; then
+  export PYTHONPATH="${TASK029_HEADLESS_STUB}:${IPYTHON_STUB}:${ROOT}/src:${MJLAB_ROOT}:${MJLAB_ROOT}/src:${PYTHONPATH:-}"
+else
+  export PYTHONPATH="${IPYTHON_STUB}:${ROOT}/src:${MJLAB_ROOT}:${MJLAB_ROOT}/src:${PYTHONPATH:-}"
+fi
 export MUJOCO_GL="${MUJOCO_GL:-egl}"
 export PYOPENGL_PLATFORM="${PYOPENGL_PLATFORM:-egl}"
 export OUT
@@ -23,23 +56,29 @@ for seed in "${seeds[@]}"; do
   case_dir="${OUT}/vx2p0/seed${seed}"
   mkdir -p "${case_dir}/dynamic_switch" "${case_dir}/deadgrid"
 
-  "${PY}" -m h200_locomotion_lab.tools.task033_dynamic_eval_checkpoint \
-    --checkpoint "${CHECKPOINT}" \
-    --output-json "${case_dir}/dynamic_switch/task033_dynamic_eval_switch_vx2p0.json" \
-    --lin-vel-x 2.0 \
-    --num-envs "${NUM_ENVS}" \
-    --steps "${STEPS}" \
-    --seed "${seed}" \
-    --device "${DEVICE}"
+  if [[ "${RUN_DYNAMIC}" == "1" ]]; then
+    "${PY}" -m h200_locomotion_lab.tools.task033_dynamic_eval_checkpoint \
+      --task "${DYNAMIC_TASK}" \
+      --checkpoint "${CHECKPOINT}" \
+      --output-json "${case_dir}/dynamic_switch/task033_dynamic_eval_switch_vx2p0.json" \
+      --lin-vel-x 2.0 \
+      --num-envs "${DYNAMIC_NUM_ENVS}" \
+      --steps "${STEPS}" \
+      --seed "${seed}" \
+      --device "${DEVICE}"
+  fi
 
-  "${PY}" -m h200_locomotion_lab.tools.task033_failure_grid_eval_checkpoint \
-    --checkpoint "${CHECKPOINT}" \
-    --output-dir "${case_dir}/deadgrid" \
-    --lin-vel-x 2.0 \
-    --num-envs "${NUM_ENVS}" \
-    --steps "${STEPS}" \
-    --seed "${seed}" \
-    --device "${DEVICE}"
+  if [[ "${RUN_DEADGRID}" == "1" ]]; then
+    "${PY}" -m h200_locomotion_lab.tools.task033_failure_grid_eval_checkpoint \
+      --task "${DEADGRID_TASK}" \
+      --checkpoint "${CHECKPOINT}" \
+      --output-dir "${case_dir}/deadgrid" \
+      --lin-vel-x 2.0 \
+      --num-envs "${DEADGRID_NUM_ENVS}" \
+      --steps "${STEPS}" \
+      --seed "${seed}" \
+      --device "${DEVICE}"
+  fi
 done
 
 "${PY}" - <<'PY'

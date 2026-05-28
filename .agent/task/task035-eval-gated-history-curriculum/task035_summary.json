@@ -1,0 +1,38 @@
+{
+  "task": "task035-eval-gated-history-curriculum",
+  "status": "candidate_only_not_promoted",
+  "baseline_model5350_gate_vx2p0": {
+    "pass": true,
+    "dynamic_switch_seed_count": 3,
+    "dynamic_switch_pass_count": 3,
+    "deadgrid_seed_count": 3,
+    "deadgrid_pass_count": 3,
+    "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/model5350_baseline_gate_rerun3/task035_model5350_baseline_gate_summary.json"
+  },
+  "curriculum_run": {
+    "checkpoint_dir": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task035_eval_gated_curriculum_train/2026-05-28_15-31-23_035_mixed_from_model5350_env8192_iter20_gpu1_seed3503601",
+    "selected_checkpoint": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task035_eval_gated_curriculum_train/2026-05-28_15-31-23_035_mixed_from_model5350_env8192_iter20_gpu1_seed3503601/model_5369.pt",
+    "fast_sweep_json": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/checkpoint_sweep_mixed_seed3503601/task035_checkpoint_sweep_fast_gate_summary.json"
+  },
+  "model5369_full_validation": {
+    "pass": false,
+    "passed_speeds": [1.2, 2.0],
+    "failed_speeds": [0.4],
+    "vx0p4_deadgrid_pass_count": 7,
+    "vx0p4_deadgrid_case_count": 12,
+    "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/full_validation_model_5369/task035_full_validation_summary.json"
+  },
+  "model5350_vx0p4_comparison": {
+    "pass": false,
+    "vx0p4_deadgrid_pass_count": 9,
+    "vx0p4_deadgrid_case_count": 12,
+    "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/full_validation_model_5350_vx0p4/task035_full_validation_summary.json"
+  },
+  "follow_up_subtask": {
+    "id": "007-multi-objective-low-mid-high-curriculum",
+    "status": "route_set_not_executed",
+    "reason": "Low-speed focused follow-up fixed 0.4/1.2 m/s but regressed 2.0 m/s, so the next curriculum step must gate low/mid/high speeds together under Task035.",
+    "folded_evidence_json": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task036/full_validation_model_5397/task036_full_validation_summary.json"
+  },
+  "decision": "Do not promote Task035 model_5369. Keep model_5350 as a scoped 2.0 m/s candidate only; continue curriculum work in Task035 subtask 007 with simultaneous low/mid/high eval gates."
+}

@@ -75,6 +75,11 @@ Planned slices:
 6. `006-decision.md`
    - Promote curriculum checkpoint, keep `model_5350`, or reject the route.
 
+7. `007-multi-objective-low-mid-high-curriculum.md`
+   - Continue the curriculum route using low/mid/high eval gates as simultaneous
+     objectives instead of treating low-speed and high-speed repair as separate
+     tasks.
+
 ## Minimal Closed Loop
 
 1. Reproduce `model_5350.pt` on fresh seeds:
@@ -127,7 +132,31 @@ Evidence root:
 
 - 2026-05-28 Opened as a merged task after user clarified that checkpoint
   validation and curriculum learning should be one closed loop.
+- 2026-05-28 Executed H200 baseline gate, stage smoke, one bounded mixed
+  persistent curriculum continuation, fast checkpoint sweep, and representative
+  full validation. Key outputs:
+  - baseline gate:
+    `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/model5350_baseline_gate_rerun3/task035_model5350_baseline_gate_summary.json`;
+  - curriculum run:
+    `/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task035_eval_gated_curriculum_train/2026-05-28_15-31-23_035_mixed_from_model5350_env8192_iter20_gpu1_seed3503601`;
+  - fast sweep:
+    `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/checkpoint_sweep_mixed_seed3503601/task035_checkpoint_sweep_fast_gate_summary.json`;
+  - full validation:
+    `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/full_validation_model_5369/task035_full_validation_summary.json`;
+  - baseline low-speed comparison:
+    `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task035/full_validation_model_5350_vx0p4/task035_full_validation_summary.json`.
+- 2026-05-28 Reopened Task035 with subtask 007 after the low-speed focused
+  follow-up showed the curriculum should stay under this task. Evidence from
+  that follow-up:
+  - first low-speed repair improved `0.4 m/s` dead-grid from `9/12` to `11/12`;
+  - right-hip-roll repair and balanced rehearsal reached `0.4/1.2 m/s`
+    full validation pass;
+  - both remained non-promotable because `2.0 m/s` regressed on dynamic switch
+    and full dead-grid.
 
 ## Review
 
-Status: active planning. No curriculum pass claim yet.
+Status: reopened for subtask 007. Existing Task035 checkpoint remains
+`candidate_only`, not promoted. The next curriculum step must gate
+`0.4/1.2/2.0 m/s` together, because narrow low-speed repair can break the
+previous high-speed behavior.
