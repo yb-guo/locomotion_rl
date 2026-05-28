@@ -1,0 +1,214 @@
+{
+  "task": "task033-shared-history-memory-policy-bakeoff",
+  "status": "decision_ready_partial_close",
+  "evidence_root": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task033/",
+  "h200_checkout": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter",
+  "external_mjlab_root": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab",
+  "python": "/mnt/workspace/users/guoyubo/conda_envs/unitree-rl-mjlab/bin/python",
+  "gpu_name": "NVIDIA H20D",
+  "registered_task_ids": [
+    "Unitree-G1-Gripper-Flat-Task033-BufferOnlyK4-Fast2p0",
+    "Unitree-G1-Gripper-Flat-Task033-StackMlpK4-Fast2p0",
+    "Unitree-G1-Gripper-Flat-Task033-StackMlpK4-Persistent-Fast2p0",
+    "Unitree-G1-Gripper-Flat-Task033-StackMlpK4-FocusedDeadGrid-Fast2p0",
+    "Unitree-G1-Gripper-Flat-Task033-StackMlpK4-DynamicMotorFailure-Fast1p6",
+    "Unitree-G1-Gripper-Flat-Task033-StackMlpK4-FrozenBase-DynamicTrain-Fast1p6",
+    "Unitree-G1-Gripper-Flat-Task033-StackMlpK4-FrozenBase-FocusedDeadGrid-Fast2p0",
+    "Unitree-G1-Gripper-Flat-Task033-StackMlpK8-Fast2p0",
+    "Unitree-G1-Gripper-Flat-Task033-GruK4-Fast2p0",
+    "Unitree-G1-Gripper-Flat-Task033-TokenK4-Fast2p0"
+  ],
+  "history_buffer_cuda_smoke": {
+    "pass": true,
+    "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task033/history_buffer_smoke/task033_history_buffer_cuda_smoke.json",
+    "num_envs": 8192,
+    "history_len": 4,
+    "actor_frame_dim": 135,
+    "actor_input_dim_stack": 540,
+    "storage_shape": [8192, 4, 135],
+    "reset_env_valid_count": 2,
+    "reset_env_zero_prefix": 2,
+    "benchmark_steps": 200,
+    "elapsed_s": 0.020585347898304462,
+    "history_frames_per_sec": 79590590.74901274,
+    "cuda_memory_allocated_bytes": 79691776
+  },
+  "env64_smokes": {
+    "baseline_mlp": {
+      "pass": true,
+      "task_id": "Unitree-G1-Gripper-Flat-Task031-UnifiedDynamicSwitch-Fast2p0",
+      "run_dir": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task033_history_smoke/2026-05-28_11-49-15_033_baseline_mlp_env64_iter2_gpu0_seed3303300",
+      "num_envs": 64,
+      "iterations": 2,
+      "final_steps_per_sec": 194
+    },
+    "bufferonly_k4": {
+      "pass": true,
+      "task_id": "Unitree-G1-Gripper-Flat-Task033-BufferOnlyK4-Fast2p0",
+      "run_dir": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task033_history_smoke/2026-05-28_11-47-51_033_bufferonly_k4_env64_iter2_gpu0_seed3303301",
+      "num_envs": 64,
+      "iterations": 2,
+      "final_steps_per_sec": 174
+    },
+    "stackmlp_k4": {
+      "pass": true,
+      "task_id": "Unitree-G1-Gripper-Flat-Task033-StackMlpK4-Fast2p0",
+      "run_dir": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task033_history_smoke/2026-05-28_11-48-31_033_stackmlp_k4_env64_iter2_gpu0_seed3303302",
+      "num_envs": 64,
+      "iterations": 2,
+      "final_steps_per_sec": 207
+    },
+    "gru_k4": {
+      "pass": true,
+      "task_id": "Unitree-G1-Gripper-Flat-Task033-GruK4-Fast2p0",
+      "run_dir": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task033_history_smoke/2026-05-28_12-00-18_033_gru_k4_env64_iter1_gpu0_seed3303304",
+      "num_envs": 64,
+      "iterations": 1,
+      "final_steps_per_sec": 219
+    },
+    "token_k4": {
+      "pass": true,
+      "task_id": "Unitree-G1-Gripper-Flat-Task033-TokenK4-Fast2p0",
+      "run_dir": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task033_history_smoke/2026-05-28_12-00-50_033_token_k4_env64_iter1_gpu0_seed3303305",
+      "num_envs": 64,
+      "iterations": 1,
+      "final_steps_per_sec": 262
+    }
+  },
+  "env8192_overhead_smokes": {
+    "baseline_mlp": {
+      "pass": true,
+      "task_id": "Unitree-G1-Gripper-Flat-Task031-UnifiedDynamicSwitch-Fast2p0",
+      "run_dir": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task033_history_overhead/2026-05-28_11-50-01_033_baseline_mlp_env8192_iter1_gpu0_seed3303310",
+      "num_envs": 8192,
+      "iterations": 1,
+      "steps_per_sec": 11908,
+      "collection_time_s": 16.052,
+      "learning_time_s": 0.458
+    },
+    "bufferonly_k4": {
+      "pass": true,
+      "task_id": "Unitree-G1-Gripper-Flat-Task033-BufferOnlyK4-Fast2p0",
+      "run_dir": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task033_history_overhead/2026-05-28_11-50-59_033_bufferonly_k4_env8192_iter1_gpu0_seed3303311",
+      "num_envs": 8192,
+      "iterations": 1,
+      "steps_per_sec": 11680,
+      "collection_time_s": 16.374,
+      "learning_time_s": 0.459,
+      "overhead_pct_vs_baseline": 1.9146792072556265,
+      "gate_pct": 5,
+      "gate_pass": true
+    },
+    "stackmlp_k4": {
+      "pass": true,
+      "task_id": "Unitree-G1-Gripper-Flat-Task033-StackMlpK4-Fast2p0",
+      "run_dir": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task033_history_overhead/2026-05-28_11-51-58_033_stackmlp_k4_env8192_iter1_gpu0_seed3303312",
+      "num_envs": 8192,
+      "iterations": 1,
+      "history_len": 4,
+      "actor_input_dim": 540,
+      "steps_per_sec": 10805,
+      "collection_time_s": 17.736,
+      "learning_time_s": 0.459,
+      "overhead_pct_vs_baseline": 9.25932146456164,
+      "gate_pct": 15,
+      "gate_pass": true
+    },
+    "stackmlp_k8": {
+      "pass": true,
+      "task_id": "Unitree-G1-Gripper-Flat-Task033-StackMlpK8-Fast2p0",
+      "run_dir": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task033_history_overhead/2026-05-28_11-53-15_033_stackmlp_k8_env8192_iter1_gpu0_seed3303313",
+      "num_envs": 8192,
+      "iterations": 1,
+      "history_len": 8,
+      "actor_input_dim": 1080,
+      "steps_per_sec": 11596,
+      "collection_time_s": 16.494,
+      "learning_time_s": 0.46,
+      "overhead_pct_vs_baseline": 2.6200873362445415,
+      "gate_pct": 25,
+      "gate_pass": true
+    },
+    "gru_k4": {
+      "pass": true,
+      "task_id": "Unitree-G1-Gripper-Flat-Task033-GruK4-Fast2p0",
+      "run_dir": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task033_history_overhead/2026-05-28_12-47-40_033_gru_k4_env8192_iter1_gpu1_seed3303314",
+      "num_envs": 8192,
+      "iterations": 1,
+      "history_len": 4,
+      "actor_input_dim": 540,
+      "rnn_hidden_dim": 256,
+      "steps_per_sec": 52312,
+      "collection_time_s": 3.242,
+      "learning_time_s": 0.516,
+      "quality_claim": false
+    },
+    "token_k4": {
+      "pass": true,
+      "task_id": "Unitree-G1-Gripper-Flat-Task033-TokenK4-Fast2p0",
+      "run_dir": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task033_history_overhead/2026-05-28_12-48-44_033_token_k4_env8192_iter1_gpu1_seed3303315",
+      "num_envs": 8192,
+      "iterations": 1,
+      "history_len": 4,
+      "actor_input_dim": 540,
+      "token_projection": "Linear(135, 128)",
+      "steps_per_sec": 56745,
+      "collection_time_s": 3.276,
+      "learning_time_s": 0.188,
+      "quality_claim": false
+    }
+  },
+  "stackmlp_k4_migration_smoke": {
+    "pass": true,
+    "source_checkpoint": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task030_dynamic_004_train/2026-05-21_17-35-22_005_kneehiproll_vx2p0_from5320_env8192_iter30_gpu1_seed30750/model_5349.pt",
+    "migrated_checkpoint": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task033/checkpoints/model_5349_stackmlp_k4_migrated.pt",
+    "migration_json": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task033/migration_smoke/model_5349_stackmlp_k4_migration.json",
+    "history_len": 4,
+    "source_actor_input_dim": 104,
+    "target_actor_input_dim": 540,
+    "newest_obs_slice": [405, 509],
+    "optimizer_policy": "fresh optimizer after migration",
+    "load_train_smoke_run_dir": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task033_history_migration_warmstart/2026-05-28_12-20-22_033_stackmlp_k4_migration_load_smoke_env64_iter1_gpu0_seed3303341",
+    "load_train_smoke_num_envs": 64,
+    "load_train_smoke_iterations": 1,
+    "load_train_smoke_steps_per_sec": 1113,
+    "load_train_smoke_done": true
+  },
+  "stackmlp_k4_policy_quality_eval": {
+    "naive_warmstart_model5378": {
+      "pass": false,
+      "checkpoint": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task033_stackmlp_k4_warmstart/2026-05-28_12-23-30_033_stackmlp_k4_from5349_env8192_iter30_gpu1_seed3303351/model_5378.pt",
+      "dynamic_eval_json": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task033/stackmlp_k4_eval/model5378_dynamicmotorfailure_vx2p0_seed3105349/task033_dynamic_eval_switch_vx2p0.json",
+      "zero_fall_ratio": 0.0,
+      "recovery_success_ratio": 0.0,
+      "decision": "naive PPO on expanded StackMLP input regressed base gait"
+    },
+    "migrated_model5349_before_ppo": {
+      "pass": true,
+      "checkpoint": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task033/checkpoints/model_5349_stackmlp_k4_migrated.pt",
+      "dynamic_eval_json": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task033/stackmlp_k4_eval/migrated_model5349_dynamicmotorfailure_vx2p0_seed3105349/task033_dynamic_eval_switch_vx2p0.json",
+      "zero_fall_ratio": 1.0,
+      "recovery_success_ratio": 1.0
+    },
+    "frozenbase_model5378": {
+      "pass": false,
+      "checkpoint": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task033_stackmlp_k4_frozenbase_focused/2026-05-28_12-40-56_033_frozenbase_focused_from5349_env8192_iter30_gpu1_seed3303362_lr1e5/model_5378.pt",
+      "dynamic_eval_json": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task033/stackmlp_k4_eval/frozenbase_model5378_dynamicmotorfailure_vx2p0_seed3105349/task033_dynamic_eval_switch_vx2p0.json",
+      "dynamic_switch_pass": true,
+      "dynamic_switch_zero_fall_ratio": 1.0,
+      "dynamic_switch_recovery_success_ratio": 1.0,
+      "deadgrid_eval_json": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task033/stackmlp_k4_eval/frozenbase_model5378_deadgrid_vx2p0_seed3303500/task033_failure_grid_eval_aggregate.json",
+      "deadgrid_pass": false,
+      "deadgrid_pass_count": 11,
+      "deadgrid_case_count": 12,
+      "failed_joint": "right_knee_joint",
+      "failed_joint_zero_fall_ratio": 0.2109375,
+      "decision": "best Task033 policy-quality result; improves dead-grid but does not fully close it"
+    }
+  },
+  "known_pending": [
+    "checkpoint migration or training route for GRU/token consumers",
+    "right_knee_joint forced-dead robustness at 2.0 m/s",
+    "multi-speed blocker-subset eval for frozen-base StackMLP if the next task continues this route"
+  ]
+}
