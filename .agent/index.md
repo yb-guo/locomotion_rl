@@ -41,6 +41,7 @@ H200 Locomotion Lab 的 agent 入口。
 - `task/task032-focused-deadgrid-mlp-ceiling-test/task.md`
 - `task/task033-shared-history-memory-policy-bakeoff/task.md`
 - `task/task034-right-knee-dead-history-curriculum/task.md`
+- `task/task035-eval-gated-history-curriculum/task.md`
 
 ## Consensus
 
