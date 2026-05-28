@@ -31,8 +31,29 @@ Fail:
 ## Log
 
 - 2026-05-21 Opened.
+- 2026-05-21 MLP-only Task030 pass reached fixed `2.0 m/s` without adding
+  explicit actor fault labels, motor scales, failure masks, observation stack,
+  GRU state, or LocoFormer-style memory. Final accepted checkpoint:
+  `/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task030_dynamic_004_train/2026-05-21_17-35-22_005_kneehiproll_vx2p0_from5320_env8192_iter30_gpu1_seed30750/model_5349.pt`.
+- 2026-05-21 Decision: current proprioceptive MLP feedback is sufficient for
+  this task's first-pass dynamic weak/dead motor setting. No history policy is
+  needed inside Task030. Defer observation stacks, GRU, or LocoFormer-style
+  memory to a later task only if the scope expands to locked joints, stuck
+  commands, multi-motor simultaneous dynamic faults, longer hidden actuator
+  delays, or harder terrain.
+- 2026-05-21 Broader per-joint dynamic single-onset grid changed the decision
+  boundary. The same MLP is sufficient for the specified dynamic-switch route,
+  but not for arbitrary full-dead mid-episode onset across all leg joints:
+  `model_5349.pt` passed only `8/12`, all-joint onset fine-tune passed `7/12`,
+  and focused onset fine-tune passed `6/12`.
+- 2026-05-21 Updated decision: do not add history inside Task030 after the fact.
+  Close this task as a scoped MLP baseline and open a later task for arbitrary
+  dynamic-onset adaptation. That later task should change at least one of:
+  speed/onset curriculum, observation history, recurrent state, or
+  LocoFormer-style context.
 
 ## Review
 
-Status: open. This is a decision subtask, not an implementation subtask for a
-new policy.
+Status: partial. Evidence supports keeping Task030 as an MLP baseline for the
+specified dynamic-switch route, but the broader all-joint dynamic-onset grid is
+a concrete failure mode for a later memory/curriculum task.

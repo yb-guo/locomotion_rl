@@ -37,6 +37,9 @@ H200 Locomotion Lab 的 agent 入口。
 - `task/task028-randomized-wholebody-morphology-env/task.md`
 - `task/task029-motor-only-randomization-and-failure-baseline/task.md`
 - `task/task030-online-dynamic-motor-failure-adaptation/task.md`
+- `task/task031-unified-forward-speed-dynamic-switch-mlp/task.md`
+- `task/task032-focused-deadgrid-mlp-ceiling-test/task.md`
+- `task/task033-shared-history-memory-policy-bakeoff/task.md`
 
 ## Consensus
 

@@ -141,9 +141,75 @@ Evidence:
   window.
 - 2026-05-21 User decision: final speed target is `2.0 m/s`, reached through
   staged gates.
+- 2026-05-21 Created new local worktree and branch for execution:
+  `D:\guoyubo.9\Documents\New project 2\_worktrees\h200-locomotion-lab-task030-online-dynamic-failure`,
+  branch `codex/task030-online-dynamic-failure`.
+- 2026-05-21 Added and ran H200 artifacts for subtasks 001-003. Subtask 001
+  contract inspect passed with actor obs/action `104 -> 31` unchanged and no
+  explicit fault labels in actor observations. Subtask 002 deterministic
+  scheduler trace passed with the required mid-episode transition template.
+- 2026-05-21 Existing-policy dynamic switch eval is split by speed: fixed
+  `1.2 m/s` passed, fixed `1.6 m/s` failed. The accepted task029 checkpoint
+  does not yet satisfy the task030 online adaptation target at `1.6 m/s`.
+- 2026-05-21 Completed subtask 003 by referencing task029 accepted clean and
+  persistent fixed-speed `1.6 m/s` JSON evidence and adding isolated dynamic
+  single-failure evals. The `1.6 m/s` bottleneck is dynamic `left_knee_joint`
+  dead/recovery: isolated dynamic `single-left-knee` failed with
+  `zero_fall_ratio=0.1914`, while isolated dynamic `single-right-hip-yaw`
+  passed with `zero_fall_ratio=1.0`.
+- 2026-05-21 Completed subtask 004 for fixed `1.6 m/s`. The accepted checkpoint
+  is
+  `/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task030_dynamic_004_train/2026-05-21_15-03-09_004_persistent_rehearsal_continue5164_env8192_iter40_gpu1_seed30051/model_5200.pt`.
+  It was reached by randomized dynamic training, canonical dynamic-switch
+  micro fine-tune, and persistent all-critical rehearsal. The actor/action
+  contract remains `104 -> 31` with no explicit actor fault labels.
+- 2026-05-21 Dynamic switch multi-seed s5 passed for accepted `model_5200.pt`:
+  `pass_count=5/5`, `zero_fall_ratio_min=1.0`,
+  `recovery_success_ratio_min=1.0`,
+  `post_recovery_lin_vel_error_mean_max=0.158173069357872`,
+  `post_recovery_yaw_vel_error_mean_max=0.21012352406978607`,
+  `max_gravity_xy_after_onset_max=0.18700484931468964`. Summary:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task030/dynamic_failure_mlp_train/eval_model5200_rehearsal2_dynamic_switch_s5/task030_dynamic_switch_multiseed_s5_summary.json`.
+- 2026-05-21 Task029 full clean/persistent regression also passed for accepted
+  `model_5200.pt`: aggregate `pass=true`, complete 12-case forced-dead grid,
+  clean pass, motor-primitives pass, in-distribution persistent failure pass,
+  and doubled holdout pass. Aggregate:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task030/dynamic_failure_mlp_train/eval_model5200_rehearsal2_task029_regression_vx1p6_full_grid/task029_eval_failure_aggregate.json`.
+- 2026-05-21 Rendered fixed `1.6 m/s` deterministic dynamic-switch video for
+  accepted `model_5200.pt`; render case `pass=true`, `done_count=0`, 500 frames
+  at 50 FPS. Local copy:
+  `D:\guoyubo.9\Documents\New project 2\_worktrees\h200-locomotion-lab-task030-online-dynamic-failure\outputs\task030\render_model5200_dynamic_switch_vx1p6\task030-render-model5200-dynamic-switch-vx1p6.mp4`.
+- 2026-05-21 Completed subtask 005 speed expansion. Fixed `1.8 m/s` accepted
+  checkpoint:
+  `/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task030_dynamic_004_train/2026-05-21_15-51-26_005_rightknee_vx1p8_from5239_env8192_iter40_gpu1_seed30530/model_5278.pt`.
+  Fixed `2.0 m/s` accepted checkpoint:
+  `/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task030_dynamic_004_train/2026-05-21_17-35-22_005_kneehiproll_vx2p0_from5320_env8192_iter30_gpu1_seed30750/model_5349.pt`.
+- 2026-05-21 Final fixed `2.0 m/s` evidence for `model_5349.pt`: task029 full
+  regression aggregate `pass=true`; dynamic-switch multi-seed s5
+  `pass_count=5/5`, `zero_fall_ratio_min=1.0`,
+  `recovery_success_ratio_min=1.0`,
+  `max_gravity_xy_after_onset_max=0.14636270701885223`; final clean,
+  single-right-knee dynamic, and switch dynamic renders all produced 500-frame
+  50 FPS videos with `done_count=0`.
+- 2026-05-21 Completed subtask 006 decision. The current MLP actor remains
+  `104 -> 31`, receives no explicit fault labels, and is sufficient for the
+  first-pass dynamic weak/dead motor adaptation setting through fixed
+  `2.0 m/s`. No history policy is added in Task030.
+- 2026-05-21 Tightened subtask 005 with a broader fixed `2.0 m/s` per-joint
+  dynamic single-onset grid. The scoped accepted checkpoint `model_5349.pt`
+  passed only `8/12` cases; all-joint onset fine-tune `model_5428.pt` passed
+  `7/12`; focused onset fine-tune `model_5468.pt` passed `6/12`. The broader
+  arbitrary onset route is not closed by the current MLP/curriculum.
 
 ## Review
 
-Status: open. This task is a diagnosis-first training task. The first
-acceptance gate is not training reward; it is a deterministic scheduler trace
-plus baseline eval of the existing task029 policy.
+Status: partial. Subtasks 001-006 have Route/Log/Review evidence. Task030
+produced a scoped MLP-only checkpoint, `model_5349.pt`, that reaches fixed
+`2.0 m/s` for the specified dynamic-switch route while preserving task029
+clean/persistent/dead-grid robustness and passing render gates.
+
+The stricter arbitrary per-joint mid-episode dynamic onset route is not solved:
+hip-pitch/hip-yaw/right-knee onset failures remain after two additional
+MLP-only guard attempts. Hardware-facing claims remain out of scope. The next
+task should target arbitrary dynamic-onset adaptation with a changed curriculum
+and likely explicit history/memory.
