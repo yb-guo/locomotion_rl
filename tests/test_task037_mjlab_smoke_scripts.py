@@ -30,15 +30,19 @@ def test_task037_registration_patch_is_idempotent() -> None:
     txl_task_id = (
         "Unitree-G1-Gripper-Flat-Task037-TxlMemoryK160-DeterministicInnerReset-Fast2p0"
     )
+    txl_deadgrid_task_id = "Unitree-G1-Gripper-Flat-Task037-TxlMemoryK160-FocusedDeadGrid-Fast2p0"
+    txl_dynamic_task_id = "Unitree-G1-Gripper-Flat-Task037-TxlMemoryK160-DynamicMotorFailure-Fast1p6"
     assert once == twice
     assert once.count("Task037BufferOnlyK4AutoResetRunner") == 2
     assert once.count("Task037BufferOnlyK4DeterministicInnerResetRunner") == 2
     assert once.count("Task037AdaptK4DeterministicInnerResetRunner") == 2
-    assert once.count("Task037TxlMemoryK160DeterministicRunner") == 2
+    assert once.count("Task037TxlMemoryK160DeterministicRunner") == 4
     assert once.count(task_id) == 1
     assert once.count(deterministic_task_id) == 1
     assert once.count(adapt_task_id) == 1
     assert once.count(txl_task_id) == 1
+    assert once.count(txl_deadgrid_task_id) == 1
+    assert once.count(txl_dynamic_task_id) == 1
 
 
 def test_task037_extras_probe_parse_args_defaults_to_task037_id() -> None:
@@ -73,6 +77,27 @@ def test_task037_multitrial_eval_parse_args_defaults_to_adapt_task_id() -> None:
     assert args.output_json == "eval.json"
     assert args.trial_length_s == 2.0
     assert args.min_final_completion_ratio > 0
+
+
+def test_task037_multitrial_eval_parse_args_supports_matrix_modes() -> None:
+    module = _load_src_tool("task037_multitrial_eval_checkpoint.py")
+
+    args = module.parse_args(
+        [
+            "--checkpoint",
+            "model.pt",
+            "--output-json",
+            "eval.json",
+            "--dynamic-case",
+            "switch",
+            "--force-dead-joint",
+            "right_knee_joint",
+        ]
+    )
+
+    assert args.dynamic_case == "switch"
+    assert args.force_dead_joint == "right_knee_joint"
+    assert args.dead_scale == 0.0
 
 
 def _load_script(name: str):

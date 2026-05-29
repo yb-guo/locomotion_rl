@@ -108,10 +108,20 @@ Fixed acceptance criteria:
   `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/txl_memory_smoke/037_txl_k160_env8192_iter1_gpu0_seed3700511.stdout.log`.
   Result: env64 one-iteration PPO smoke `1423` steps/s, env8192 overhead
   smoke `55595` steps/s, `quality_claim=false`.
+- 2026-05-29 Completed 006 long-context training decision. TXL K160 scratch
+  training to 60 iterations produced checkpoint:
+  `/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task037_long_context_train/2026-05-29_14-54-42_037_txl_k160_scratch_env8192_iter60_gpu0_seed3700601/model_59.pt`.
+  Full validation:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/task037_full_validation_summary.json`.
+  Result: `pass=false`; speeds `0.4`, `1.2`, and `2.0` all failed dynamic
+  switch with final-trial fall ratio `1.0`, and all deadgrid results were
+  `0/12`.
 
 ## Review
 
-Status: active. 001 fake-env contract, 002 MJLab auto-reset smoke, and 003
-deterministic inner-reset probe passed. 004 eval JSON contract passed with an
-existing AdaptK4 checkpoint. 005 TXL-style K160 memory construction and
-overhead smoke passed. Long-context policy quality is not validated yet.
+Status: complete. 001 fake-env contract, 002 MJLab auto-reset smoke, 003
+deterministic inner-reset probe, 004 eval JSON contract, and 005 TXL-style K160
+construction/overhead smoke passed. 006 rejects the current TXL K160 scratch
+policy-quality route; no checkpoint is promoted. Keep the infrastructure and
+change objective/curriculum or warm-start strategy before further long-context
+policy training.

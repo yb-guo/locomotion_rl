@@ -57,6 +57,24 @@ register_mjlab_task(
   runner_cls=Task037TxlMemoryK160DeterministicRunner,
 )
 ''',
+    "Unitree-G1-Gripper-Flat-Task037-TxlMemoryK160-FocusedDeadGrid-Fast2p0": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-TxlMemoryK160-FocusedDeadGrid-Fast2p0",
+  env_cfg=unitree_g1_gripper_flat_task031_focused_deadgrid_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task031_focused_deadgrid_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037TxlMemoryK160DeterministicRunner,
+)
+''',
+    "Unitree-G1-Gripper-Flat-Task037-TxlMemoryK160-DynamicMotorFailure-Fast1p6": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-TxlMemoryK160-DynamicMotorFailure-Fast1p6",
+  env_cfg=unitree_g1_gripper_flat_dynamic_failure_fast1p6_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_dynamic_failure_fast1p6_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037TxlMemoryK160DeterministicRunner,
+)
+''',
 }
 
 

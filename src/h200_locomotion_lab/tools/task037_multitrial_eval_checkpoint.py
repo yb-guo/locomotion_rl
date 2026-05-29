@@ -14,6 +14,30 @@ from typing import Any
 
 
 DEFAULT_TASK = "Unitree-G1-Gripper-Flat-Task037-AdaptK4-DeterministicInnerReset-Fast2p0"
+DEFAULT_JOINTS = (
+    "left_hip_pitch_joint",
+    "left_hip_yaw_joint",
+    "right_hip_pitch_joint",
+    "right_hip_yaw_joint",
+    "left_hip_roll_joint",
+    "left_knee_joint",
+    "right_hip_roll_joint",
+    "right_knee_joint",
+    "left_ankle_pitch_joint",
+    "left_ankle_roll_joint",
+    "right_ankle_pitch_joint",
+    "right_ankle_roll_joint",
+)
+DYNAMIC_CASES = {
+    "none": None,
+    "switch": (
+        (0.0, 2.0, None, "normal", 1.0),
+        (2.0, 4.0, "left_knee_joint", "dead", 0.0),
+        (4.0, 5.0, None, "normal", 1.0),
+        (5.0, 7.0, "right_hip_yaw_joint", "dead", 0.0),
+        (7.0, None, None, "normal", 1.0),
+    ),
+}
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -31,6 +55,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--lin-vel-x", type=float, default=2.0)
     parser.add_argument("--lin-vel-y", type=float, default=0.0)
     parser.add_argument("--ang-vel-z", type=float, default=0.0)
+    parser.add_argument("--dynamic-case", choices=sorted(DYNAMIC_CASES), default="none")
+    parser.add_argument("--force-dead-joint", choices=DEFAULT_JOINTS)
+    parser.add_argument("--dead-scale", type=float, default=0.0)
     parser.add_argument("--min-final-completion-ratio", type=float, default=0.95)
     parser.add_argument("--max-final-fall-ratio", type=float, default=0.50)
     parser.add_argument("--max-final-lin-vel-error", type=float, default=1.20)
@@ -65,6 +92,10 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
     env_cfg.seed = args.seed
     env_cfg.episode_length_s = args.trial_length_s
     _configure_fixed_command(env_cfg, args)
+    if args.dynamic_case != "none":
+        _configure_dynamic_case(env_cfg, args.dynamic_case)
+    if args.force_dead_joint:
+        _force_dead_motor(env_cfg, args.force_dead_joint, args.dead_scale)
 
     start = time.time()
     outer_env = None
@@ -153,6 +184,10 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
                 "lin_vel_y": args.lin_vel_y,
                 "ang_vel_z": args.ang_vel_z,
             },
+            "eval_mode": _eval_mode(args),
+            "dynamic_case": args.dynamic_case,
+            "force_dead_joint": args.force_dead_joint,
+            "dead_scale": args.dead_scale,
             "thresholds": thresholds,
             "trial_0": per_trial[0],
             "trial_1": per_trial[1] if len(per_trial) > 1 else None,
@@ -256,6 +291,33 @@ def _configure_fixed_command(env_cfg: Any, args: argparse.Namespace) -> None:
     twist_cmd.ranges.lin_vel_y = (args.lin_vel_y, args.lin_vel_y)
     twist_cmd.ranges.ang_vel_z = (args.ang_vel_z, args.ang_vel_z)
     twist_cmd.ranges.heading = None
+
+
+def _configure_dynamic_case(env_cfg: Any, dynamic_case: str) -> None:
+    if "dynamic_motor_failure" not in env_cfg.events:
+        raise RuntimeError("dynamic_motor_failure event is absent")
+    params = env_cfg.events["dynamic_motor_failure"].params
+    template = DYNAMIC_CASES[dynamic_case]
+    if template is not None and "template" in params:
+        params["template"] = template
+
+
+def _force_dead_motor(env_cfg: Any, joint_name: str, scale: float) -> None:
+    if "motor_failure" not in env_cfg.events:
+        raise RuntimeError("motor_failure event is absent")
+    params = env_cfg.events["motor_failure"].params
+    params["max_failed_motors"] = 1
+    params["forced_joint_name"] = joint_name
+    params["forced_failure_type"] = "dead"
+    params["forced_scale"] = scale
+
+
+def _eval_mode(args: argparse.Namespace) -> str:
+    if args.force_dead_joint:
+        return "forced_deadgrid"
+    if args.dynamic_case != "none":
+        return "dynamic_switch"
+    return "clean_multitrial"
 
 
 def _step_env(env: Any, action: Any) -> tuple[Any, Any, Any, dict[str, Any]]:

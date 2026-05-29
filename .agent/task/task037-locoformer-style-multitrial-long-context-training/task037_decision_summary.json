@@ -1,0 +1,48 @@
+{
+  "task": "task037-locoformer-style-multitrial-long-context-training",
+  "status": "complete",
+  "decision": "Reject the current TXL-style K160 scratch policy-quality route. Keep the multi-trial contract, deterministic reset, eval JSON, and K160 construction smoke; do not promote the trained K160 checkpoint.",
+  "h200_checkout": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter",
+  "txl_k160": {
+    "train_log": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/long_context_train/037_txl_k160_scratch_env8192_iter60_gpu0_seed3700601.stdout.log",
+    "checkpoint": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task037_long_context_train/2026-05-29_14-54-42_037_txl_k160_scratch_env8192_iter60_gpu0_seed3700601/model_59.pt",
+    "full_validation_summary": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/task037_full_validation_summary.json",
+    "local_full_validation_summary": "task037_full_validation_txl_k160_model59_iter60_summary.json",
+    "full_validation_pass": false,
+    "speed_results": [
+      {
+        "speed": 0.4,
+        "dynamic_switch_pass": false,
+        "dynamic_switch_final_trial_fall_ratio": 1.0,
+        "dynamic_switch_final_trial_lin_vel_error_mean": 0.4234192371368408,
+        "deadgrid_pass_count": 0,
+        "deadgrid_case_count": 12
+      },
+      {
+        "speed": 1.2,
+        "dynamic_switch_pass": false,
+        "dynamic_switch_final_trial_fall_ratio": 1.0,
+        "dynamic_switch_final_trial_lin_vel_error_mean": 1.1235076189041138,
+        "deadgrid_pass_count": 0,
+        "deadgrid_case_count": 12
+      },
+      {
+        "speed": 2.0,
+        "dynamic_switch_pass": false,
+        "dynamic_switch_final_trial_fall_ratio": 1.0,
+        "dynamic_switch_final_trial_lin_vel_error_mean": 1.9152247905731201,
+        "deadgrid_pass_count": 0,
+        "deadgrid_case_count": 12
+      }
+    ]
+  },
+  "adaptk4_reference": {
+    "checkpoint": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task036_policy_quality_train/2026-05-28_23-10-53_036_adapt_k4_warmstart_env8192_iter60_gpu0_seed3603630/model_5408.pt",
+    "task036_full_eval_pass": false,
+    "task037_clean_multitrial_eval_json": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/multitrial_eval/task037_adaptk4_model5408_multitrial_eval_env64.json",
+    "task037_clean_final_trial_pass": true,
+    "task037_clean_final_trial_fall_ratio": 0.0,
+    "task037_clean_final_trial_lin_vel_error_mean": 0.635803759098053
+  },
+  "next_route": "Keep Task037 infrastructure. Next work should change objective/curriculum or warm-start strategy before further long-context policy training."
+}
