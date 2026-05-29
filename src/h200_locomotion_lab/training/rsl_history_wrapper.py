@@ -16,18 +16,33 @@ from h200_locomotion_lab.training.history_checkpoint_migration import (
     migrate_adaptation_conditioned_checkpoint,
     migrate_stack_mlp_checkpoint,
 )
+from h200_locomotion_lab.training.multitrial_wrapper import TASK037_ZERO_ACTION_RESET_KEY
 
 
 def _base_runner() -> type[Any]:
-    from mjlab.rl.runner import MjlabOnPolicyRunner  # type: ignore[import-not-found]
-
-    return MjlabOnPolicyRunner
+    try:
+        from mjlab.rl.runner import MjlabOnPolicyRunner  # type: ignore[import-not-found]
+    except ImportError as exc:  # pragma: no cover - local no-training-stack path.
+        return _missing_dependency_base("mjlab.rl.runner.MjlabOnPolicyRunner", exc)
+    else:
+        return MjlabOnPolicyRunner
 
 
 def _base_mlp_model() -> type[Any]:
-    from rsl_rl.models.mlp_model import MLPModel  # type: ignore[import-not-found]
+    try:
+        from rsl_rl.models.mlp_model import MLPModel  # type: ignore[import-not-found]
+    except ImportError as exc:  # pragma: no cover - local no-training-stack path.
+        return _missing_dependency_base("rsl_rl.models.mlp_model.MLPModel", exc)
+    else:
+        return MLPModel
 
-    return MLPModel
+
+def _missing_dependency_base(dependency: str, exc: Exception) -> type[Any]:
+    class MissingDependencyBase:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise RuntimeError(f"{dependency} import failed: {exc}") from exc
+
+    return MissingDependencyBase
 
 
 class Task033HistoryTokenMlpModel(_base_mlp_model()):
@@ -193,7 +208,12 @@ class Task033HistoryVecEnvWrapper:
 
     def step(self, actions: Any) -> tuple[Any, Any, Any, dict[str, Any]]:
         obs, rewards, dones, extras = self.env.step(actions)
-        self._append_from_obs(obs, actions, done=dones)
+        self._append_from_obs(
+            obs,
+            actions,
+            done=dones,
+            zero_action_mask=extras.get(TASK037_ZERO_ACTION_RESET_KEY),
+        )
         return self._with_history(obs), rewards, dones, extras
 
     def close(self) -> None:
@@ -213,10 +233,27 @@ class Task033HistoryVecEnvWrapper:
             )
         )
 
-    def _append_from_obs(self, obs: Any, actions: Any, *, done: Any | None = None) -> None:
+    def _append_from_obs(
+        self,
+        obs: Any,
+        actions: Any,
+        *,
+        done: Any | None = None,
+        zero_action_mask: Any | None = None,
+    ) -> None:
         if self._buffer is None:
             self._reset_buffer()
-        frame = _require_torch().cat((obs[self.actor_group], actions.to(obs[self.actor_group].device)), dim=-1)
+        history_actions = actions.to(obs[self.actor_group].device)
+        reset_action_mask = _combined_reset_mask(
+            done,
+            zero_action_mask,
+            history_actions.device,
+            self.num_envs,
+        )
+        if reset_action_mask is not None:
+            history_actions = history_actions.clone()
+            history_actions[reset_action_mask] = 0.0
+        frame = _require_torch().cat((obs[self.actor_group], history_actions), dim=-1)
         assert self._buffer is not None
         self._buffer.append(frame, done=done)
 
@@ -479,3 +516,29 @@ def _dtype_name(torch: Any, dtype: Any) -> str:
     if dtype == torch.bfloat16:
         return "bfloat16"
     raise ValueError(f"Unsupported history buffer dtype: {dtype}")
+
+
+def _combined_reset_mask(
+    done: Any | None,
+    zero_action_mask: Any | None,
+    device: Any,
+    num_envs: int,
+) -> Any | None:
+    if done is None and zero_action_mask is None:
+        return None
+    if done is None:
+        return _bool_mask(zero_action_mask, device, num_envs)
+    if zero_action_mask is None:
+        return _bool_mask(done, device, num_envs)
+    return _bool_mask(done, device, num_envs) | _bool_mask(zero_action_mask, device, num_envs)
+
+
+def _bool_mask(mask: Any, device: Any, num_envs: int) -> Any:
+    torch = _require_torch()
+    if hasattr(mask, "to"):
+        tensor = mask.to(device=device, dtype=torch.bool)
+    else:
+        tensor = torch.as_tensor(mask, device=device, dtype=torch.bool)
+    if tuple(tensor.shape) != (num_envs,):
+        raise ValueError(f"mask must have shape ({num_envs},), got {tuple(tensor.shape)}")
+    return tensor

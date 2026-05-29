@@ -81,7 +81,11 @@ Fixed acceptance criteria:
 
 - 2026-05-29 Opened after Task036 closed with no promoted checkpoint and user
   approved the multi-trial contract decisions.
+- 2026-05-29 Completed 001 fake-env contract tests. H200 torch validation:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task037_contract_tmp_20260529`,
+  `tests/test_task037_multitrial_contract.py -q` -> `2 passed in 2.48s`.
 
 ## Review
 
-Status: planned. No Task037 implementation has passed yet.
+Status: active. 001 fake-env contract passed; MJLab smoke/reset and policy
+quality are not validated yet.
