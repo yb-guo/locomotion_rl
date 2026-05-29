@@ -42,6 +42,8 @@ H200 Locomotion Lab 的 agent 入口。
 - `task/task033-shared-history-memory-policy-bakeoff/task.md`
 - `task/task034-right-knee-dead-history-curriculum/task.md`
 - `task/task035-eval-gated-history-curriculum/task.md`
+- `task/task036-adaptation-gru-token-policy-quality/task.md`
+- `task/task037-locoformer-style-multitrial-long-context-training/task.md`
 
 ## Consensus
 

@@ -1,0 +1,43 @@
+{
+  "task": "task036-adaptation-gru-token-policy-quality",
+  "status": "complete",
+  "decision": "No Task036 checkpoint is promoted. AdaptK4 is the best partial candidate; GRU/token K4 are rejected for this route.",
+  "evidence_root": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task036",
+  "local_validation": {
+    "inspect_agent": "passed",
+    "pytest": "tests/test_agent_inventory.py tests/test_task033_history_buffer.py: 4 passed, 5 skipped",
+    "syntax": "AST parse passed for changed Python and Task036 scripts"
+  },
+  "adaptation_conditioning": {
+    "status": "partial_full_eval",
+    "env64_smoke_log": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task036/policy_train/036_adapt_smoke_env64_iter1_gpu0_seed3603602.stdout.log",
+    "train_log": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task036/policy_train/036_adapt_k4_warmstart_env8192_iter60_gpu0_seed3603630.stdout.log",
+    "checkpoint": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task036_policy_quality_train/2026-05-28_23-10-53_036_adapt_k4_warmstart_env8192_iter60_gpu0_seed3603630/model_5408.pt",
+    "full_eval_summary": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task036/full_validation_adapt_adapt_model5408_iter60/task036_full_validation_summary.json",
+    "full_eval_pass": false,
+    "focused_sweep_summary": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task036/adapt_focused_sweep/task036_adapt_focused_sweep_summary.json",
+    "focused_sweep_pass": false,
+    "actor_history_dim": 540,
+    "actor_mlp_input_dim": 136,
+    "latent_dim": 32
+  },
+  "gru_k4": {
+    "checkpoint_60": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task036_policy_quality_train/2026-05-28_23-06-49_036_gru_k4_scratch_env8192_iter60_gpu0_seed3603610/model_59.pt",
+    "full_eval_60": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task036/full_validation_gru_gru_model59_iter60/task036_full_validation_summary.json",
+    "full_eval_60_pass": false,
+    "checkpoint_300": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task036_policy_quality_train/2026-05-28_23-28-23_036_gru_k4_resume59_env8192_iter240_gpu0_seed3603611/model_298.pt",
+    "full_eval_300": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task036/full_validation_gru_gru_model298_iter300/task036_full_validation_summary.json",
+    "full_eval_300_pass": false,
+    "continuation_status": "complete"
+  },
+  "token_k4": {
+    "checkpoint_60": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task036_policy_quality_train/2026-05-28_23-06-49_036_token_k4_scratch_env8192_iter60_gpu1_seed3603620/model_59.pt",
+    "full_eval_60": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task036/full_validation_token_token_model59_iter60/task036_full_validation_summary.json",
+    "full_eval_60_pass": false,
+    "checkpoint_300": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task036_policy_quality_train/2026-05-28_23-28-23_036_token_k4_resume59_env8192_iter240_gpu1_seed3603621/model_298.pt",
+    "full_eval_300": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task036/full_validation_token_token_model298_iter300/task036_full_validation_summary.json",
+    "full_eval_300_pass": false,
+    "continuation_status": "complete"
+  },
+  "next_route": "Change the training objective/curriculum for velocity tracking and targeted dead-motor recovery before trying more policy consumers."
+}

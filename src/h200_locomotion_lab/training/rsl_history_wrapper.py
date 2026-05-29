@@ -9,8 +9,11 @@ from h200_locomotion_lab.training.history_buffer import (
     TorchHistoryBuffer,
 )
 from h200_locomotion_lab.training.history_checkpoint_migration import (
+    AdaptationConditioningMigrationConfig,
     StackMlpHistoryMigrationConfig,
+    is_adaptation_conditioning_migration_needed,
     is_stack_mlp_history_migration_needed,
+    migrate_adaptation_conditioned_checkpoint,
     migrate_stack_mlp_checkpoint,
 )
 
@@ -68,6 +71,65 @@ class Task033HistoryTokenMlpModel(_base_mlp_model()):
 
     def _get_latent_dim(self) -> int:
         return self.token_dim
+
+
+class Task036AdaptationConditionedMlpModel(_base_mlp_model()):
+    """Actor that conditions the base observation on a learned history latent."""
+
+    is_recurrent: bool = False
+
+    def __init__(
+        self,
+        *args: Any,
+        history_len: int = 4,
+        action_dim: int = 31,
+        adaptation_latent_dim: int = 32,
+        adaptation_hidden_dim: int = 128,
+        **kwargs: Any,
+    ) -> None:
+        self.history_len = history_len
+        self.action_dim = action_dim
+        self.adaptation_latent_dim = adaptation_latent_dim
+        self.adaptation_hidden_dim = adaptation_hidden_dim
+        super().__init__(*args, **kwargs)
+        torch = _require_torch()
+        nn = torch.nn
+        if self.obs_dim % self.history_len != 0:
+            raise ValueError(
+                f"history actor obs dim {self.obs_dim} is not divisible by history_len={self.history_len}"
+            )
+        self.frame_dim = self.obs_dim // self.history_len
+        self.base_obs_dim = self.frame_dim - self.action_dim
+        if self.base_obs_dim <= 0:
+            raise ValueError(
+                f"frame_dim={self.frame_dim} must be larger than action_dim={self.action_dim}"
+            )
+        self.adaptation_encoder = nn.Sequential(
+            nn.Linear(self.obs_dim, self.adaptation_hidden_dim),
+            nn.ELU(),
+            nn.Linear(self.adaptation_hidden_dim, self.adaptation_latent_dim),
+            nn.Tanh(),
+        )
+        for module in self.adaptation_encoder:
+            if isinstance(module, nn.Linear):
+                nn.init.orthogonal_(module.weight)
+                nn.init.zeros_(module.bias)
+
+    def get_latent(
+        self,
+        obs: Any,
+        masks: Any | None = None,
+        hidden_state: Any = None,
+    ) -> Any:
+        normalized_history = super().get_latent(obs, masks, hidden_state)
+        frames = normalized_history.reshape(normalized_history.shape[0], self.history_len, self.frame_dim)
+        newest_base_obs = frames[:, -1, : self.base_obs_dim]
+        adaptation_latent = self.adaptation_encoder(normalized_history)
+        return _require_torch().cat((newest_base_obs, adaptation_latent), dim=-1)
+
+    def _get_latent_dim(self) -> int:
+        frame_dim = self.obs_dim // self.history_len
+        return (frame_dim - self.action_dim) + self.adaptation_latent_dim
 
 
 class Task033HistoryVecEnvWrapper:
@@ -224,6 +286,65 @@ class _Task033StackMlpWarmstartMixin:
         return infos
 
 
+class _Task036AdaptationWarmstartMixin:
+    """Load base MLP checkpoints with a fresh optimizer for adaptation conditioning."""
+
+    task036_obs_dim = 104
+    task036_adaptation_latent_dim = 32
+
+    def load(
+        self,
+        path: str,
+        load_cfg: dict | None = None,
+        strict: bool = True,
+        map_location: str | None = None,
+    ) -> dict:
+        torch = _require_torch()
+        loaded = torch.load(path, map_location=map_location, weights_only=False)
+        actor_state = loaded.get("actor_state_dict", {})
+        target_actor_state = self.alg.actor.state_dict()
+        needs_migration = is_adaptation_conditioning_migration_needed(
+            actor_state,
+            target_actor_state,
+        )
+        if not needs_migration and "optimizer_state_dict" in loaded:
+            return super().load(path, load_cfg=load_cfg, strict=strict, map_location=map_location)
+
+        if needs_migration:
+            migrated, report = migrate_adaptation_conditioned_checkpoint(
+                loaded,
+                AdaptationConditioningMigrationConfig(
+                    obs_dim=self.task036_obs_dim,
+                    action_dim=int(self.env.num_actions),
+                    history_len=4,
+                    latent_dim=self.task036_adaptation_latent_dim,
+                ),
+            )
+        else:
+            migrated = loaded
+            report = dict((loaded.get("infos") or {}).get("task036_adaptation_conditioning_migration") or {})
+            report.update(
+                {
+                    "target_actor_input_dim": int(target_actor_state["mlp.0.weight"].shape[1]),
+                    "optimizer_policy": "fresh optimizer required after migration",
+                    "already_adaptation_shaped": True,
+                }
+            )
+            report.setdefault("migration", "task036_adaptation_conditioning")
+
+        actor_state_for_load = dict(target_actor_state)
+        actor_state_for_load.update(migrated["actor_state_dict"])
+        self.alg.actor.load_state_dict(actor_state_for_load, strict=strict)
+        self.alg.critic.load_state_dict(migrated["critic_state_dict"], strict=strict)
+        self.current_learning_iteration = int(migrated.get("iter", 0))
+        infos = dict(migrated.get("infos") or {})
+        infos["task036_adaptation_conditioning_migration"] = report
+        if infos and "env_state" in infos:
+            self.env.unwrapped.common_step_counter = infos["env_state"]["common_step_counter"]
+        print(f"[Task036] loaded adaptation-conditioned warmstart without optimizer: {report}")
+        return infos
+
+
 class Task033BufferOnlyK4Runner(_base_runner()):
     """Maintain K=4 history while keeping the actor on the original obs."""
 
@@ -321,6 +442,22 @@ class Task033TokenK4Runner(_base_runner()):
         )
         train_cfg["actor"]["history_len"] = 4
         train_cfg["actor"]["token_dim"] = 128
+        super().__init__(env, train_cfg, *args, **kwargs)
+
+
+class Task036AdaptK4Runner(_Task036AdaptationWarmstartMixin, _base_runner()):
+    """Use shared K4 history only to infer an adaptation latent for an MLP actor."""
+
+    def __init__(self, env: Any, train_cfg: dict[str, Any], *args: Any, **kwargs: Any) -> None:
+        env = Task033HistoryVecEnvWrapper(env, history_len=4)
+        train_cfg["obs_groups"] = {"actor": ["actor_history"], "critic": ["critic"]}
+        train_cfg["actor"]["class_name"] = (
+            "h200_locomotion_lab.training.rsl_history_wrapper:Task036AdaptationConditionedMlpModel"
+        )
+        train_cfg["actor"]["history_len"] = 4
+        train_cfg["actor"]["action_dim"] = int(env.num_actions)
+        train_cfg["actor"]["adaptation_latent_dim"] = self.task036_adaptation_latent_dim
+        train_cfg["actor"]["adaptation_hidden_dim"] = 128
         super().__init__(env, train_cfg, *args, **kwargs)
 
 
