@@ -99,10 +99,19 @@ Fixed acceptance criteria:
   Result: `final_trial_pass=true`, `pass=true`, final-trial fall ratio `0.0`,
   final-trial velocity error `0.635804`, `promotion_gate=final_trial`,
   `quality_claim=false`.
+- 2026-05-29 Completed 005 TXL-style memory consumer smoke. Added K160
+  segment-token memory consumer for `3.2s` context and H200 task id
+  `Unitree-G1-Gripper-Flat-Task037-TxlMemoryK160-DeterministicInnerReset-Fast2p0`.
+  H200 evidence:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/txl_memory_smoke/037_txl_k160_env64_iter1_gpu0_seed3700501.stdout.log`
+  and
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/txl_memory_smoke/037_txl_k160_env8192_iter1_gpu0_seed3700511.stdout.log`.
+  Result: env64 one-iteration PPO smoke `1423` steps/s, env8192 overhead
+  smoke `55595` steps/s, `quality_claim=false`.
 
 ## Review
 
 Status: active. 001 fake-env contract, 002 MJLab auto-reset smoke, and 003
 deterministic inner-reset probe passed. 004 eval JSON contract passed with an
-existing AdaptK4 checkpoint. TXL memory and long-context policy quality are not
-validated yet.
+existing AdaptK4 checkpoint. 005 TXL-style K160 memory construction and
+overhead smoke passed. Long-context policy quality is not validated yet.

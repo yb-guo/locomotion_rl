@@ -202,3 +202,40 @@ def test_task037_local_trial_timeout_takes_precedence_over_raw_done_fall() -> No
     assert done.tolist() == [False, False]
     assert extras[TASK037_TRIAL_DONE_KEY].tolist() == [True, True]
     assert extras[RESET_REASON_KEY].tolist() == [2, 2]
+
+
+def test_task037_txl_k160_memory_preserves_inner_and_clears_outer() -> None:
+    torch = pytest.importorskip("torch")
+    base = ScriptedTask037FakeEnv(
+        torch,
+        events=[
+            {"timeout": [True, False]},
+            {"timeout": [True, False]},
+            {"timeout": [True, False]},
+        ],
+    )
+    env = Task033HistoryVecEnvWrapper(
+        Task037MultiTrialVecEnvWrapper(base, num_trials=3),
+        history_len=160,
+    )
+
+    env.reset()
+    assert env._buffer is not None
+    assert env._buffer.valid_counts.tolist() == [1, 1]
+
+    _obs, _reward, done, extras = env.step(torch.tensor([[1.0], [2.0]]))
+    assert done.tolist() == [False, False]
+    assert extras[TASK037_INNER_RESET_KEY].tolist() == [True, False]
+    assert env._buffer.valid_counts.tolist() == [2, 2]
+    assert env._buffer.newest()[0, -1].item() == pytest.approx(0.0)
+
+    _obs, _reward, done, extras = env.step(torch.tensor([[3.0], [4.0]]))
+    assert done.tolist() == [False, False]
+    assert extras[TASK037_INNER_RESET_KEY].tolist() == [True, False]
+    assert env._buffer.valid_counts.tolist() == [3, 3]
+
+    _obs, _reward, done, extras = env.step(torch.tensor([[5.0], [6.0]]))
+    assert done.tolist() == [True, False]
+    assert extras[TASK037_OUTER_RESET_KEY].tolist() == [True, False]
+    assert env._buffer.valid_counts.tolist() == [1, 4]
+    assert env._buffer.flatten_latest().shape == (2, 160 * 3)

@@ -15,6 +15,7 @@ RUNNER_IMPORT = (
     "  Task037AdaptK4DeterministicInnerResetRunner,\n"
     "  Task037BufferOnlyK4AutoResetRunner,\n"
     "  Task037BufferOnlyK4DeterministicInnerResetRunner,\n"
+    "  Task037TxlMemoryK160DeterministicRunner,\n"
     ")\n"
 )
 
@@ -47,6 +48,15 @@ register_mjlab_task(
   runner_cls=Task037AdaptK4DeterministicInnerResetRunner,
 )
 ''',
+    "Unitree-G1-Gripper-Flat-Task037-TxlMemoryK160-DeterministicInnerReset-Fast2p0": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-TxlMemoryK160-DeterministicInnerReset-Fast2p0",
+  env_cfg=unitree_g1_gripper_flat_task031_unified_dynamic_switch_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task031_unified_dynamic_switch_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037TxlMemoryK160DeterministicRunner,
+)
+''',
 }
 
 
@@ -62,6 +72,7 @@ def patch_init(path: Path) -> None:
             "Task037AdaptK4DeterministicInnerResetRunner",
             "Task037BufferOnlyK4AutoResetRunner",
             "Task037BufferOnlyK4DeterministicInnerResetRunner",
+            "Task037TxlMemoryK160DeterministicRunner",
         ):
             if name not in text:
                 marker = "from h200_locomotion_lab.training.rsl_history_wrapper import (\n"

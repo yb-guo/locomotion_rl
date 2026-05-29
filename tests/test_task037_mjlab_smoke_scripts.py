@@ -27,13 +27,18 @@ def test_task037_registration_patch_is_idempotent() -> None:
         "Unitree-G1-Gripper-Flat-Task037-BufferOnlyK4-DeterministicInnerReset-Fast2p0"
     )
     adapt_task_id = "Unitree-G1-Gripper-Flat-Task037-AdaptK4-DeterministicInnerReset-Fast2p0"
+    txl_task_id = (
+        "Unitree-G1-Gripper-Flat-Task037-TxlMemoryK160-DeterministicInnerReset-Fast2p0"
+    )
     assert once == twice
     assert once.count("Task037BufferOnlyK4AutoResetRunner") == 2
     assert once.count("Task037BufferOnlyK4DeterministicInnerResetRunner") == 2
     assert once.count("Task037AdaptK4DeterministicInnerResetRunner") == 2
+    assert once.count("Task037TxlMemoryK160DeterministicRunner") == 2
     assert once.count(task_id) == 1
     assert once.count(deterministic_task_id) == 1
     assert once.count(adapt_task_id) == 1
+    assert once.count(txl_task_id) == 1
 
 
 def test_task037_extras_probe_parse_args_defaults_to_task037_id() -> None:

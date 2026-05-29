@@ -151,6 +151,63 @@ class Task036AdaptationConditionedMlpModel(_base_mlp_model()):
         return (frame_dim - self.action_dim) + self.adaptation_latent_dim
 
 
+class Task037TxlStyleMemoryModel(_base_mlp_model()):
+    """Segment-token long-context actor for Task037 construction smokes."""
+
+    is_recurrent: bool = False
+
+    def __init__(
+        self,
+        *args: Any,
+        history_len: int = 160,
+        segment_len: int = 16,
+        token_dim: int = 128,
+        **kwargs: Any,
+    ) -> None:
+        self.history_len = history_len
+        self.segment_len = segment_len
+        self.token_dim = token_dim
+        super().__init__(*args, **kwargs)
+        torch = _require_torch()
+        nn = torch.nn
+        if self.obs_dim % self.history_len != 0:
+            raise ValueError(
+                f"history actor obs dim {self.obs_dim} is not divisible by history_len={self.history_len}"
+            )
+        if self.history_len % self.segment_len != 0:
+            raise ValueError(
+                f"history_len={self.history_len} must be divisible by segment_len={self.segment_len}"
+            )
+        self.frame_dim = self.obs_dim // self.history_len
+        self.segment_count = self.history_len // self.segment_len
+        self.token_projection = nn.Linear(self.frame_dim, self.token_dim)
+        self.segment_embedding = nn.Parameter(torch.zeros(self.segment_count, self.token_dim))
+        self.memory_query = nn.Parameter(torch.zeros(self.token_dim))
+        nn.init.orthogonal_(self.token_projection.weight)
+        nn.init.zeros_(self.token_projection.bias)
+        nn.init.normal_(self.memory_query, mean=0.0, std=0.02)
+
+    def get_latent(
+        self,
+        obs: Any,
+        masks: Any | None = None,
+        hidden_state: Any = None,
+    ) -> Any:
+        torch = _require_torch()
+        normalized_history = super().get_latent(obs, masks, hidden_state)
+        batch = normalized_history.shape[0]
+        frames = normalized_history.reshape(batch, self.history_len, self.frame_dim)
+        segments = frames.reshape(batch, self.segment_count, self.segment_len, self.frame_dim)
+        segment_means = segments.mean(dim=2)
+        tokens = self.token_projection(segment_means) + self.segment_embedding.unsqueeze(0)
+        scores = (tokens * self.memory_query.reshape(1, 1, -1)).sum(dim=-1) / (self.token_dim**0.5)
+        weights = torch.softmax(scores, dim=-1).unsqueeze(-1)
+        return (tokens * weights).sum(dim=1)
+
+    def _get_latent_dim(self) -> int:
+        return self.token_dim
+
+
 class Task033HistoryVecEnvWrapper:
     """Add an actor-visible history observation group without changing the env."""
 
@@ -446,6 +503,32 @@ class Task037AdaptK4DeterministicInnerResetRunner(_Task036AdaptationWarmstartMix
         train_cfg["actor"]["action_dim"] = int(env.num_actions)
         train_cfg["actor"]["adaptation_latent_dim"] = self.task036_adaptation_latent_dim
         train_cfg["actor"]["adaptation_hidden_dim"] = 128
+        super().__init__(env, train_cfg, *args, **kwargs)
+
+
+class Task037TxlMemoryK160DeterministicRunner(_base_runner()):
+    """Task037 runner that consumes 3.2s actor-visible history as segment memory."""
+
+    task037_history_len = 160
+    task037_segment_len = 16
+    task037_token_dim = 128
+
+    def __init__(self, env: Any, train_cfg: dict[str, Any], *args: Any, **kwargs: Any) -> None:
+        install_task037_inner_reset_controller(env.unwrapped, num_trials=3)
+        env.reset()
+        env = Task037MultiTrialVecEnvWrapper(
+            env,
+            num_trials=3,
+            reset_strategy="auto",
+        )
+        env = Task033HistoryVecEnvWrapper(env, history_len=self.task037_history_len)
+        train_cfg["obs_groups"] = {"actor": ["actor_history"], "critic": ["critic"]}
+        train_cfg["actor"]["class_name"] = (
+            "h200_locomotion_lab.training.rsl_history_wrapper:Task037TxlStyleMemoryModel"
+        )
+        train_cfg["actor"]["history_len"] = self.task037_history_len
+        train_cfg["actor"]["segment_len"] = self.task037_segment_len
+        train_cfg["actor"]["token_dim"] = self.task037_token_dim
         super().__init__(env, train_cfg, *args, **kwargs)
 
 
