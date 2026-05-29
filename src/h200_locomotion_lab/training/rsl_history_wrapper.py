@@ -16,7 +16,11 @@ from h200_locomotion_lab.training.history_checkpoint_migration import (
     migrate_adaptation_conditioned_checkpoint,
     migrate_stack_mlp_checkpoint,
 )
-from h200_locomotion_lab.training.multitrial_wrapper import TASK037_ZERO_ACTION_RESET_KEY
+from h200_locomotion_lab.training.mjlab_inner_reset import install_task037_inner_reset_controller
+from h200_locomotion_lab.training.multitrial_wrapper import (
+    TASK037_ZERO_ACTION_RESET_KEY,
+    Task037MultiTrialVecEnvWrapper,
+)
 
 
 def _base_runner() -> type[Any]:
@@ -392,6 +396,34 @@ class Task033BufferOnlyK4Runner(_base_runner()):
             *args,
             **kwargs,
         )
+
+
+class Task037BufferOnlyK4AutoResetRunner(_base_runner()):
+    """MJLab auto-reset multi-trial smoke runner over the existing K4 buffer."""
+
+    def __init__(self, env: Any, train_cfg: dict[str, Any], *args: Any, **kwargs: Any) -> None:
+        env = Task037MultiTrialVecEnvWrapper(
+            env,
+            num_trials=3,
+            reset_strategy="auto",
+        )
+        env = Task033HistoryVecEnvWrapper(env, history_len=4)
+        super().__init__(env, train_cfg, *args, **kwargs)
+
+
+class Task037BufferOnlyK4DeterministicInnerResetRunner(_base_runner()):
+    """Task037 runner that preserves condition across inner MJLab resets."""
+
+    def __init__(self, env: Any, train_cfg: dict[str, Any], *args: Any, **kwargs: Any) -> None:
+        install_task037_inner_reset_controller(env.unwrapped, num_trials=3)
+        env.reset()
+        env = Task037MultiTrialVecEnvWrapper(
+            env,
+            num_trials=3,
+            reset_strategy="auto",
+        )
+        env = Task033HistoryVecEnvWrapper(env, history_len=4)
+        super().__init__(env, train_cfg, *args, **kwargs)
 
 
 class Task033StackMlpK4Runner(_Task033StackMlpWarmstartMixin, _base_runner()):

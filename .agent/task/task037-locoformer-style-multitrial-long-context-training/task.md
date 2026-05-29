@@ -84,8 +84,17 @@ Fixed acceptance criteria:
 - 2026-05-29 Completed 001 fake-env contract tests. H200 torch validation:
   `/mnt/workspace/users/guoyubo/agent_workspace/task037_contract_tmp_20260529`,
   `tests/test_task037_multitrial_contract.py -q` -> `2 passed in 2.48s`.
+- 2026-05-29 Completed 002 MJLab auto-reset smoke. H200 summary:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/mjlab_multitrial_smoke/task037_mjlab_multitrial_smoke_summary.json`
+  with `pass=true`, env64 one-iter smoke, env8192 one-iter smoke, and extras
+  probe `done_matches_episode_done=true`.
+- 2026-05-29 Completed 003 deterministic inner reset probe. H200 summary:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/deterministic_inner_reset/task037_mjlab_inner_reset_probe_env64_poststep_restore.json`
+  with `pass=true`, `inner_command_max_delta=0.0`,
+  `inner_failure_max_delta=0.0`, fixed phase `[0.0, 1.0]`, and root z `0.8`.
 
 ## Review
 
-Status: active. 001 fake-env contract passed; MJLab smoke/reset and policy
+Status: active. 001 fake-env contract, 002 MJLab auto-reset smoke, and 003
+deterministic inner-reset probe passed. Eval JSON, TXL memory, and policy
 quality are not validated yet.

@@ -3,6 +3,9 @@ from types import SimpleNamespace
 import pytest
 
 from h200_locomotion_lab.training.multitrial_wrapper import (
+    EPISODE_DONE_KEY,
+    FINAL_TRIAL_KEY,
+    RESET_REASON_KEY,
     TASK037_CONDITION_ID_KEY,
     TASK037_EPISODE_DONE_KEY,
     TASK037_FALL_KEY,
@@ -11,6 +14,8 @@ from h200_locomotion_lab.training.multitrial_wrapper import (
     TASK037_TIMEOUT_KEY,
     TASK037_TRIAL_DONE_KEY,
     TASK037_TRIAL_INDEX_KEY,
+    TRIAL_DONE_KEY,
+    TRIAL_INDEX_KEY,
     Task037MultiTrialVecEnvWrapper,
 )
 from h200_locomotion_lab.training.rsl_history_wrapper import Task033HistoryVecEnvWrapper
@@ -104,6 +109,11 @@ def test_task037_done_mapping_preserves_conditions_until_final_trial() -> None:
     assert done.tolist() == [False, False]
     assert extras[TASK037_TRIAL_DONE_KEY].tolist() == [True, False]
     assert extras[TASK037_EPISODE_DONE_KEY].tolist() == [False, False]
+    assert extras[TRIAL_DONE_KEY].tolist() == [True, False]
+    assert extras[EPISODE_DONE_KEY].tolist() == [False, False]
+    assert extras[TRIAL_INDEX_KEY].tolist() == [1, 0]
+    assert extras[FINAL_TRIAL_KEY].tolist() == [False, False]
+    assert extras[RESET_REASON_KEY].tolist() == [1, 0]
     assert extras[TASK037_INNER_RESET_KEY].tolist() == [True, False]
     assert extras[TASK037_OUTER_RESET_KEY].tolist() == [False, False]
     assert extras[TASK037_CONDITION_ID_KEY].tolist() == [10, 20]
@@ -113,6 +123,7 @@ def test_task037_done_mapping_preserves_conditions_until_final_trial() -> None:
     assert done.tolist() == [False, False]
     assert extras[TASK037_TRIAL_DONE_KEY].tolist() == [True, True]
     assert extras[TASK037_EPISODE_DONE_KEY].tolist() == [False, False]
+    assert extras[RESET_REASON_KEY].tolist() == [2, 1]
     assert env.trial_index.tolist() == [2, 1]
     assert extras[TASK037_CONDITION_ID_KEY].tolist() == [10, 20]
 
@@ -120,6 +131,7 @@ def test_task037_done_mapping_preserves_conditions_until_final_trial() -> None:
     assert done.tolist() == [True, False]
     assert extras[TASK037_TRIAL_DONE_KEY].tolist() == [True, False]
     assert extras[TASK037_EPISODE_DONE_KEY].tolist() == [True, False]
+    assert extras[RESET_REASON_KEY].tolist() == [1, 0]
     assert extras[TASK037_INNER_RESET_KEY].tolist() == [False, False]
     assert extras[TASK037_OUTER_RESET_KEY].tolist() == [True, False]
     assert env.trial_index.tolist() == [0, 1]

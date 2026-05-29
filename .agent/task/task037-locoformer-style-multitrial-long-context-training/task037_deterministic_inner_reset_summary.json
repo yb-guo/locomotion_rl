@@ -1,0 +1,30 @@
+{
+  "task": "task037-locoformer-style-multitrial-long-context-training",
+  "phase": "003-deterministic-inner-reset-mjlab",
+  "task_id": "Unitree-G1-Gripper-Flat-Task037-BufferOnlyK4-DeterministicInnerReset-Fast2p0",
+  "quality_claim": false,
+  "pass": true,
+  "h200_probe_json": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/deterministic_inner_reset/task037_mjlab_inner_reset_probe_env64_poststep_restore.json",
+  "diagnostic_failed_probe": {
+    "pass": false,
+    "reason": "MJLab step-event scheduler resampled dynamic failure after _reset_idx before post-step restore.",
+    "inner_failure_max_delta": 0.3787555694580078
+  },
+  "passed_probe": {
+    "num_envs": 64,
+    "steps": 24,
+    "episode_length_s": 0.06,
+    "inner_command_max_delta": 0.0,
+    "inner_failure_max_delta": 0.0,
+    "inner_episode_length_max": 0,
+    "deterministic_reset_cfg": true,
+    "done_matches_episode_done": true,
+    "saw_inner_reset": true,
+    "saw_outer_reset": true,
+    "outer_command_changed_any": true,
+    "controller_inner_reset_total": 384,
+    "controller_outer_reset_total": 128,
+    "phase_after_inner_sample": [0.0, 1.0],
+    "root_z_after_inner_sample": 0.800000011920929
+  }
+}
