@@ -180,3 +180,25 @@ def test_task037_history_preserves_inner_trials_and_clears_outer_done() -> None:
     newest = env._buffer.newest()
     assert newest[0, -1].item() == pytest.approx(0.0)
     assert newest[1, -1].item() == pytest.approx(9.0)
+
+
+def test_task037_local_trial_timeout_takes_precedence_over_raw_done_fall() -> None:
+    torch = pytest.importorskip("torch")
+    base = ScriptedTask037FakeEnv(
+        torch,
+        events=[
+            {"fall": [True, True]},
+        ],
+    )
+    env = Task037MultiTrialVecEnvWrapper(
+        base,
+        num_trials=3,
+        trial_timeout_steps=1,
+    )
+
+    env.reset()
+    _obs, _reward, done, extras = env.step(torch.tensor([[1.0], [1.0]]))
+
+    assert done.tolist() == [False, False]
+    assert extras[TASK037_TRIAL_DONE_KEY].tolist() == [True, True]
+    assert extras[RESET_REASON_KEY].tolist() == [2, 2]

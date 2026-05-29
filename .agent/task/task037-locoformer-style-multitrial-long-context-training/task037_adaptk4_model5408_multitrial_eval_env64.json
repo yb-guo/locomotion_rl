@@ -1,0 +1,150 @@
+{
+  "aggregate": {
+    "completion_count": 192,
+    "completion_ratio_per_trial_mean": 1.0,
+    "fall_count": 0,
+    "fall_ratio": 0.0,
+    "gravity_xy_max": 0.14083057641983032,
+    "gravity_xy_mean": 0.07034928393032816,
+    "lin_vel_error_mean": 0.6883111397425333,
+    "num_envs": 64,
+    "promotion_note": "auxiliary only; final_trial_pass is the promotion gate",
+    "root_z_min": 0.7377962470054626,
+    "sample_count": 23040,
+    "trial_count": 3,
+    "yaw_vel_error_mean": 0.12126284920507008,
+    "zero_fall_ratio": 1.0
+  },
+  "checkpoint": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task036_policy_quality_train/2026-05-28_23-10-53_036_adapt_k4_warmstart_env8192_iter60_gpu0_seed3603630/model_5408.pt",
+  "command": [
+    "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/src/h200_locomotion_lab/tools/task037_multitrial_eval_checkpoint.py",
+    "--checkpoint",
+    "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task036_policy_quality_train/2026-05-28_23-10-53_036_adapt_k4_warmstart_env8192_iter60_gpu0_seed3603630/model_5408.pt",
+    "--output-json",
+    "outputs/task037/multitrial_eval/task037_adaptk4_model5408_multitrial_eval_env64.json",
+    "--num-envs",
+    "64",
+    "--steps",
+    "360",
+    "--trial-length-s",
+    "2.0",
+    "--lin-vel-x",
+    "2.0",
+    "--seed",
+    "3700401",
+    "--device",
+    "cuda:0"
+  ],
+  "control_dt_s": 0.02,
+  "device": "cuda:0",
+  "eval_time_s": 7.2,
+  "final_trial": {
+    "completion_count": 64,
+    "completion_ratio": 1.0,
+    "fall_count": 0,
+    "fall_ratio": 0.0,
+    "gravity_xy": {
+      "max": 0.14083057641983032,
+      "mean": 0.06895632296800613
+    },
+    "lin_vel_error": {
+      "mean": 0.635803759098053
+    },
+    "reset_reason_counts": {
+      "2": 64
+    },
+    "reward_mean": 0.040877021849155426,
+    "root_z": {
+      "mean": 0.7694776654243469,
+      "min": 0.7487803101539612
+    },
+    "sample_count": 6400,
+    "timeout_count": 64,
+    "trial_index": 2,
+    "yaw_vel_error": {
+      "mean": 0.12114819139242172
+    },
+    "zero_fall_ratio": 1.0
+  },
+  "final_trial_pass": true,
+  "fixed_command": {
+    "ang_vel_z": 0.0,
+    "lin_vel_x": 2.0,
+    "lin_vel_y": 0.0
+  },
+  "gpu_name": "NVIDIA H20D",
+  "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/multitrial_eval/task037_adaptk4_model5408_multitrial_eval_env64.json",
+  "num_envs": 64,
+  "pass": true,
+  "promotion_gate": "final_trial",
+  "quality_claim": false,
+  "seed": 3700401,
+  "steps": 360,
+  "task": "Unitree-G1-Gripper-Flat-Task037-AdaptK4-DeterministicInnerReset-Fast2p0",
+  "thresholds": {
+    "max_final_fall_ratio": 0.5,
+    "max_final_gravity_xy": 0.9,
+    "max_final_lin_vel_error": 1.2,
+    "max_final_yaw_vel_error": 1.0,
+    "min_final_completion_ratio": 0.95,
+    "min_final_root_z": 0.35
+  },
+  "trial_0": {
+    "completion_count": 64,
+    "completion_ratio": 1.0,
+    "fall_count": 0,
+    "fall_ratio": 0.0,
+    "gravity_xy": {
+      "max": 0.13885416090488434,
+      "mean": 0.07201748341321945
+    },
+    "lin_vel_error": {
+      "mean": 0.7524366974830627
+    },
+    "reset_reason_counts": {
+      "2": 64
+    },
+    "reward_mean": 0.039516400545835495,
+    "root_z": {
+      "mean": 0.7706559300422668,
+      "min": 0.7422300577163696
+    },
+    "sample_count": 10240,
+    "timeout_count": 64,
+    "trial_index": 0,
+    "yaw_vel_error": {
+      "mean": 0.11980725824832916
+    },
+    "zero_fall_ratio": 1.0
+  },
+  "trial_1": {
+    "completion_count": 64,
+    "completion_ratio": 1.0,
+    "fall_count": 0,
+    "fall_ratio": 0.0,
+    "gravity_xy": {
+      "max": 0.14063991606235504,
+      "mean": 0.06907312572002411
+    },
+    "lin_vel_error": {
+      "mean": 0.6382176280021667
+    },
+    "reset_reason_counts": {
+      "2": 64
+    },
+    "reward_mean": 0.040188174694776535,
+    "root_z": {
+      "mean": 0.7694708108901978,
+      "min": 0.7377962470054626
+    },
+    "sample_count": 6400,
+    "timeout_count": 64,
+    "trial_index": 1,
+    "yaw_vel_error": {
+      "mean": 0.12370645254850388
+    },
+    "zero_fall_ratio": 1.0
+  },
+  "trial_length_s": 2.0,
+  "wall_time_s": 9.229299545288086
+}

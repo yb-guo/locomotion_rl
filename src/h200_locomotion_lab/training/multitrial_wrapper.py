@@ -112,8 +112,11 @@ class Task037MultiTrialVecEnvWrapper:
         raw_done = _as_bool_tensor(raw_done, self.device, self.num_envs)
         fall = _extras_bool(extras, TASK037_FALL_KEY, self.device, self.num_envs)
         timeout = _extras_bool(extras, TASK037_TIMEOUT_KEY, self.device, self.num_envs)
+        if "time_outs" in extras:
+            timeout = timeout | _as_bool_tensor(extras["time_outs"], self.device, self.num_envs)
         if self.config.trial_timeout_steps is not None:
             timeout = timeout | (self.trial_step >= self.config.trial_timeout_steps)
+        fall = fall | (raw_done & ~timeout)
         trial_done = raw_done | fall | timeout
         final_trial = self.trial_index >= self.config.num_trials - 1
         episode_done = trial_done & final_trial
@@ -254,8 +257,8 @@ def _reset_reason(raw_done: Any, fall: Any, timeout: Any) -> Any:
     torch = _require_torch()
     reason = torch.zeros_like(raw_done, dtype=torch.long)
     reason[raw_done] = 3
-    reason[timeout] = 2
     reason[fall] = 1
+    reason[timeout] = 2
     return reason
 
 

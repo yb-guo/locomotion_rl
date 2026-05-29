@@ -92,9 +92,17 @@ Fixed acceptance criteria:
   `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/deterministic_inner_reset/task037_mjlab_inner_reset_probe_env64_poststep_restore.json`
   with `pass=true`, `inner_command_max_delta=0.0`,
   `inner_failure_max_delta=0.0`, fixed phase `[0.0, 1.0]`, and root z `0.8`.
+- 2026-05-29 Completed 004 multi-trial eval JSON. Existing Task036 AdaptK4
+  checkpoint `model_5408.pt` was evaluated on H200 with 64 envs, 360 steps,
+  2.0s trials, fixed 2.0 m/s command. Evidence:
+  `/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/multitrial_eval/task037_adaptk4_model5408_multitrial_eval_env64.json`.
+  Result: `final_trial_pass=true`, `pass=true`, final-trial fall ratio `0.0`,
+  final-trial velocity error `0.635804`, `promotion_gate=final_trial`,
+  `quality_claim=false`.
 
 ## Review
 
 Status: active. 001 fake-env contract, 002 MJLab auto-reset smoke, and 003
-deterministic inner-reset probe passed. Eval JSON, TXL memory, and policy
-quality are not validated yet.
+deterministic inner-reset probe passed. 004 eval JSON contract passed with an
+existing AdaptK4 checkpoint. TXL memory and long-context policy quality are not
+validated yet.

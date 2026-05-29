@@ -26,11 +26,14 @@ def test_task037_registration_patch_is_idempotent() -> None:
     deterministic_task_id = (
         "Unitree-G1-Gripper-Flat-Task037-BufferOnlyK4-DeterministicInnerReset-Fast2p0"
     )
+    adapt_task_id = "Unitree-G1-Gripper-Flat-Task037-AdaptK4-DeterministicInnerReset-Fast2p0"
     assert once == twice
     assert once.count("Task037BufferOnlyK4AutoResetRunner") == 2
     assert once.count("Task037BufferOnlyK4DeterministicInnerResetRunner") == 2
+    assert once.count("Task037AdaptK4DeterministicInnerResetRunner") == 2
     assert once.count(task_id) == 1
     assert once.count(deterministic_task_id) == 1
+    assert once.count(adapt_task_id) == 1
 
 
 def test_task037_extras_probe_parse_args_defaults_to_task037_id() -> None:
@@ -53,6 +56,18 @@ def test_task037_inner_reset_probe_parse_args_defaults_to_deterministic_task_id(
     )
     assert args.output_json == "inner.json"
     assert args.max_command_delta > 0
+
+
+def test_task037_multitrial_eval_parse_args_defaults_to_adapt_task_id() -> None:
+    module = _load_src_tool("task037_multitrial_eval_checkpoint.py")
+
+    args = module.parse_args(["--checkpoint", "model.pt", "--output-json", "eval.json"])
+
+    assert args.task == "Unitree-G1-Gripper-Flat-Task037-AdaptK4-DeterministicInnerReset-Fast2p0"
+    assert args.checkpoint == "model.pt"
+    assert args.output_json == "eval.json"
+    assert args.trial_length_s == 2.0
+    assert args.min_final_completion_ratio > 0
 
 
 def _load_script(name: str):

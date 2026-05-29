@@ -12,6 +12,7 @@ ROOT = Path("/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mj
 
 RUNNER_IMPORT = (
     "from h200_locomotion_lab.training.rsl_history_wrapper import (\n"
+    "  Task037AdaptK4DeterministicInnerResetRunner,\n"
     "  Task037BufferOnlyK4AutoResetRunner,\n"
     "  Task037BufferOnlyK4DeterministicInnerResetRunner,\n"
     ")\n"
@@ -37,16 +38,34 @@ register_mjlab_task(
   runner_cls=Task037BufferOnlyK4DeterministicInnerResetRunner,
 )
 ''',
+    "Unitree-G1-Gripper-Flat-Task037-AdaptK4-DeterministicInnerReset-Fast2p0": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-AdaptK4-DeterministicInnerReset-Fast2p0",
+  env_cfg=unitree_g1_gripper_flat_task031_unified_dynamic_switch_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task031_unified_dynamic_switch_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037AdaptK4DeterministicInnerResetRunner,
+)
+''',
 }
 
 
 def patch_init(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
-    if "Task037BufferOnlyK4DeterministicInnerResetRunner" not in text:
+    if "from h200_locomotion_lab.training.rsl_history_wrapper import (" not in text:
         anchor = "from mjlab.rl import MjlabOnPolicyRunner\n"
         if anchor not in text:
             raise RuntimeError(f"anchor not found in {path}: {anchor!r}")
         text = text.replace(anchor, anchor + RUNNER_IMPORT, 1)
+    else:
+        for name in (
+            "Task037AdaptK4DeterministicInnerResetRunner",
+            "Task037BufferOnlyK4AutoResetRunner",
+            "Task037BufferOnlyK4DeterministicInnerResetRunner",
+        ):
+            if name not in text:
+                marker = "from h200_locomotion_lab.training.rsl_history_wrapper import (\n"
+                text = text.replace(marker, marker + f"  {name},\n", 1)
     for task_id, block in REGISTERS.items():
         if task_id not in text:
             text = text.rstrip() + "\n\n" + block.strip() + "\n"

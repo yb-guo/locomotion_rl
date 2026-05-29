@@ -426,6 +426,29 @@ class Task037BufferOnlyK4DeterministicInnerResetRunner(_base_runner()):
         super().__init__(env, train_cfg, *args, **kwargs)
 
 
+class Task037AdaptK4DeterministicInnerResetRunner(_Task036AdaptationWarmstartMixin, _base_runner()):
+    """Task037 deterministic multi-trial runner for Task036 AdaptK4 checkpoints."""
+
+    def __init__(self, env: Any, train_cfg: dict[str, Any], *args: Any, **kwargs: Any) -> None:
+        install_task037_inner_reset_controller(env.unwrapped, num_trials=3)
+        env.reset()
+        env = Task037MultiTrialVecEnvWrapper(
+            env,
+            num_trials=3,
+            reset_strategy="auto",
+        )
+        env = Task033HistoryVecEnvWrapper(env, history_len=4)
+        train_cfg["obs_groups"] = {"actor": ["actor_history"], "critic": ["critic"]}
+        train_cfg["actor"]["class_name"] = (
+            "h200_locomotion_lab.training.rsl_history_wrapper:Task036AdaptationConditionedMlpModel"
+        )
+        train_cfg["actor"]["history_len"] = 4
+        train_cfg["actor"]["action_dim"] = int(env.num_actions)
+        train_cfg["actor"]["adaptation_latent_dim"] = self.task036_adaptation_latent_dim
+        train_cfg["actor"]["adaptation_hidden_dim"] = 128
+        super().__init__(env, train_cfg, *args, **kwargs)
+
+
 class Task033StackMlpK4Runner(_Task033StackMlpWarmstartMixin, _base_runner()):
     """Flatten K=4 shared history frames into the actor MLP input."""
 
