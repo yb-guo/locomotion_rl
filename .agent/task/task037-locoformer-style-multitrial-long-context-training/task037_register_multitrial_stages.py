@@ -13,6 +13,7 @@ ROOT = Path("/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mj
 RUNNER_IMPORT = (
     "from h200_locomotion_lab.training.rsl_history_wrapper import (\n"
     "  Task037AdaptK4DeterministicInnerResetRunner,\n"
+    "  Task037AdaptK160DeterministicInnerResetRunner,\n"
     "  Task037BufferOnlyK4AutoResetRunner,\n"
     "  Task037BufferOnlyK4DeterministicInnerResetRunner,\n"
     "  Task037TxlMemoryK160DeterministicRunner,\n"
@@ -46,6 +47,69 @@ register_mjlab_task(
   play_env_cfg=unitree_g1_gripper_flat_task031_unified_dynamic_switch_env_cfg(play=True),
   rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
   runner_cls=Task037AdaptK4DeterministicInnerResetRunner,
+)
+''',
+    "Unitree-G1-Gripper-Flat-Task037-AdaptK160-CleanUnified-Fast2p0": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-AdaptK160-CleanUnified-Fast2p0",
+  env_cfg=unitree_g1_gripper_flat_task035_clean_unified_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task035_clean_unified_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037AdaptK160DeterministicInnerResetRunner,
+)
+''',
+    "Unitree-G1-Gripper-Flat-Task037-AdaptK160-WeakPersistent-Fast2p0": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-AdaptK160-WeakPersistent-Fast2p0",
+  env_cfg=unitree_g1_gripper_flat_task035_weak_persistent_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task035_weak_persistent_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037AdaptK160DeterministicInnerResetRunner,
+)
+''',
+    "Unitree-G1-Gripper-Flat-Task037-AdaptK160-MixedPersistent-Fast2p0": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-AdaptK160-MixedPersistent-Fast2p0",
+  env_cfg=unitree_g1_gripper_flat_task035_mixed_persistent_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task035_mixed_persistent_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037AdaptK160DeterministicInnerResetRunner,
+)
+''',
+    "Unitree-G1-Gripper-Flat-Task037-AdaptK160-FocusedDeadGrid-Fast2p0": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-AdaptK160-FocusedDeadGrid-Fast2p0",
+  env_cfg=unitree_g1_gripper_flat_task031_focused_deadgrid_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task031_focused_deadgrid_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037AdaptK160DeterministicInnerResetRunner,
+)
+''',
+    "Unitree-G1-Gripper-Flat-Task037-AdaptK160-DynamicMotorFailure-Fast1p6": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-AdaptK160-DynamicMotorFailure-Fast1p6",
+  env_cfg=unitree_g1_gripper_flat_dynamic_failure_fast1p6_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_dynamic_failure_fast1p6_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037AdaptK160DeterministicInnerResetRunner,
+)
+''',
+    "Unitree-G1-Gripper-Flat-Task037-AdaptK160-KneeHipRollVx2p0": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-AdaptK160-KneeHipRollVx2p0",
+  env_cfg=unitree_g1_gripper_flat_task030_knee_hiproll_vx2p0_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task030_knee_hiproll_vx2p0_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037AdaptK160DeterministicInnerResetRunner,
+)
+''',
+    "Unitree-G1-Gripper-Flat-Task037-AdaptK160-RightKneeMixedVx2p0": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-AdaptK160-RightKneeMixedVx2p0",
+  env_cfg=unitree_g1_gripper_flat_task034_rightknee_mixed_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task034_rightknee_mixed_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037AdaptK160DeterministicInnerResetRunner,
 )
 ''',
     "Unitree-G1-Gripper-Flat-Task037-TxlMemoryK160-DeterministicInnerReset-Fast2p0": r'''
@@ -88,6 +152,7 @@ def patch_init(path: Path) -> None:
     else:
         for name in (
             "Task037AdaptK4DeterministicInnerResetRunner",
+            "Task037AdaptK160DeterministicInnerResetRunner",
             "Task037BufferOnlyK4AutoResetRunner",
             "Task037BufferOnlyK4DeterministicInnerResetRunner",
             "Task037TxlMemoryK160DeterministicRunner",

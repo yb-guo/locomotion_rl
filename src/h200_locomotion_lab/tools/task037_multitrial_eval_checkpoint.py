@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
 import traceback
+import types
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 
 DEFAULT_TASK = "Unitree-G1-Gripper-Flat-Task037-AdaptK4-DeterministicInnerReset-Fast2p0"
@@ -40,6 +42,76 @@ DYNAMIC_CASES = {
 }
 
 
+def _install_ipython_display_stub() -> None:
+    """Provide the tiny optional display API that mediapy imports on H200."""
+
+    if "IPython.display" in sys.modules:
+        return
+    ipython_module = sys.modules.get("IPython") or types.ModuleType("IPython")
+    display_module = types.ModuleType("IPython.display")
+
+    class _DisplayObject:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.args = args
+            self.kwargs = kwargs
+
+        def _repr_html_(self) -> str:
+            return ""
+
+    def _display(*args: Any, **kwargs: Any) -> None:
+        return None
+
+    display_module.display = _display
+    display_module.HTML = _DisplayObject
+    display_module.Image = _DisplayObject
+    display_module.Video = _DisplayObject
+    display_module.clear_output = _display
+    ipython_module.display = display_module
+    sys.modules.setdefault("IPython", ipython_module)
+    sys.modules["IPython.display"] = display_module
+
+
+def _install_wandb_stub() -> None:
+    """Avoid importing optional W&B transitive deps during task registration."""
+
+    if "wandb" in sys.modules:
+        return
+    wandb_module = types.ModuleType("wandb")
+
+    class _Api:
+        pass
+
+    def _noop(*args: Any, **kwargs: Any) -> None:
+        return None
+
+    wandb_module.run = None
+    wandb_module.Api = _Api
+    wandb_module.init = _noop
+    wandb_module.log = _noop
+    wandb_module.finish = _noop
+    wandb_module.save = _noop
+    wandb_module.login = _noop
+    sys.modules["wandb"] = wandb_module
+
+
+def _install_wcwidth_stub() -> None:
+    """Provide width helpers for prettytable in the slim H200 conda env."""
+
+    if "wcwidth" in sys.modules:
+        return
+    wcwidth_module = types.ModuleType("wcwidth")
+
+    def _wcwidth(char: str) -> int:
+        return 0 if not char else 1
+
+    def _wcswidth(text: str) -> int:
+        return len(str(text))
+
+    wcwidth_module.wcwidth = _wcwidth
+    wcwidth_module.wcswidth = _wcswidth
+    sys.modules["wcwidth"] = wcwidth_module
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Evaluate a Task037 checkpoint and emit per-trial multi-trial JSON."
@@ -56,20 +128,47 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--lin-vel-y", type=float, default=0.0)
     parser.add_argument("--ang-vel-z", type=float, default=0.0)
     parser.add_argument("--dynamic-case", choices=sorted(DYNAMIC_CASES), default="none")
+    parser.add_argument("--dynamic-dead-joint", choices=DEFAULT_JOINTS)
+    parser.add_argument("--dynamic-onset-s", type=float, default=0.5)
+    parser.add_argument("--dynamic-recovery-s", type=float, default=1.5)
     parser.add_argument("--force-dead-joint", choices=DEFAULT_JOINTS)
     parser.add_argument("--dead-scale", type=float, default=0.0)
+    parser.add_argument(
+        "--final-window-s",
+        type=float,
+        default=0.0,
+        help=(
+            "Optional first-N-seconds diagnostic window inside the final trial. "
+            "When positive, the JSON includes final_trial_window in addition "
+            "to full final_trial metrics."
+        ),
+    )
     parser.add_argument("--min-final-completion-ratio", type=float, default=0.95)
     parser.add_argument("--max-final-fall-ratio", type=float, default=0.50)
     parser.add_argument("--max-final-lin-vel-error", type=float, default=1.20)
     parser.add_argument("--max-final-yaw-vel-error", type=float, default=1.00)
     parser.add_argument("--max-final-gravity-xy", type=float, default=0.90)
     parser.add_argument("--min-final-root-z", type=float, default=0.35)
+    parser.add_argument("--memory-latent-dim", type=int)
+    parser.add_argument("--memory-latent-scale", type=float)
+    parser.add_argument("--base-obs-passthrough-scale", type=float)
+    parser.add_argument("--adaptation-warmstart-scale", type=float)
+    parser.add_argument("--action-dim", type=int)
+    parser.add_argument("--adaptation-hidden-dim", type=int)
+    parser.set_defaults(base_obs_passthrough=None, adaptation_warmstart=None)
+    parser.add_argument("--base-obs-passthrough", dest="base_obs_passthrough", action="store_true")
+    parser.add_argument("--no-base-obs-passthrough", dest="base_obs_passthrough", action="store_false")
+    parser.add_argument("--adaptation-warmstart", dest="adaptation_warmstart", action="store_true")
+    parser.add_argument("--no-adaptation-warmstart", dest="adaptation_warmstart", action="store_false")
     return parser.parse_args(argv)
 
 
 def run_eval(args: argparse.Namespace) -> dict[str, Any]:
     os.environ.setdefault("MUJOCO_GL", "egl")
     os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
+    _install_ipython_display_stub()
+    _install_wandb_stub()
+    _install_wcwidth_stub()
 
     import torch
     import mjlab.tasks  # noqa: F401
@@ -92,8 +191,8 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
     env_cfg.seed = args.seed
     env_cfg.episode_length_s = args.trial_length_s
     _configure_fixed_command(env_cfg, args)
-    if args.dynamic_case != "none":
-        _configure_dynamic_case(env_cfg, args.dynamic_case)
+    if args.dynamic_case != "none" or args.dynamic_dead_joint:
+        _configure_dynamic_case(env_cfg, args)
     if args.force_dead_joint:
         _force_dead_motor(env_cfg, args.force_dead_joint, args.dead_scale)
 
@@ -103,13 +202,19 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
         base = ManagerBasedRlEnv(cfg=env_cfg, device=args.device, render_mode=None)
         outer_env = RslRlVecEnvWrapper(base, clip_actions=agent_cfg.clip_actions)
         runner_cls = load_runner_cls(args.task) or MjlabOnPolicyRunner
-        runner = runner_cls(outer_env, asdict(agent_cfg), device=args.device)
+        train_cfg = asdict(agent_cfg)
+        _apply_optional_txl_actor_cfg(args, train_cfg)
+        runner = runner_cls(outer_env, train_cfg, device=args.device)
         runner.load(
             str(checkpoint),
             load_cfg={"actor": True},
             strict=True,
             map_location=args.device,
         )
+        actor = _find_actor(runner)
+        _apply_optional_memory_ablation(actor, args)
+        action_dim = _action_dim(runner.env, base)
+        total_action_dim = _total_action_dim(base) or action_dim
         policy = runner.get_inference_policy(device=args.device)
         policy.eval()
 
@@ -119,12 +224,48 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
         robot = base_env.scene["robot"]
         dt = float(base_env.step_dt)
         num_trials = int(getattr(getattr(rollout_env.env, "config", None), "num_trials", 3))
+        final_trial_idx = max(num_trials - 1, 0)
+        final_window_steps = _final_window_steps(args.final_window_s, dt)
+        trial_length_steps = max(1, int(math.ceil(args.trial_length_s / dt)))
         current_trial = torch.zeros(args.num_envs, device=args.device, dtype=torch.long)
+        trial_step_index = torch.zeros(args.num_envs, device=args.device, dtype=torch.long)
         trial_stats = [_TrialAccumulator(torch, args.num_envs, args.device) for _ in range(num_trials)]
+        final_window_stats = (
+            _TrialAccumulator(torch, args.num_envs, args.device)
+            if final_window_steps is not None
+            else None
+        )
+        final_tail_window_stats = (
+            _TrialAccumulator(torch, args.num_envs, args.device)
+            if final_window_steps is not None
+            else None
+        )
+        trial_action_stats = [
+            _ActionAccumulator(torch, args.device) for _ in range(num_trials)
+        ]
+        final_window_action_stats = (
+            _ActionAccumulator(torch, args.device) if final_window_steps is not None else None
+        )
+        final_tail_window_action_stats = (
+            _ActionAccumulator(torch, args.device) if final_window_steps is not None else None
+        )
 
         for _step in range(args.steps):
             trial_before = current_trial.clone()
+            trial_step_before = trial_step_index.clone()
             action = policy(obs)
+            for trial_idx, accumulator in enumerate(trial_action_stats):
+                accumulator.add_sample(trial_before == trial_idx, action)
+            if final_window_action_stats is not None:
+                window_mask = (trial_before == final_trial_idx) & (
+                    trial_step_before < final_window_steps
+                )
+                final_window_action_stats.add_sample(window_mask, action)
+            if final_tail_window_action_stats is not None:
+                tail_window_mask = (trial_before == final_trial_idx) & (
+                    trial_step_before >= max(0, trial_length_steps - final_window_steps)
+                )
+                final_tail_window_action_stats.add_sample(tail_window_mask, action)
             obs, reward, done, extras = _step_env(rollout_env, action)
             command = base_env.command_manager.get_command("twist")
             lin_vel = robot.data.root_link_lin_vel_b[:, :2]
@@ -147,6 +288,8 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
                 accumulator.add_sample(
                     mask,
                     reward=reward,
+                    command=command,
+                    lin_vel=lin_vel,
                     lin_error=lin_error,
                     yaw_error=yaw_error,
                     gravity_xy=gravity_xy,
@@ -154,14 +297,84 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
                 )
                 accumulator.add_reset_events(mask & trial_done, reset_reason)
 
+            if final_window_stats is not None:
+                window_mask = (trial_before == final_trial_idx) & (
+                    trial_step_before < final_window_steps
+                )
+                final_window_stats.add_sample(
+                    window_mask,
+                    reward=reward,
+                    command=command,
+                    lin_vel=lin_vel,
+                    lin_error=lin_error,
+                    yaw_error=yaw_error,
+                    gravity_xy=gravity_xy,
+                    root_z=root_z,
+                )
+                final_window_stats.add_reset_events(window_mask & trial_done, reset_reason)
+            if final_tail_window_stats is not None:
+                tail_window_mask = (trial_before == final_trial_idx) & (
+                    trial_step_before >= max(0, trial_length_steps - final_window_steps)
+                )
+                final_tail_window_stats.add_sample(
+                    tail_window_mask,
+                    reward=reward,
+                    command=command,
+                    lin_vel=lin_vel,
+                    lin_error=lin_error,
+                    yaw_error=yaw_error,
+                    gravity_xy=gravity_xy,
+                    root_z=root_z,
+                )
+                final_tail_window_stats.add_reset_events(
+                    tail_window_mask & trial_done,
+                    reset_reason,
+                )
+
+            trial_step_index += 1
+            trial_step_index[trial_done] = 0
             current_trial[trial_done & ~episode_done] += 1
             current_trial[episode_done] = 0
 
-        per_trial = [stats.to_json(trial_idx=i, num_envs=args.num_envs) for i, stats in enumerate(trial_stats)]
+        per_trial = []
+        for i, stats in enumerate(trial_stats):
+            trial_json = stats.to_json(trial_idx=i, num_envs=args.num_envs)
+            trial_json["action_stats"] = trial_action_stats[i].to_json()
+            per_trial.append(trial_json)
         final_trial = per_trial[-1]
+        final_trial_window = (
+            {
+                **final_window_stats.to_json(trial_idx=final_trial_idx, num_envs=args.num_envs),
+                "action_stats": final_window_action_stats.to_json()
+                if final_window_action_stats is not None
+                else None,
+                "window_s": args.final_window_s,
+                "window_steps": final_window_steps,
+                "metric_scope": "first_final_trial_window",
+            }
+            if final_window_stats is not None
+            else None
+        )
+        final_trial_tail_window = (
+            {
+                **final_tail_window_stats.to_json(
+                    trial_idx=final_trial_idx,
+                    num_envs=args.num_envs,
+                ),
+                "action_stats": final_tail_window_action_stats.to_json()
+                if final_tail_window_action_stats is not None
+                else None,
+                "window_s": args.final_window_s,
+                "window_steps": final_window_steps,
+                "metric_scope": "last_final_trial_window",
+            }
+            if final_tail_window_stats is not None
+            else None
+        )
         aggregate = _aggregate_trials(per_trial, num_envs=args.num_envs)
         thresholds = _thresholds(args)
         final_trial_pass = _final_trial_pass(final_trial, thresholds)
+        txl_debug = _txl_debug_snapshot(actor)
         gpu_name = (
             torch.cuda.get_device_name(torch.device(args.device))
             if str(args.device).startswith("cuda") and torch.cuda.is_available()
@@ -184,19 +397,29 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
                 "lin_vel_y": args.lin_vel_y,
                 "ang_vel_z": args.ang_vel_z,
             },
+            "runner_cls": runner_cls.__name__,
+            "actor_model_class": type(actor).__name__ if actor is not None else None,
+            "action_dim": action_dim,
+            "total_action_dim": total_action_dim,
             "eval_mode": _eval_mode(args),
             "dynamic_case": args.dynamic_case,
+            "dynamic_dead_joint": args.dynamic_dead_joint,
+            "dynamic_onset_s": args.dynamic_onset_s,
+            "dynamic_recovery_s": args.dynamic_recovery_s,
             "force_dead_joint": args.force_dead_joint,
             "dead_scale": args.dead_scale,
             "thresholds": thresholds,
             "trial_0": per_trial[0],
             "trial_1": per_trial[1] if len(per_trial) > 1 else None,
             "final_trial": final_trial,
+            "final_trial_window": final_trial_window,
+            "final_trial_tail_window": final_trial_tail_window,
             "aggregate": aggregate,
             "final_trial_pass": final_trial_pass,
             "pass": final_trial_pass,
             "promotion_gate": "final_trial",
             "quality_claim": False,
+            "txl_debug": txl_debug,
             "wall_time_s": time.time() - start,
         }
         return result
@@ -212,6 +435,12 @@ class _TrialAccumulator:
         self.device = device
         self.sample_count = torch.zeros((), device=device, dtype=torch.float32)
         self.reward_sum = torch.zeros((), device=device, dtype=torch.float32)
+        self.command_x_sum = torch.zeros((), device=device, dtype=torch.float32)
+        self.command_y_sum = torch.zeros((), device=device, dtype=torch.float32)
+        self.lin_vel_x_sum = torch.zeros((), device=device, dtype=torch.float32)
+        self.lin_vel_y_sum = torch.zeros((), device=device, dtype=torch.float32)
+        self.lin_vel_error_x_abs_sum = torch.zeros((), device=device, dtype=torch.float32)
+        self.lin_vel_error_y_abs_sum = torch.zeros((), device=device, dtype=torch.float32)
         self.lin_error_sum = torch.zeros((), device=device, dtype=torch.float32)
         self.yaw_error_sum = torch.zeros((), device=device, dtype=torch.float32)
         self.gravity_xy_sum = torch.zeros((), device=device, dtype=torch.float32)
@@ -225,6 +454,8 @@ class _TrialAccumulator:
         mask: Any,
         *,
         reward: Any,
+        command: Any,
+        lin_vel: Any,
         lin_error: Any,
         yaw_error: Any,
         gravity_xy: Any,
@@ -234,6 +465,18 @@ class _TrialAccumulator:
             return
         self.sample_count += mask.float().sum()
         self.reward_sum += reward[mask].float().sum()
+        selected_command = command[mask].float()
+        selected_lin_vel = lin_vel[mask].float()
+        self.command_x_sum += selected_command[:, 0].sum()
+        self.command_y_sum += selected_command[:, 1].sum()
+        self.lin_vel_x_sum += selected_lin_vel[:, 0].sum()
+        self.lin_vel_y_sum += selected_lin_vel[:, 1].sum()
+        self.lin_vel_error_x_abs_sum += self.torch.abs(
+            selected_command[:, 0] - selected_lin_vel[:, 0]
+        ).sum()
+        self.lin_vel_error_y_abs_sum += self.torch.abs(
+            selected_command[:, 1] - selected_lin_vel[:, 1]
+        ).sum()
         self.lin_error_sum += lin_error[mask].float().sum()
         self.yaw_error_sum += yaw_error[mask].float().sum()
         self.gravity_xy_sum += gravity_xy[mask].float().sum()
@@ -258,13 +501,25 @@ class _TrialAccumulator:
             "trial_index": trial_idx,
             "sample_count": int(sample_count),
             "completion_count": int(trial_done_count),
-            "completion_ratio": float(trial_done_count / max(num_envs, 1)),
+            "completion_ratio": float(min(trial_done_count / max(num_envs, 1), 1.0)),
             "fall_count": int(fall_count),
             "fall_ratio": float(fall_count / max(trial_done_count, 1)),
             "zero_fall_ratio": float(1.0 - (fall_count / max(trial_done_count, 1))),
             "timeout_count": int(timeout_count),
             "reset_reason_counts": dict(sorted(self.reset_reason_counts.items())),
             "reward_mean": float((self.reward_sum / den).item()),
+            "lin_vel_command": {
+                "mean_x": float((self.command_x_sum / den).item()),
+                "mean_y": float((self.command_y_sum / den).item()),
+            },
+            "lin_vel_actual": {
+                "mean_x": float((self.lin_vel_x_sum / den).item()),
+                "mean_y": float((self.lin_vel_y_sum / den).item()),
+            },
+            "lin_vel_error_components": {
+                "mean_abs_x": float((self.lin_vel_error_x_abs_sum / den).item()),
+                "mean_abs_y": float((self.lin_vel_error_y_abs_sum / den).item()),
+            },
             "lin_vel_error": {
                 "mean": float((self.lin_error_sum / den).item()),
             },
@@ -282,6 +537,67 @@ class _TrialAccumulator:
         }
 
 
+class _ActionAccumulator:
+    def __init__(self, torch: Any, device: str) -> None:
+        self.torch = torch
+        self.device = device
+        self.sample_count = torch.zeros((), device=device, dtype=torch.float32)
+        self.l2_sum = torch.zeros((), device=device, dtype=torch.float32)
+        self.max_abs = torch.zeros((), device=device, dtype=torch.float32)
+        self.abs_sum = None
+        self.abs_max = None
+
+    def add_sample(self, mask: Any, action: Any) -> None:
+        if action is None:
+            return
+        action_2d = action.reshape(int(action.shape[0]), -1)
+        selected = action_2d[mask]
+        count = int(selected.shape[0])
+        if count <= 0:
+            return
+        abs_action = self.torch.abs(selected)
+        if self.abs_sum is None:
+            action_dim = int(abs_action.shape[-1])
+            self.abs_sum = self.torch.zeros(action_dim, device=self.device, dtype=abs_action.dtype)
+            self.abs_max = self.torch.zeros(action_dim, device=self.device, dtype=abs_action.dtype)
+        self.sample_count += float(count)
+        self.l2_sum += self.torch.sum(self.torch.linalg.norm(selected, dim=-1))
+        self.max_abs = self.torch.maximum(self.max_abs, self.torch.max(abs_action))
+        self.abs_sum += self.torch.sum(abs_action, dim=0)
+        self.abs_max = self.torch.maximum(self.abs_max, self.torch.max(abs_action, dim=0).values)
+
+    def to_json(self, *, top_k: int = 8) -> dict[str, Any]:
+        count = int(self.sample_count.item())
+        if count <= 0 or self.abs_sum is None or self.abs_max is None:
+            return {
+                "sample_count": 0,
+                "action_dim": None,
+                "mean_l2": None,
+                "max_abs": None,
+                "mean_abs_by_dim": [],
+                "max_abs_by_dim": [],
+                "top_abs_dims": [],
+            }
+
+        mean_abs = (self.abs_sum / float(count)).detach().cpu()
+        max_abs_by_dim = self.abs_max.detach().cpu()
+        action_dim = int(mean_abs.shape[0])
+        top_count = min(top_k, action_dim)
+        top_values, top_indices = self.torch.topk(mean_abs, k=top_count)
+        return {
+            "sample_count": count,
+            "action_dim": action_dim,
+            "mean_l2": float((self.l2_sum / float(count)).item()),
+            "max_abs": float(self.max_abs.item()),
+            "mean_abs_by_dim": [float(value) for value in mean_abs.tolist()],
+            "max_abs_by_dim": [float(value) for value in max_abs_by_dim.tolist()],
+            "top_abs_dims": [
+                {"dim": int(index), "mean_abs": float(value)}
+                for index, value in zip(top_indices.tolist(), top_values.tolist())
+            ],
+        }
+
+
 def _configure_fixed_command(env_cfg: Any, args: argparse.Namespace) -> None:
     twist_cmd = env_cfg.commands["twist"]
     twist_cmd.heading_command = False
@@ -293,13 +609,25 @@ def _configure_fixed_command(env_cfg: Any, args: argparse.Namespace) -> None:
     twist_cmd.ranges.heading = None
 
 
-def _configure_dynamic_case(env_cfg: Any, dynamic_case: str) -> None:
+def _configure_dynamic_case(env_cfg: Any, args: argparse.Namespace) -> None:
     if "dynamic_motor_failure" not in env_cfg.events:
         raise RuntimeError("dynamic_motor_failure event is absent")
     params = env_cfg.events["dynamic_motor_failure"].params
-    template = DYNAMIC_CASES[dynamic_case]
+    template = _dynamic_template(args)
     if template is not None and "template" in params:
         params["template"] = template
+
+
+def _dynamic_template(args: argparse.Namespace) -> Any:
+    if args.dynamic_dead_joint:
+        if args.dynamic_recovery_s <= args.dynamic_onset_s:
+            raise ValueError("--dynamic-recovery-s must be greater than --dynamic-onset-s")
+        return (
+            (0.0, args.dynamic_onset_s, None, "normal", 1.0),
+            (args.dynamic_onset_s, args.dynamic_recovery_s, args.dynamic_dead_joint, "dead", 0.0),
+            (args.dynamic_recovery_s, None, None, "normal", 1.0),
+        )
+    return DYNAMIC_CASES[args.dynamic_case]
 
 
 def _force_dead_motor(env_cfg: Any, joint_name: str, scale: float) -> None:
@@ -315,6 +643,8 @@ def _force_dead_motor(env_cfg: Any, joint_name: str, scale: float) -> None:
 def _eval_mode(args: argparse.Namespace) -> str:
     if args.force_dead_joint:
         return "forced_deadgrid"
+    if args.dynamic_dead_joint:
+        return "dynamic_single_onset"
     if args.dynamic_case != "none":
         return "dynamic_switch"
     return "clean_multitrial"
@@ -355,6 +685,14 @@ def _thresholds(args: argparse.Namespace) -> dict[str, float]:
         "max_final_gravity_xy": args.max_final_gravity_xy,
         "min_final_root_z": args.min_final_root_z,
     }
+
+
+def _final_window_steps(window_s: float, dt: float) -> int | None:
+    if window_s <= 0.0:
+        return None
+    if dt <= 0.0:
+        raise ValueError("step dt must be positive when --final-window-s is used")
+    return max(1, int(math.ceil(window_s / dt)))
 
 
 def _final_trial_pass(final_trial: dict[str, Any], thresholds: dict[str, float]) -> bool:
@@ -420,6 +758,84 @@ def _finite_or_none(value: float) -> float | None:
     if value == float("inf") or value == float("-inf"):
         return None
     return float(value)
+
+
+def _find_actor(runner: Any) -> Any | None:
+    for path in (
+        ("alg", "actor_critic", "actor"),
+        ("alg", "actor_critic"),
+        ("actor_critic", "actor"),
+        ("actor_critic",),
+        ("policy",),
+        ("alg", "actor"),
+    ):
+        obj = runner
+        for name in path:
+            obj = getattr(obj, name, None)
+            if obj is None:
+                break
+        if obj is not None:
+            return obj
+    return None
+
+
+def _apply_optional_txl_actor_cfg(args: argparse.Namespace, train_cfg: dict[str, Any]) -> None:
+    actor = train_cfg.get("actor")
+    if not isinstance(actor, dict):
+        return
+    for attr in (
+        "memory_latent_dim",
+        "action_dim",
+        "base_obs_passthrough",
+        "adaptation_warmstart",
+        "adaptation_hidden_dim",
+        "memory_latent_scale",
+        "base_obs_passthrough_scale",
+        "adaptation_warmstart_scale",
+    ):
+        if hasattr(args, attr):
+            value = getattr(args, attr)
+            if value is not None:
+                actor[attr] = value
+
+
+def _txl_debug_snapshot(actor: Any | None) -> dict[str, Any]:
+    if actor is None:
+        return {}
+    snapshot = getattr(actor, "txl_debug_snapshot", None)
+    if not callable(snapshot):
+        return {}
+    data = snapshot()
+    return dict(data) if isinstance(data, Mapping) else {}
+
+
+def _apply_optional_memory_ablation(actor: Any | None, args: argparse.Namespace) -> None:
+    if actor is None or not hasattr(args, "memory_ablation_mode"):
+        return
+    setter = getattr(actor, "task042_set_memory_ablation_mode", None)
+    if callable(setter):
+        setter(getattr(args, "memory_ablation_mode"))
+
+
+def _action_dim(env: Any, base: Any) -> int | None:
+    for source in (env, base):
+        for name in ("num_actions", "action_dim", "total_action_dim"):
+            value = getattr(source, name, None)
+            if value is not None:
+                return int(value)
+    return None
+
+
+def _total_action_dim(base: Any) -> int | None:
+    action_manager = getattr(base, "action_manager", None)
+    for source in (base, action_manager):
+        if source is None:
+            continue
+        for name in ("total_action_dim", "action_dim", "num_actions"):
+            value = getattr(source, name, None)
+            if value is not None:
+                return int(value)
+    return None
 
 
 def main() -> None:

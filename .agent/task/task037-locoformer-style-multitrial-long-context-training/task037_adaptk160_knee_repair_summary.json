@@ -1,0 +1,29 @@
+{
+  "any_knee_repaired_checkpoint_promoted": false,
+  "clean_prior_checkpoint": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task037_clean_gait_prior_train/2026-05-29_16-44-07_037_adapt_k160_clean_from_adaptk4_env8192_iter60_gpu0_seed3700705/model_5467.pt",
+  "conclusion": "Existing knee2p0 repair improves right-knee robustness intermittently and keeps left-knee trials upright, but it does not close the left-knee velocity gate. Do not promote a checkpoint from this route.",
+  "first_knee2p0_run": {
+    "checkpoint_final": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task037_adaptk160_failure_curriculum/2026-05-29_17-32-34_037_adapt_k160_knee2p0_from_clean5467_env8192_iter30_gpu0_seed3700820/model_5496.pt",
+    "full_eval_summary": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/adaptk160_knee_repair/eval_knee2p0_model5496/task037_adaptk160_knee2p0_model5496_eval_summary.json",
+    "sweep_summary": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/adaptk160_knee_repair/knee2p0_sweep_seed3700820/task037_adaptk160_knee2p0_sweep_summary.json"
+  },
+  "low_lr_knee2p0_run": {
+    "best_left_knee": {
+      "fall_ratio": 0.0,
+      "lin_err": 1.2763218879699707,
+      "model": 5502,
+      "pass": false,
+      "root_z_min": 0.7630162835121155
+    },
+    "best_right_knee": {
+      "fall_ratio": 0.0,
+      "lin_err": 0.8950871825218201,
+      "model": 5514,
+      "pass": true,
+      "root_z_min": 0.7013981342315674
+    },
+    "both_pass_models": [],
+    "checkpoint_final": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task037_adaptk160_failure_curriculum/2026-05-29_17-47-13_037_adapt_k160_knee2p0_from5496_lr1e6_env8192_iter20_gpu0_seed3700830/model_5515.pt",
+    "sweep_summary": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/adaptk160_knee_repair/knee2p0_lr1e6_sweep_seed3700830/task037_adaptk160_knee2p0_lr1e6_sweep_summary.json"
+  }
+}

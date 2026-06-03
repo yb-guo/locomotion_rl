@@ -1,0 +1,40 @@
+{
+  "aggregate_pass": false,
+  "case_count": 36,
+  "checkpoint": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task037_clean_gait_prior_train/2026-05-29_16-44-07_037_adapt_k160_clean_from_adaptk4_env8192_iter60_gpu0_seed3700705/model_5467.pt",
+  "conclusion": "Task037 multi-trial final-trial eval strongly improves arbitrary single-joint dynamic onset versus the earlier single-attempt diagnostic, but full random dynamic robustness is not solved. The stable blocker is left_hip_pitch_joint at 2.0 m/s.",
+  "dynamic_onset_s": 0.5,
+  "dynamic_recovery_s": 1.5,
+  "full_grid_summary": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/arbitrary_onset_multitrial_model5467/full_grid_seed3700902/task037_adaptk160_model5467_arbitrary_onset_multitrial_summary.json",
+  "left_hip_pitch_vx2p0_s5_summary": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/arbitrary_onset_multitrial_model5467/left_hip_pitch_vx2p0_s5/task037_adaptk160_model5467_left_hip_pitch_vx2p0_s5_summary.json",
+  "pass_count": 35,
+  "speed_breakdown": {
+    "0.4": {
+      "case_count": 12,
+      "failed_joints": [],
+      "pass_count": 12
+    },
+    "1.2": {
+      "case_count": 12,
+      "failed_joints": [],
+      "pass_count": 12
+    },
+    "2.0": {
+      "case_count": 12,
+      "failed_joints": [
+        "left_hip_pitch_joint"
+      ],
+      "pass_count": 11
+    }
+  },
+  "stable_failed_case": {
+    "aggregate_pass": false,
+    "case": "left_hip_pitch_joint_vx2p0",
+    "case_count": 5,
+    "pass_count": 0,
+    "typical_final_lin_err": "1.26-1.31 > 1.20",
+    "typical_final_vs_trial0": "improved but not enough"
+  },
+  "subtask": "010-arbitrary-onset-multitrial-eval",
+  "trial_length_s": 2.0
+}
