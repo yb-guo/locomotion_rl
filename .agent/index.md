@@ -44,6 +44,15 @@ H200 Locomotion Lab 的 agent 入口。
 - `task/task035-eval-gated-history-curriculum/task.md`
 - `task/task036-adaptation-gru-token-policy-quality/task.md`
 - `task/task037-locoformer-style-multitrial-long-context-training/task.md`
+- `task/task038-locoformer-min-g1like-reproduction/task.md`
+- `task/task039-true-txl-quality-training-diagnosis/task.md`
+- `task/task040-sequence-aware-txl-ppo-update/task.md`
+- `task/task041-sequence-aware-txl-clean-gait/task.md`
+- `task/task042-txl-memory-causality-and-residual-training/task.md`
+- `task/task043-memory-required-dynamic-switch-training/task.md`
+- `task/task044-memory-required-fault-identification-target/task.md`
+- `task/task045-left-knee-continuous-stability-tail-gate/task.md`
+- `task/task046-retry-after-fall-adaptation-eval/task.md`
 
 ## Consensus
 
