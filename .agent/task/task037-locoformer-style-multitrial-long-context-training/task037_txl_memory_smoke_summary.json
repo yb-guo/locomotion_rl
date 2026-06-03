@@ -1,0 +1,59 @@
+{
+  "task": "task037-locoformer-style-multitrial-long-context-training",
+  "subtask": "005-txl-style-memory-consumer",
+  "status": "smoke_passed",
+  "quality_claim": false,
+  "h200_checkout": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter",
+  "external_mjlab_root": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab",
+  "python": "/mnt/workspace/users/guoyubo/conda_envs/unitree-rl-mjlab/bin/python",
+  "task_id": "Unitree-G1-Gripper-Flat-Task037-TxlMemoryK160-DeterministicInnerReset-Fast2p0",
+  "runner_cls": "h200_locomotion_lab.training.rsl_history_wrapper.Task037TxlMemoryK160DeterministicRunner",
+  "actor_model_cls": "h200_locomotion_lab.training.rsl_history_wrapper.Task037TxlStyleMemoryModel",
+  "context_horizon_s": 3.2,
+  "policy_hz": 50,
+  "history_len": 160,
+  "frame_dim": 135,
+  "actor_history_dim": 21600,
+  "segment_len": 16,
+  "segment_count": 10,
+  "token_dim": 128,
+  "token_projection": "Linear(135, 128)",
+  "actor_visible_debug_labels": false,
+  "memory_contract_tests": {
+    "local": "6 passed, 4 skipped in 0.09s",
+    "h200": "8 passed in 2.48s",
+    "coverage": [
+      "K160 history preserves across inner trial reset",
+      "K160 history clears on outer episode reset",
+      "local trial_timeout_steps reset reason takes precedence over raw done/fall"
+    ]
+  },
+  "registry_check": {
+    "pass": true,
+    "runner_cls": "<class 'h200_locomotion_lab.training.rsl_history_wrapper.Task037TxlMemoryK160DeterministicRunner'>"
+  },
+  "env64_smoke": {
+    "pass": true,
+    "num_envs": 64,
+    "iterations": 1,
+    "seed": 3700501,
+    "gpu_id": 0,
+    "run_name": "037_txl_k160_env64_iter1_gpu0_seed3700501",
+    "log_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/txl_memory_smoke/037_txl_k160_env64_iter1_gpu0_seed3700501.stdout.log",
+    "steps_per_second": 1423,
+    "collection_time_s": 0.918,
+    "learning_time_s": 0.161
+  },
+  "env8192_overhead_smoke": {
+    "pass": true,
+    "num_envs": 8192,
+    "iterations": 1,
+    "seed": 3700511,
+    "gpu_id": 0,
+    "run_name": "037_txl_k160_env8192_iter1_gpu0_seed3700511",
+    "log_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/txl_memory_smoke/037_txl_k160_env8192_iter1_gpu0_seed3700511.stdout.log",
+    "steps_per_second": 55595,
+    "collection_time_s": 3.065,
+    "learning_time_s": 0.471
+  }
+}

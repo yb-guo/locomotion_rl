@@ -1,0 +1,55 @@
+{
+  "baseline_model5467": {
+    "checkpoint": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task037_clean_gait_prior_train/2026-05-29_16-44-07_037_adapt_k160_clean_from_adaptk4_env8192_iter60_gpu0_seed3700705/model_5467.pt",
+    "deadgrid_case_count": 12,
+    "deadgrid_pass_count": 10,
+    "dynamic_case_count": 3,
+    "dynamic_pass_count": 3,
+    "failed_deadgrid_cases": [
+      {
+        "fall_ratio": 0.0,
+        "joint": "left_knee_joint",
+        "lin_vel_error_mean": 1.2910760641098022,
+        "reason": "linear velocity error above 1.20 gate"
+      },
+      {
+        "fall_ratio": 0.046875,
+        "gravity_xy_max": 0.9451249837875366,
+        "joint": "right_knee_joint",
+        "root_z_min": 0.1721431314945221,
+        "reason": "fall/posture gates failed"
+      }
+    ],
+    "h200_summary_json": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/adaptk160_failure_probe_model5467_registered/task037_adaptk160_model5467_failure_probe_summary.json",
+    "pass": false
+  },
+  "mixed_model5496": {
+    "checkpoint": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task037_adaptk160_failure_curriculum/2026-05-29_17-05-46_037_adapt_k160_mixed_from_clean5467_env8192_iter30_gpu0_seed3700810/model_5496.pt",
+    "clean_case_count": 3,
+    "clean_pass_count": 3,
+    "deadgrid_case_count": 12,
+    "deadgrid_pass_count": 10,
+    "dynamic_case_count": 3,
+    "dynamic_pass_count": 3,
+    "failed_deadgrid_cases": [
+      {
+        "fall_ratio": 0.0,
+        "joint": "left_knee_joint",
+        "lin_vel_error_mean": 1.3296935558319092,
+        "reason": "linear velocity error above 1.20 gate"
+      },
+      {
+        "fall_ratio": 0.0625,
+        "gravity_xy_max": 0.937402606010437,
+        "joint": "right_knee_joint",
+        "root_z_min": 0.1847112774848938,
+        "reason": "fall/posture gates failed"
+      }
+    ],
+    "h200_knee_sweep_json": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/adaptk160_failure_curriculum/knee_sweep_mixed_seed3700810/task037_adaptk160_mixed_knee_sweep_summary.json",
+    "h200_summary_json": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/adaptk160_failure_curriculum/eval_mixed_model5496/task037_adaptk160_mixed_model5496_eval_summary.json",
+    "pass": false
+  },
+  "task": "task037-locoformer-style-multitrial-long-context-training",
+  "subtask": "008-adaptk160-failure-curriculum-probe"
+}

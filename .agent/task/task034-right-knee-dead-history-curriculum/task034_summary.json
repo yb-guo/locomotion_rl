@@ -1,0 +1,33 @@
+{
+  "task": "task034-right-knee-dead-history-curriculum",
+  "status": "passed_narrow_target_by_checkpoint_selection",
+  "accepted_checkpoint": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task033_stackmlp_k4_frozenbase_focused/2026-05-28_12-40-56_033_frozenbase_focused_from5349_env8192_iter30_gpu1_seed3303362_lr1e5/model_5350.pt",
+  "rejected_checkpoints": [
+    {
+      "checkpoint": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task033_stackmlp_k4_frozenbase_focused/2026-05-28_12-40-56_033_frozenbase_focused_from5349_env8192_iter30_gpu1_seed3303362_lr1e5/model_5378.pt",
+      "reason": "right_knee_joint forced dead below threshold"
+    },
+    {
+      "checkpoint_dir": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task034_rightknee_frozenbase_train/2026-05-28_14-12-50_034_mixed_rightknee_from_task033_model5378_env8192_iter30_gpu1_seed3403401_lr5e6",
+      "reason": "mixed continuation regressed right_knee_joint"
+    },
+    {
+      "checkpoint_dir": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task034_rightknee_frozenbase_train/2026-05-28_14-21-49_034_weak_rightknee_from_task033_model5378_env8192_iter10_gpu1_seed3403411_lr1e6",
+      "reason": "weak continuation did not improve right_knee_joint"
+    }
+  ],
+  "deadgrid_vx2p0": {
+    "pass": true,
+    "pass_count": 12,
+    "case_count": 12,
+    "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task034/frozenbase_model5350_deadgrid_vx2p0_seed3403500/task033_failure_grid_eval_aggregate.json"
+  },
+  "dynamic_switch_vx2p0": {
+    "pass": true,
+    "zero_fall_ratio": 1.0,
+    "recovery_success_ratio": 1.0,
+    "max_gravity_xy_after_onset": 0.15834704041481018,
+    "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task034/frozenbase_model5350_dynamicmotorfailure_vx2p0_seed3105349/task033_dynamic_eval_switch_vx2p0.json"
+  },
+  "diagnosis": "The apparent remaining right-knee blocker was a checkpoint-selection issue. Continuing focused frozen-base training from model_5378 regresses the target; earlier Task033 model_5350 is the accepted checkpoint."
+}

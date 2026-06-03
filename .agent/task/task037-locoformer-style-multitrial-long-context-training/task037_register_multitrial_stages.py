@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+"""Patch H200 MJLab with Task037 multi-trial smoke task ids."""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+
+ROOT = Path("/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab")
+
+
+RUNNER_IMPORT = (
+    "from h200_locomotion_lab.training.rsl_history_wrapper import (\n"
+    "  Task037AdaptK4DeterministicInnerResetRunner,\n"
+    "  Task037AdaptK160DeterministicInnerResetRunner,\n"
+    "  Task037BufferOnlyK4AutoResetRunner,\n"
+    "  Task037BufferOnlyK4DeterministicInnerResetRunner,\n"
+    "  Task037TxlMemoryK160DeterministicRunner,\n"
+    ")\n"
+)
+
+
+REGISTERS = {
+    "Unitree-G1-Gripper-Flat-Task037-BufferOnlyK4-AutoReset-Fast2p0": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-BufferOnlyK4-AutoReset-Fast2p0",
+  env_cfg=unitree_g1_gripper_flat_task031_unified_dynamic_switch_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task031_unified_dynamic_switch_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037BufferOnlyK4AutoResetRunner,
+)
+''',
+    "Unitree-G1-Gripper-Flat-Task037-BufferOnlyK4-DeterministicInnerReset-Fast2p0": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-BufferOnlyK4-DeterministicInnerReset-Fast2p0",
+  env_cfg=unitree_g1_gripper_flat_task031_unified_dynamic_switch_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task031_unified_dynamic_switch_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037BufferOnlyK4DeterministicInnerResetRunner,
+)
+''',
+    "Unitree-G1-Gripper-Flat-Task037-AdaptK4-DeterministicInnerReset-Fast2p0": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-AdaptK4-DeterministicInnerReset-Fast2p0",
+  env_cfg=unitree_g1_gripper_flat_task031_unified_dynamic_switch_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task031_unified_dynamic_switch_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037AdaptK4DeterministicInnerResetRunner,
+)
+''',
+    "Unitree-G1-Gripper-Flat-Task037-AdaptK160-CleanUnified-Fast2p0": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-AdaptK160-CleanUnified-Fast2p0",
+  env_cfg=unitree_g1_gripper_flat_task035_clean_unified_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task035_clean_unified_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037AdaptK160DeterministicInnerResetRunner,
+)
+''',
+    "Unitree-G1-Gripper-Flat-Task037-AdaptK160-WeakPersistent-Fast2p0": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-AdaptK160-WeakPersistent-Fast2p0",
+  env_cfg=unitree_g1_gripper_flat_task035_weak_persistent_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task035_weak_persistent_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037AdaptK160DeterministicInnerResetRunner,
+)
+''',
+    "Unitree-G1-Gripper-Flat-Task037-AdaptK160-MixedPersistent-Fast2p0": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-AdaptK160-MixedPersistent-Fast2p0",
+  env_cfg=unitree_g1_gripper_flat_task035_mixed_persistent_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task035_mixed_persistent_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037AdaptK160DeterministicInnerResetRunner,
+)
+''',
+    "Unitree-G1-Gripper-Flat-Task037-AdaptK160-FocusedDeadGrid-Fast2p0": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-AdaptK160-FocusedDeadGrid-Fast2p0",
+  env_cfg=unitree_g1_gripper_flat_task031_focused_deadgrid_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task031_focused_deadgrid_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037AdaptK160DeterministicInnerResetRunner,
+)
+''',
+    "Unitree-G1-Gripper-Flat-Task037-AdaptK160-DynamicMotorFailure-Fast1p6": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-AdaptK160-DynamicMotorFailure-Fast1p6",
+  env_cfg=unitree_g1_gripper_flat_dynamic_failure_fast1p6_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_dynamic_failure_fast1p6_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037AdaptK160DeterministicInnerResetRunner,
+)
+''',
+    "Unitree-G1-Gripper-Flat-Task037-AdaptK160-KneeHipRollVx2p0": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-AdaptK160-KneeHipRollVx2p0",
+  env_cfg=unitree_g1_gripper_flat_task030_knee_hiproll_vx2p0_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task030_knee_hiproll_vx2p0_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037AdaptK160DeterministicInnerResetRunner,
+)
+''',
+    "Unitree-G1-Gripper-Flat-Task037-AdaptK160-RightKneeMixedVx2p0": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-AdaptK160-RightKneeMixedVx2p0",
+  env_cfg=unitree_g1_gripper_flat_task034_rightknee_mixed_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task034_rightknee_mixed_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037AdaptK160DeterministicInnerResetRunner,
+)
+''',
+    "Unitree-G1-Gripper-Flat-Task037-TxlMemoryK160-DeterministicInnerReset-Fast2p0": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-TxlMemoryK160-DeterministicInnerReset-Fast2p0",
+  env_cfg=unitree_g1_gripper_flat_task031_unified_dynamic_switch_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task031_unified_dynamic_switch_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037TxlMemoryK160DeterministicRunner,
+)
+''',
+    "Unitree-G1-Gripper-Flat-Task037-TxlMemoryK160-FocusedDeadGrid-Fast2p0": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-TxlMemoryK160-FocusedDeadGrid-Fast2p0",
+  env_cfg=unitree_g1_gripper_flat_task031_focused_deadgrid_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_task031_focused_deadgrid_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037TxlMemoryK160DeterministicRunner,
+)
+''',
+    "Unitree-G1-Gripper-Flat-Task037-TxlMemoryK160-DynamicMotorFailure-Fast1p6": r'''
+register_mjlab_task(
+  task_id="Unitree-G1-Gripper-Flat-Task037-TxlMemoryK160-DynamicMotorFailure-Fast1p6",
+  env_cfg=unitree_g1_gripper_flat_dynamic_failure_fast1p6_env_cfg(),
+  play_env_cfg=unitree_g1_gripper_flat_dynamic_failure_fast1p6_env_cfg(play=True),
+  rl_cfg=unitree_g1_gripper_ppo_runner_cfg(),
+  runner_cls=Task037TxlMemoryK160DeterministicRunner,
+)
+''',
+}
+
+
+def patch_init(path: Path) -> None:
+    text = path.read_text(encoding="utf-8")
+    if "from h200_locomotion_lab.training.rsl_history_wrapper import (" not in text:
+        anchor = "from mjlab.rl import MjlabOnPolicyRunner\n"
+        if anchor not in text:
+            raise RuntimeError(f"anchor not found in {path}: {anchor!r}")
+        text = text.replace(anchor, anchor + RUNNER_IMPORT, 1)
+    else:
+        for name in (
+            "Task037AdaptK4DeterministicInnerResetRunner",
+            "Task037AdaptK160DeterministicInnerResetRunner",
+            "Task037BufferOnlyK4AutoResetRunner",
+            "Task037BufferOnlyK4DeterministicInnerResetRunner",
+            "Task037TxlMemoryK160DeterministicRunner",
+        ):
+            if name not in text:
+                marker = "from h200_locomotion_lab.training.rsl_history_wrapper import (\n"
+                text = text.replace(marker, marker + f"  {name},\n", 1)
+    for task_id, block in REGISTERS.items():
+        if task_id not in text:
+            text = text.rstrip() + "\n\n" + block.strip() + "\n"
+    path.write_text(text, encoding="utf-8")
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root", type=Path, default=ROOT)
+    return parser.parse_args(argv)
+
+
+def main() -> None:
+    args = parse_args()
+    init_path = args.root / "src/tasks/velocity/config/g1_gripper/__init__.py"
+    patch_init(init_path)
+    print(init_path)
+
+
+if __name__ == "__main__":
+    main()

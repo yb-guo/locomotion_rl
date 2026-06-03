@@ -1,0 +1,30 @@
+{
+  "task": "task037-locoformer-style-multitrial-long-context-training",
+  "phase": "002-mjlab-multitrial-smoke",
+  "task_id": "Unitree-G1-Gripper-Flat-Task037-BufferOnlyK4-AutoReset-Fast2p0",
+  "quality_claim": false,
+  "h200_summary_json": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/mjlab_multitrial_smoke/task037_mjlab_multitrial_smoke_summary.json",
+  "pass": true,
+  "probe": {
+    "json_path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/mjlab_multitrial_smoke/probe/task037_mjlab_multitrial_extras_probe_env64.json",
+    "pass": true,
+    "gpu_name": "NVIDIA H20D",
+    "required_extras_missing": [],
+    "done_matches_episode_done": true,
+    "saw_inner_trial_done": true,
+    "saw_outer_episode_done": true,
+    "max_trial_index": 2
+  },
+  "ppo_smokes": {
+    "env64": {
+      "log": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/mjlab_multitrial_smoke/037_bufferonly_multitrial_env64_iter1_gpu0_seed3700202.stdout.log",
+      "pass": true,
+      "steps_per_second": 1389
+    },
+    "env8192": {
+      "log": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/mjlab_multitrial_smoke/037_bufferonly_multitrial_env8192_iter1_gpu0_seed3700203.stdout.log",
+      "pass": true,
+      "steps_per_second": 56021
+    }
+  }
+}

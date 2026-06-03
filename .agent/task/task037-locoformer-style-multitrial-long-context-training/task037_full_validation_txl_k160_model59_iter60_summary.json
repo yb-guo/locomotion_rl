@@ -1,0 +1,704 @@
+{
+  "checkpoint": "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab/logs/rsl_rl/g1_gripper_velocity_task037_long_context_train/2026-05-29_14-54-42_037_txl_k160_scratch_env8192_iter60_gpu0_seed3700601/model_59.pt",
+  "failed": [
+    {
+      "deadgrid": {
+        "case_count": 12,
+        "failed": [
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 0.8955758810043335,
+            "final_trial_pass": false,
+            "joint": "left_hip_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/0_left_hip_pitch_joint/task037_multitrial_dead_left_hip_pitch_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.096195936203003,
+            "final_trial_pass": false,
+            "joint": "right_ankle_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/10_right_ankle_pitch_joint/task037_multitrial_dead_right_ankle_pitch_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 0.38525304198265076,
+            "final_trial_pass": false,
+            "joint": "right_ankle_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/11_right_ankle_roll_joint/task037_multitrial_dead_right_ankle_roll_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 0.922427237033844,
+            "final_trial_pass": false,
+            "joint": "left_hip_yaw_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/1_left_hip_yaw_joint/task037_multitrial_dead_left_hip_yaw_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 0.8480451703071594,
+            "final_trial_pass": false,
+            "joint": "right_hip_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/2_right_hip_pitch_joint/task037_multitrial_dead_right_hip_pitch_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 0.9065970182418823,
+            "final_trial_pass": false,
+            "joint": "right_hip_yaw_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/3_right_hip_yaw_joint/task037_multitrial_dead_right_hip_yaw_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 0.4090539216995239,
+            "final_trial_pass": false,
+            "joint": "left_hip_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/4_left_hip_roll_joint/task037_multitrial_dead_left_hip_roll_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 0.6851906180381775,
+            "final_trial_pass": false,
+            "joint": "left_knee_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/5_left_knee_joint/task037_multitrial_dead_left_knee_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 0.9171425104141235,
+            "final_trial_pass": false,
+            "joint": "right_hip_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/6_right_hip_roll_joint/task037_multitrial_dead_right_hip_roll_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 0.6768066883087158,
+            "final_trial_pass": false,
+            "joint": "right_knee_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/7_right_knee_joint/task037_multitrial_dead_right_knee_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.0562909841537476,
+            "final_trial_pass": false,
+            "joint": "left_ankle_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/8_left_ankle_pitch_joint/task037_multitrial_dead_left_ankle_pitch_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 0.5190534591674805,
+            "final_trial_pass": false,
+            "joint": "left_ankle_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/9_left_ankle_roll_joint/task037_multitrial_dead_left_ankle_roll_joint_vx0p4.json"
+          }
+        ],
+        "pass": false,
+        "pass_count": 0
+      },
+      "dynamic_switch": {
+        "final_trial_fall_ratio": 1.0,
+        "final_trial_lin_vel_error_mean": 0.4234192371368408,
+        "final_trial_pass": false,
+        "pass": false,
+        "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/dynamic_switch/task037_multitrial_dynamic_switch_vx0p4.json"
+      },
+      "pass": false,
+      "speed": 0.4,
+      "speed_tag": "vx0p4"
+    },
+    {
+      "deadgrid": {
+        "case_count": 12,
+        "failed": [
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.2032912969589233,
+            "final_trial_pass": false,
+            "joint": "left_hip_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/0_left_hip_pitch_joint/task037_multitrial_dead_left_hip_pitch_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.1824824810028076,
+            "final_trial_pass": false,
+            "joint": "right_ankle_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/10_right_ankle_pitch_joint/task037_multitrial_dead_right_ankle_pitch_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.1251680850982666,
+            "final_trial_pass": false,
+            "joint": "right_ankle_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/11_right_ankle_roll_joint/task037_multitrial_dead_right_ankle_roll_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.7049312591552734,
+            "final_trial_pass": false,
+            "joint": "left_hip_yaw_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/1_left_hip_yaw_joint/task037_multitrial_dead_left_hip_yaw_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.0918936729431152,
+            "final_trial_pass": false,
+            "joint": "right_hip_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/2_right_hip_pitch_joint/task037_multitrial_dead_right_hip_pitch_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.3452290296554565,
+            "final_trial_pass": false,
+            "joint": "right_hip_yaw_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/3_right_hip_yaw_joint/task037_multitrial_dead_right_hip_yaw_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.2065316438674927,
+            "final_trial_pass": false,
+            "joint": "left_hip_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/4_left_hip_roll_joint/task037_multitrial_dead_left_hip_roll_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.2356890439987183,
+            "final_trial_pass": false,
+            "joint": "left_knee_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/5_left_knee_joint/task037_multitrial_dead_left_knee_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.1574957370758057,
+            "final_trial_pass": false,
+            "joint": "right_hip_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/6_right_hip_roll_joint/task037_multitrial_dead_right_hip_roll_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.1060621738433838,
+            "final_trial_pass": false,
+            "joint": "right_knee_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/7_right_knee_joint/task037_multitrial_dead_right_knee_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.06050443649292,
+            "final_trial_pass": false,
+            "joint": "left_ankle_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/8_left_ankle_pitch_joint/task037_multitrial_dead_left_ankle_pitch_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.0983167886734009,
+            "final_trial_pass": false,
+            "joint": "left_ankle_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/9_left_ankle_roll_joint/task037_multitrial_dead_left_ankle_roll_joint_vx1p2.json"
+          }
+        ],
+        "pass": false,
+        "pass_count": 0
+      },
+      "dynamic_switch": {
+        "final_trial_fall_ratio": 1.0,
+        "final_trial_lin_vel_error_mean": 1.1235076189041138,
+        "final_trial_pass": false,
+        "pass": false,
+        "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/dynamic_switch/task037_multitrial_dynamic_switch_vx1p2.json"
+      },
+      "pass": false,
+      "speed": 1.2,
+      "speed_tag": "vx1p2"
+    },
+    {
+      "deadgrid": {
+        "case_count": 12,
+        "failed": [
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.986151933670044,
+            "final_trial_pass": false,
+            "joint": "left_hip_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/0_left_hip_pitch_joint/task037_multitrial_dead_left_hip_pitch_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.975771188735962,
+            "final_trial_pass": false,
+            "joint": "right_ankle_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/10_right_ankle_pitch_joint/task037_multitrial_dead_right_ankle_pitch_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.9092369079589844,
+            "final_trial_pass": false,
+            "joint": "right_ankle_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/11_right_ankle_roll_joint/task037_multitrial_dead_right_ankle_roll_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 2.4550487995147705,
+            "final_trial_pass": false,
+            "joint": "left_hip_yaw_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/1_left_hip_yaw_joint/task037_multitrial_dead_left_hip_yaw_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.9113473892211914,
+            "final_trial_pass": false,
+            "joint": "right_hip_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/2_right_hip_pitch_joint/task037_multitrial_dead_right_hip_pitch_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.9382762908935547,
+            "final_trial_pass": false,
+            "joint": "right_hip_yaw_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/3_right_hip_yaw_joint/task037_multitrial_dead_right_hip_yaw_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.96250581741333,
+            "final_trial_pass": false,
+            "joint": "left_hip_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/4_left_hip_roll_joint/task037_multitrial_dead_left_hip_roll_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 2.047389507293701,
+            "final_trial_pass": false,
+            "joint": "left_knee_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/5_left_knee_joint/task037_multitrial_dead_left_knee_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.953068733215332,
+            "final_trial_pass": false,
+            "joint": "right_hip_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/6_right_hip_roll_joint/task037_multitrial_dead_right_hip_roll_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.7537842988967896,
+            "final_trial_pass": false,
+            "joint": "right_knee_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/7_right_knee_joint/task037_multitrial_dead_right_knee_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.8352513313293457,
+            "final_trial_pass": false,
+            "joint": "left_ankle_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/8_left_ankle_pitch_joint/task037_multitrial_dead_left_ankle_pitch_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.9043493270874023,
+            "final_trial_pass": false,
+            "joint": "left_ankle_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/9_left_ankle_roll_joint/task037_multitrial_dead_left_ankle_roll_joint_vx2p0.json"
+          }
+        ],
+        "pass": false,
+        "pass_count": 0
+      },
+      "dynamic_switch": {
+        "final_trial_fall_ratio": 1.0,
+        "final_trial_lin_vel_error_mean": 1.9152247905731201,
+        "final_trial_pass": false,
+        "pass": false,
+        "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/dynamic_switch/task037_multitrial_dynamic_switch_vx2p0.json"
+      },
+      "pass": false,
+      "speed": 2.0,
+      "speed_tag": "vx2p0"
+    }
+  ],
+  "label": "txl_k160_model59_iter60",
+  "output_dir": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60",
+  "pass": false,
+  "phase": "full_validation",
+  "promotion_gate": "final_trial_pass",
+  "record_count": 3,
+  "records": [
+    {
+      "deadgrid": {
+        "case_count": 12,
+        "failed": [
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 0.8955758810043335,
+            "final_trial_pass": false,
+            "joint": "left_hip_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/0_left_hip_pitch_joint/task037_multitrial_dead_left_hip_pitch_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.096195936203003,
+            "final_trial_pass": false,
+            "joint": "right_ankle_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/10_right_ankle_pitch_joint/task037_multitrial_dead_right_ankle_pitch_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 0.38525304198265076,
+            "final_trial_pass": false,
+            "joint": "right_ankle_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/11_right_ankle_roll_joint/task037_multitrial_dead_right_ankle_roll_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 0.922427237033844,
+            "final_trial_pass": false,
+            "joint": "left_hip_yaw_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/1_left_hip_yaw_joint/task037_multitrial_dead_left_hip_yaw_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 0.8480451703071594,
+            "final_trial_pass": false,
+            "joint": "right_hip_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/2_right_hip_pitch_joint/task037_multitrial_dead_right_hip_pitch_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 0.9065970182418823,
+            "final_trial_pass": false,
+            "joint": "right_hip_yaw_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/3_right_hip_yaw_joint/task037_multitrial_dead_right_hip_yaw_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 0.4090539216995239,
+            "final_trial_pass": false,
+            "joint": "left_hip_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/4_left_hip_roll_joint/task037_multitrial_dead_left_hip_roll_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 0.6851906180381775,
+            "final_trial_pass": false,
+            "joint": "left_knee_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/5_left_knee_joint/task037_multitrial_dead_left_knee_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 0.9171425104141235,
+            "final_trial_pass": false,
+            "joint": "right_hip_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/6_right_hip_roll_joint/task037_multitrial_dead_right_hip_roll_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 0.6768066883087158,
+            "final_trial_pass": false,
+            "joint": "right_knee_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/7_right_knee_joint/task037_multitrial_dead_right_knee_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.0562909841537476,
+            "final_trial_pass": false,
+            "joint": "left_ankle_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/8_left_ankle_pitch_joint/task037_multitrial_dead_left_ankle_pitch_joint_vx0p4.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 0.5190534591674805,
+            "final_trial_pass": false,
+            "joint": "left_ankle_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/deadgrid/9_left_ankle_roll_joint/task037_multitrial_dead_left_ankle_roll_joint_vx0p4.json"
+          }
+        ],
+        "pass": false,
+        "pass_count": 0
+      },
+      "dynamic_switch": {
+        "final_trial_fall_ratio": 1.0,
+        "final_trial_lin_vel_error_mean": 0.4234192371368408,
+        "final_trial_pass": false,
+        "pass": false,
+        "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx0p4/dynamic_switch/task037_multitrial_dynamic_switch_vx0p4.json"
+      },
+      "pass": false,
+      "speed": 0.4,
+      "speed_tag": "vx0p4"
+    },
+    {
+      "deadgrid": {
+        "case_count": 12,
+        "failed": [
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.2032912969589233,
+            "final_trial_pass": false,
+            "joint": "left_hip_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/0_left_hip_pitch_joint/task037_multitrial_dead_left_hip_pitch_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.1824824810028076,
+            "final_trial_pass": false,
+            "joint": "right_ankle_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/10_right_ankle_pitch_joint/task037_multitrial_dead_right_ankle_pitch_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.1251680850982666,
+            "final_trial_pass": false,
+            "joint": "right_ankle_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/11_right_ankle_roll_joint/task037_multitrial_dead_right_ankle_roll_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.7049312591552734,
+            "final_trial_pass": false,
+            "joint": "left_hip_yaw_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/1_left_hip_yaw_joint/task037_multitrial_dead_left_hip_yaw_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.0918936729431152,
+            "final_trial_pass": false,
+            "joint": "right_hip_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/2_right_hip_pitch_joint/task037_multitrial_dead_right_hip_pitch_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.3452290296554565,
+            "final_trial_pass": false,
+            "joint": "right_hip_yaw_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/3_right_hip_yaw_joint/task037_multitrial_dead_right_hip_yaw_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.2065316438674927,
+            "final_trial_pass": false,
+            "joint": "left_hip_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/4_left_hip_roll_joint/task037_multitrial_dead_left_hip_roll_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.2356890439987183,
+            "final_trial_pass": false,
+            "joint": "left_knee_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/5_left_knee_joint/task037_multitrial_dead_left_knee_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.1574957370758057,
+            "final_trial_pass": false,
+            "joint": "right_hip_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/6_right_hip_roll_joint/task037_multitrial_dead_right_hip_roll_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.1060621738433838,
+            "final_trial_pass": false,
+            "joint": "right_knee_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/7_right_knee_joint/task037_multitrial_dead_right_knee_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.06050443649292,
+            "final_trial_pass": false,
+            "joint": "left_ankle_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/8_left_ankle_pitch_joint/task037_multitrial_dead_left_ankle_pitch_joint_vx1p2.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.0983167886734009,
+            "final_trial_pass": false,
+            "joint": "left_ankle_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/deadgrid/9_left_ankle_roll_joint/task037_multitrial_dead_left_ankle_roll_joint_vx1p2.json"
+          }
+        ],
+        "pass": false,
+        "pass_count": 0
+      },
+      "dynamic_switch": {
+        "final_trial_fall_ratio": 1.0,
+        "final_trial_lin_vel_error_mean": 1.1235076189041138,
+        "final_trial_pass": false,
+        "pass": false,
+        "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx1p2/dynamic_switch/task037_multitrial_dynamic_switch_vx1p2.json"
+      },
+      "pass": false,
+      "speed": 1.2,
+      "speed_tag": "vx1p2"
+    },
+    {
+      "deadgrid": {
+        "case_count": 12,
+        "failed": [
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.986151933670044,
+            "final_trial_pass": false,
+            "joint": "left_hip_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/0_left_hip_pitch_joint/task037_multitrial_dead_left_hip_pitch_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.975771188735962,
+            "final_trial_pass": false,
+            "joint": "right_ankle_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/10_right_ankle_pitch_joint/task037_multitrial_dead_right_ankle_pitch_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.9092369079589844,
+            "final_trial_pass": false,
+            "joint": "right_ankle_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/11_right_ankle_roll_joint/task037_multitrial_dead_right_ankle_roll_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 2.4550487995147705,
+            "final_trial_pass": false,
+            "joint": "left_hip_yaw_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/1_left_hip_yaw_joint/task037_multitrial_dead_left_hip_yaw_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.9113473892211914,
+            "final_trial_pass": false,
+            "joint": "right_hip_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/2_right_hip_pitch_joint/task037_multitrial_dead_right_hip_pitch_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.9382762908935547,
+            "final_trial_pass": false,
+            "joint": "right_hip_yaw_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/3_right_hip_yaw_joint/task037_multitrial_dead_right_hip_yaw_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.96250581741333,
+            "final_trial_pass": false,
+            "joint": "left_hip_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/4_left_hip_roll_joint/task037_multitrial_dead_left_hip_roll_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 2.047389507293701,
+            "final_trial_pass": false,
+            "joint": "left_knee_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/5_left_knee_joint/task037_multitrial_dead_left_knee_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.953068733215332,
+            "final_trial_pass": false,
+            "joint": "right_hip_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/6_right_hip_roll_joint/task037_multitrial_dead_right_hip_roll_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.7537842988967896,
+            "final_trial_pass": false,
+            "joint": "right_knee_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/7_right_knee_joint/task037_multitrial_dead_right_knee_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.8352513313293457,
+            "final_trial_pass": false,
+            "joint": "left_ankle_pitch_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/8_left_ankle_pitch_joint/task037_multitrial_dead_left_ankle_pitch_joint_vx2p0.json"
+          },
+          {
+            "final_trial_fall_ratio": 1.0,
+            "final_trial_lin_vel_error_mean": 1.9043493270874023,
+            "final_trial_pass": false,
+            "joint": "left_ankle_roll_joint",
+            "pass": false,
+            "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/deadgrid/9_left_ankle_roll_joint/task037_multitrial_dead_left_ankle_roll_joint_vx2p0.json"
+          }
+        ],
+        "pass": false,
+        "pass_count": 0
+      },
+      "dynamic_switch": {
+        "final_trial_fall_ratio": 1.0,
+        "final_trial_lin_vel_error_mean": 1.9152247905731201,
+        "final_trial_pass": false,
+        "pass": false,
+        "path": "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/outputs/task037/full_validation_txl_k160_model59_iter60/vx2p0/dynamic_switch/task037_multitrial_dynamic_switch_vx2p0.json"
+      },
+      "pass": false,
+      "speed": 2.0,
+      "speed_tag": "vx2p0"
+    }
+  ],
+  "task": "task037-locoformer-style-multitrial-long-context-training"
+}
