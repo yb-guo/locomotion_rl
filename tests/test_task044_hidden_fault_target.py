@@ -998,16 +998,43 @@ def test_task046_post_reset_recovery_reward_shapes_only_final_trial_windows() ->
         min_root_z=0.70,
     )
 
-    _obs, rewards, _dones, extras = wrapper.step(torch.zeros((3, 2)))
+    wrapper.reset()
+    wrapper.step(torch.zeros((4, 2)))
+    _obs, rewards, _dones, extras = wrapper.step(torch.zeros((4, 2)))
 
-    assert rewards.tolist() == pytest.approx([-1.4, 0.0, -0.2])
+    assert rewards.tolist() == pytest.approx([-1.4, -0.2, 0.0, 0.0])
     assert extras["task046_post_reset_recovery_reward"]["active_count"] == 2
     assert extras["task046_post_reset_recovery_reward"]["recovery_count"] == 1
     assert extras["task046_post_reset_recovery_reward"]["tail_count"] == 1
+    assert extras["task046_post_reset_recovery_reward"]["eligible_post_fall_count"] == 2
+    assert extras["task046_post_reset_recovery_reward"]["timeout_retry_skipped_count"] == 1
+    assert extras["task046_post_reset_recovery_reward"]["no_prior_fall_skipped_count"] == 1
     debug = wrapper.task046_recovery_debug_snapshot()
     assert debug["sample_count"] == 2
     assert debug["recovery_sample_count"] == 1
     assert debug["tail_sample_count"] == 1
+    assert debug["eligible_post_fall_sample_count"] == 2
+    assert debug["timeout_retry_skipped_sample_count"] == 1
+    assert debug["no_prior_fall_skipped_sample_count"] == 1
+
+    env.window_without_prior_reset_on_reset = True
+    wrapper.reset()
+    _obs, rewards, _dones, extras = wrapper.step(torch.zeros((4, 2)))
+
+    assert rewards.tolist() == pytest.approx([0.0, 0.0, 0.0, 0.0])
+    assert extras["task046_post_reset_recovery_reward"]["active_count"] == 0
+    assert extras["task046_post_reset_recovery_reward"]["no_prior_fall_skipped_count"] == 4
+
+    env.window_without_prior_reset_on_reset = False
+    wrapper.reset()
+    wrapper.step(torch.zeros((4, 2)))
+    env.outer_reset_on_next_step = True
+    wrapper.step(torch.zeros((4, 2)))
+    _obs, rewards, _dones, extras = wrapper.step(torch.zeros((4, 2)))
+
+    assert rewards.tolist() == pytest.approx([0.0, 0.0, 0.0, 0.0])
+    assert extras["task046_post_reset_recovery_reward"]["active_count"] == 0
+    assert extras["task046_post_reset_recovery_reward"]["no_prior_fall_skipped_count"] == 4
 
 
 def test_task046_retry_context_adds_actor_visible_reset_features_without_fault_label() -> None:
@@ -1289,15 +1316,19 @@ class FakeObservationContainer(dict):
 class FakeRecoveryEnv:
     def __init__(self, torch_module) -> None:
         self.torch = torch_module
-        self.num_envs = 3
+        self.num_envs = 4
         self.device = "cpu"
         self.max_episode_length = 100
         self.num_actions = 2
-        self.episode_length_buf = torch_module.zeros(3, dtype=torch_module.long)
+        self.episode_length_buf = torch_module.zeros(4, dtype=torch_module.long)
+        self._step_index = 0
+        self.window_without_prior_reset_on_reset = False
+        self.outer_reset_on_next_step = False
         data = type("RobotData", (), {})()
         data.root_link_lin_vel_b = torch_module.tensor(
             [
                 [0.4, 0.0, 0.0],
+                [1.2, 0.0, 0.0],
                 [0.4, 0.0, 0.0],
                 [1.2, 0.0, 0.0],
             ]
@@ -1306,11 +1337,13 @@ class FakeRecoveryEnv:
             [
                 [0.2, 0.0, 0.0],
                 [0.3, 0.0, 0.0],
+                [0.2, 0.0, 0.0],
                 [0.1, 0.0, 0.0],
             ]
         )
         data.root_link_pos_w = torch_module.tensor(
             [
+                [0.0, 0.0, 0.65],
                 [0.0, 0.0, 0.65],
                 [0.0, 0.0, 0.65],
                 [0.0, 0.0, 0.80],
@@ -1323,6 +1356,7 @@ class FakeRecoveryEnv:
             {
                 "get_command": lambda _self, _name: torch_module.tensor(
                     [
+                        [1.6, 0.0, 0.0],
                         [1.6, 0.0, 0.0],
                         [1.6, 0.0, 0.0],
                         [1.6, 0.0, 0.0],
@@ -1343,21 +1377,45 @@ class FakeRecoveryEnv:
         return seed
 
     def reset(self):
+        self._step_index = 1 if self.window_without_prior_reset_on_reset else 0
         return self.get_observations(), {}
 
     def get_observations(self):
         return {
-            "actor": self.torch.zeros((3, 4)),
-            "critic": self.torch.zeros((3, 5)),
+            "actor": self.torch.zeros((4, 4)),
+            "critic": self.torch.zeros((4, 5)),
         }
 
     def step(self, actions):
-        rewards = self.torch.zeros(3)
-        dones = self.torch.zeros(3, dtype=self.torch.bool)
-        extras = {
-            "task037_trial_index": self.torch.tensor([2, 1, 2]),
-            "task037_trial_step": self.torch.tensor([1, 1, 4]),
-        }
+        rewards = self.torch.zeros(4)
+        dones = self.torch.zeros(4, dtype=self.torch.bool)
+        if self._step_index == 0:
+            extras = {
+                "task037_inner_reset": self.torch.tensor([True, True, True, False]),
+                "task037_outer_reset": self.torch.tensor([False, False, False, False]),
+                "task037_reset_reason": self.torch.tensor([1, 1, 2, 0]),
+                "task037_trial_index": self.torch.tensor([1, 1, 1, 0]),
+                "task037_trial_step": self.torch.tensor([0, 0, 0, 0]),
+            }
+        elif self.outer_reset_on_next_step:
+            self.outer_reset_on_next_step = False
+            dones = self.torch.tensor([True, True, True, True])
+            extras = {
+                "task037_inner_reset": self.torch.tensor([False, False, False, False]),
+                "task037_outer_reset": self.torch.tensor([True, True, True, True]),
+                "task037_reset_reason": self.torch.tensor([1, 1, 2, 0]),
+                "task037_trial_index": self.torch.tensor([0, 0, 0, 0]),
+                "task037_trial_step": self.torch.tensor([0, 0, 0, 0]),
+            }
+        else:
+            extras = {
+                "task037_inner_reset": self.torch.tensor([False, False, False, False]),
+                "task037_outer_reset": self.torch.tensor([False, False, False, False]),
+                "task037_reset_reason": self.torch.tensor([0, 0, 0, 0]),
+                "task037_trial_index": self.torch.tensor([2, 2, 2, 2]),
+                "task037_trial_step": self.torch.tensor([1, 4, 1, 1]),
+            }
+        self._step_index += 1
         return self.get_observations(), rewards, dones, extras
 
     def close(self) -> None:

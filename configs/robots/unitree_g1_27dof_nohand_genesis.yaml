@@ -7,7 +7,7 @@ robot:
 asset:
   format: mjcf
   genesis_morph: MJCF
-  path: /root/h200-locomotion-lab-runs/task002-sonic-mujoco-smoke/GR00T-WholeBodyControl/gear_sonic/data/robots/g1/g1_27dof_nohand.xml
+  path: /home/xyzl/yubo/locomotion_rl/external/unitree_rl_mjlab/src/assets/robots/unitree_g1/xmls/g1_27dof_nohand.xml
   usage: prepared_path_metadata_only
 training_contract:
   sim_dt_s: 0.005

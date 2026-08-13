@@ -29,9 +29,9 @@ and runtime contract are confirmed.
 
 SONIC MuJoCo sim2sim is the priority path on H200.
 
-Isaac Lab training may be attempted once, with a small `num_envs` and tiny
-iteration count. If it fails due to Isaac Sim / RTX / Vulkan startup, stop that
-route and keep training experiments in Genesis or MuJoCo.
+Isaac Lab training may be attempted only if explicitly requested, with a small
+`num_envs` and tiny iteration count. If it fails due to Isaac Sim / RTX /
+Vulkan startup, stop that route and keep training experiments in MuJoCo.
 
 ## Reproduction Levels
 
@@ -68,4 +68,3 @@ L4: Full reproduction.
 - Training CUDA: `12.x`.
 
 Wrong TensorRT version can produce wrong motion. Treat this as a hard blocker.
-

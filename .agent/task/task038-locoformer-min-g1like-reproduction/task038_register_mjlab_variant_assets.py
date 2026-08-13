@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 
-ROOT = Path("/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab")
+ROOT = Path("/home/xyzl/yubo/locomotion_rl/external/unitree_rl_mjlab")
 
 TRAIN_TASK_ID = "Unitree-G1-Gripper-Flat-Task038-TrainAssetSmoke"
 HELDOUT_TASK_ID = "Unitree-G1-Gripper-Flat-Task038-HeldoutAssetSmoke"
@@ -22,12 +22,12 @@ HELDOUT_TRUE_TXL_RUNNER_SMOKE_TASK_ID = (
 )
 
 TASK038_TRAIN_XML = (
-    "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/"
-    "outputs/task038/g1like_compile_smoke/variants/g1like-train-none-e6ba46370d.xml"
+    "/home/xyzl/yubo/locomotion_rl/external/unitree_rl_mjlab/src/assets/robots/"
+    "unitree_g1_gripper/xmls/g1_gripper.xml"
 )
 TASK038_HELDOUT_XML = (
-    "/mnt/workspace/users/guoyubo/agent_workspace/task025_sonic_mjlab_adapter/"
-    "outputs/task038/g1like_compile_smoke/variants/g1like-heldout-combined-6ac730c265.xml"
+    "/home/xyzl/yubo/locomotion_rl/external/unitree_rl_mjlab/src/assets/robots/"
+    "unitree_g1_gripper/xmls/g1_gripper.xml"
 )
 
 CONSTANTS_REL = Path("src/assets/robots/unitree_g1_gripper/g1_gripper_constants.py")

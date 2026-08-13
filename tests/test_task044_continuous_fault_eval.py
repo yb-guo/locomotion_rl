@@ -16,6 +16,7 @@ def test_task044_continuous_fault_eval_parse_args_defaults() -> None:
     assert args.dynamic_dead_joint == "left_knee_joint"
     assert args.dynamic_onset_s == 2.0
     assert args.dynamic_recovery_s == 999.0
+    assert args.dynamic_dead_scale == 0.0
     assert args.startup_excluded_s == 0.5
     assert args.post_fault_window_s == 2.0
     assert args.reset_time_bin_s == 0.5
@@ -156,6 +157,7 @@ def test_task044_continuous_failure_reasons_report_quality_and_continuity() -> N
 
     reasons = module._failure_reasons(
         args=args,
+        runner_cls=module.TASK044_CONTINUOUS_EXPECTED_RUNNER_CLS,
         action_dim=31,
         total_action_dim=31,
         actor_model_class="Task038TrueTxlMemoryModel",
@@ -168,6 +170,40 @@ def test_task044_continuous_failure_reasons_report_quality_and_continuity() -> N
     assert "physical_continuity_not_preserved" in reasons
     assert "post_fault_window_quality_not_passed" in reasons
     assert "post_fault_lin_vel_error_too_high" in reasons
+
+
+def test_task044_continuous_pipeline_rejects_wrong_runner_identity() -> None:
+    module = _load_src_tool("task044_continuous_fault_eval.py")
+    args = module.parse_args(["--checkpoint", "model.pt", "--output-json", "out.json"])
+    thresholds = module._thresholds(args)
+    window = _FakeStats(sample_count=100).to_json(trial_idx=0, num_envs=4)
+    window["expected_sample_count"] = 100
+    window["coverage_ratio"] = 1.0
+    window["completion_ratio"] = 1.0
+
+    assert not module._continuous_pipeline_pass(
+        runner_cls="WrongRunner",
+        expected_runner_cls=module.TASK044_CONTINUOUS_EXPECTED_RUNNER_CLS,
+        action_dim=31,
+        total_action_dim=31,
+        expected_action_dim=31,
+        actor_model_class="Task038TrueTxlMemoryModel",
+        expected_actor_model_class="Task038TrueTxlMemoryModel",
+        physical_continuity_pass=True,
+    )
+    reasons = module._failure_reasons(
+        args=args,
+        runner_cls="WrongRunner",
+        action_dim=31,
+        total_action_dim=31,
+        actor_model_class="Task038TrueTxlMemoryModel",
+        physical_continuity_pass=True,
+        post_fault_window=window,
+        post_fault_window_pass=True,
+        thresholds=thresholds,
+    )
+
+    assert reasons == ["runner_cls_mismatch"]
 
 
 def test_task044_continuous_memory_debug_active_requires_forward_samples_and_memory() -> None:

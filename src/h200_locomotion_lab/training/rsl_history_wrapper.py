@@ -355,6 +355,11 @@ class Task038TrueTxlMemoryModel(_base_mlp_model()):
         self._last_policy_memory_latent_norm: float | None = None
         self._task040_last_sequence_latents: Any | None = None
         self._task040_last_sequence_memory_latents: Any | None = None
+        self._task040_capture_rollout_start_requested = False
+        self._task040_rollout_start_memory_state: dict[str, Any] | None = None
+        self._task040_rollout_start_snapshot_id = 0
+        self._task040_last_initial_memory_mode = "none"
+        self._task040_last_initial_memory_non_empty = False
 
     def get_latent(
         self,
@@ -367,10 +372,13 @@ class Task038TrueTxlMemoryModel(_base_mlp_model()):
         batch = int(normalized_history.shape[0])
         if self._task042_memory_ablation_mode == "stateless_txl_memory":
             self._ensure_cache(batch, normalized_history.device, normalized_history.dtype)
+            self._task040_capture_requested_rollout_start(batch)
             return self._get_stateless_latent(normalized_history)
         if self._memory_tensors and batch != int(self._memory_tensors[0].shape[0]):
+            self._task040_capture_rollout_start_requested = False
             return self._get_stateless_latent(normalized_history)
         self._ensure_cache(batch, normalized_history.device, normalized_history.dtype)
+        self._task040_capture_requested_rollout_start(batch)
         frames = normalized_history.reshape(batch, self.history_len, self.frame_dim)
         segment = frames[:, -self.segment_len :, :]
         tokens = self.token_projection(segment) + self.position_embedding.unsqueeze(0)
@@ -425,6 +433,7 @@ class Task038TrueTxlMemoryModel(_base_mlp_model()):
         assert self._incremental_steps is not None
         assert self._segments_appended is not None
         assert self._tokens_appended is not None
+        memory_ablation_mode = getattr(self, "_task042_memory_ablation_mode", "none")
         envs = []
         num_envs = int(self._incremental_steps.shape[0])
         for env_id in range(num_envs):
@@ -479,17 +488,26 @@ class Task038TrueTxlMemoryModel(_base_mlp_model()):
             "sequence_update_reset_events": int(
                 getattr(self, "_sequence_update_reset_events", 0)
             ),
-            "task042_memory_ablation_mode": self._task042_memory_ablation_mode,
-            "memory_residual_enabled": self._task042_memory_ablation_mode
+            "task040_rollout_start_snapshot": self.task040_rollout_start_debug_snapshot(),
+            "task040_last_initial_memory_mode": getattr(
+                self,
+                "_task040_last_initial_memory_mode",
+                "none",
+            ),
+            "task040_last_initial_memory_non_empty": bool(
+                getattr(self, "_task040_last_initial_memory_non_empty", False)
+            ),
+            "task042_memory_ablation_mode": memory_ablation_mode,
+            "memory_residual_enabled": memory_ablation_mode
             not in {"zero_txl_residual", "zero_memory_latent"},
-            "memory_latent_enabled": self._task042_memory_ablation_mode != "zero_memory_latent",
-            "stateful_memory_enabled": self._task042_memory_ablation_mode != "stateless_txl_memory",
-            "base_obs_passthrough_scale": self.base_obs_passthrough_scale,
-            "adaptation_warmstart_scale": self.adaptation_warmstart_scale,
-            "txl_residual_output_norm_last": self._last_txl_residual_output_norm,
-            "txl_residual_raw_norm_last": self._last_txl_residual_raw_norm,
-            "adaptation_output_norm_last": self._last_adaptation_output_norm,
-            "policy_memory_latent_norm_last": self._last_policy_memory_latent_norm,
+            "memory_latent_enabled": memory_ablation_mode != "zero_memory_latent",
+            "stateful_memory_enabled": memory_ablation_mode != "stateless_txl_memory",
+            "base_obs_passthrough_scale": getattr(self, "base_obs_passthrough_scale", 1.0),
+            "adaptation_warmstart_scale": getattr(self, "adaptation_warmstart_scale", 1.0),
+            "txl_residual_output_norm_last": getattr(self, "_last_txl_residual_output_norm", None),
+            "txl_residual_raw_norm_last": getattr(self, "_last_txl_residual_raw_norm", None),
+            "adaptation_output_norm_last": getattr(self, "_last_adaptation_output_norm", None),
+            "policy_memory_latent_norm_last": getattr(self, "_last_policy_memory_latent_norm", None),
         }
 
     def task042_set_memory_ablation_mode(self, mode: str) -> None:
@@ -526,11 +544,51 @@ class Task038TrueTxlMemoryModel(_base_mlp_model()):
         for lengths in self._memory_lengths:
             lengths[env_ids_tensor] = 0
 
+    def task040_request_rollout_start_capture(self) -> None:
+        if self._task040_rollout_start_memory_state is None:
+            self._task040_capture_rollout_start_requested = True
+
+    def task040_has_rollout_start_state(self) -> bool:
+        return self._task040_rollout_start_memory_state is not None
+
+    def task040_rollout_start_state(self) -> dict[str, Any] | None:
+        state = self._task040_rollout_start_memory_state
+        if state is None:
+            return None
+        return {
+            "mode": state["mode"],
+            "snapshot_id": int(state["snapshot_id"]),
+            "non_empty": bool(state["non_empty"]),
+            "memory_tensors": [tensor.detach().clone() for tensor in state["memory_tensors"]],
+            "memory_lengths": [lengths.detach().clone() for lengths in state["memory_lengths"]],
+        }
+
+    def task040_clear_rollout_start_state(self) -> None:
+        self._task040_capture_rollout_start_requested = False
+        self._task040_rollout_start_memory_state = None
+
+    def task040_rollout_start_debug_snapshot(self) -> dict[str, Any]:
+        state = getattr(self, "_task040_rollout_start_memory_state", None)
+        return {
+            "capture_requested": bool(
+                getattr(self, "_task040_capture_rollout_start_requested", False)
+            ),
+            "available": state is not None,
+            "mode": state.get("mode") if state is not None else "none",
+            "snapshot_id": int(state.get("snapshot_id", 0)) if state is not None else 0,
+            "non_empty": bool(state.get("non_empty", False)) if state is not None else False,
+            "num_envs": int(state["memory_lengths"][0].shape[0])
+            if state is not None and state.get("memory_lengths")
+            else 0,
+        }
+
     def task040_forward_sequence(
         self,
         obs: Any,
         *,
         reset_mask: Any | None = None,
+        initial_memory_state: Mapping[str, Any] | None = None,
+        normalizer_states: list[Mapping[str, Any] | None] | None = None,
         stochastic_output: bool = False,
     ) -> Any:
         """Forward a rollout sequence without using or mutating the inference cache.
@@ -541,9 +599,14 @@ class Task038TrueTxlMemoryModel(_base_mlp_model()):
         path used only by the update algorithm.
         """
 
-        latents = self.task040_get_sequence_latent(obs, reset_mask=reset_mask)
+        latents = self.task040_get_sequence_latent(
+            obs,
+            reset_mask=reset_mask,
+            initial_memory_state=initial_memory_state,
+            normalizer_states=normalizer_states,
+        )
         self._task040_last_sequence_latents = latents
-        mlp_output = self.mlp(latents)
+        mlp_output = self._task040_forward_sequence_mlp_per_rollout_step(obs, latents)
         if self.distribution is not None:
             if stochastic_output:
                 self.distribution.update(mlp_output)
@@ -551,9 +614,37 @@ class Task038TrueTxlMemoryModel(_base_mlp_model()):
             return self.distribution.deterministic_output(mlp_output)
         return mlp_output
 
-    def task040_get_sequence_latent(self, obs: Any, *, reset_mask: Any | None = None) -> Any:
+    def _task040_forward_sequence_mlp_per_rollout_step(self, obs: Any, latents: Any) -> Any:
         torch = _require_torch()
-        normalized_history = self._task040_normalized_sequence_history(obs)
+        steps = _task040_sequence_step_count(obs)
+        if steps <= 0:
+            raise ValueError("Task040 sequence observations must contain at least one step")
+        total = int(latents.shape[0])
+        if total % steps != 0:
+            raise ValueError(
+                "Task040 sequence latent count must be divisible by step count: "
+                f"got total={total}, steps={steps}"
+            )
+        batch = total // steps
+        latent_shape = tuple(latents.shape[1:])
+        stepped_latents = latents.reshape(steps, batch, *latent_shape)
+        stepped_outputs = [self.mlp(stepped_latents[step]) for step in range(steps)]
+        output = torch.stack(stepped_outputs, dim=0)
+        return output.reshape(steps * batch, *tuple(output.shape[2:]))
+
+    def task040_get_sequence_latent(
+        self,
+        obs: Any,
+        *,
+        reset_mask: Any | None = None,
+        initial_memory_state: Mapping[str, Any] | None = None,
+        normalizer_states: list[Mapping[str, Any] | None] | None = None,
+    ) -> Any:
+        torch = _require_torch()
+        normalized_history = self._task040_normalized_sequence_history(
+            obs,
+            normalizer_states=normalizer_states,
+        )
         if len(normalized_history.shape) != 3:
             raise ValueError(
                 "Task040 sequence history must have shape [time, batch, obs_dim], "
@@ -574,18 +665,20 @@ class Task038TrueTxlMemoryModel(_base_mlp_model()):
             device=normalized_history.device,
         )
 
-        memory_tensors = [
-            torch.zeros(
-                (batch, self.memory_len, self.token_dim),
+        memory_tensors, memory_lengths, memory_mode, memory_non_empty = (
+            _task040_sequence_initial_memory(
+                torch,
+                initial_memory_state,
+                batch=batch,
+                num_layers=self.num_layers,
+                memory_len=self.memory_len,
+                token_dim=self.token_dim,
                 device=normalized_history.device,
                 dtype=normalized_history.dtype,
             )
-            for _ in range(self.num_layers)
-        ]
-        memory_lengths = [
-            torch.zeros(batch, device=normalized_history.device, dtype=torch.long)
-            for _ in range(self.num_layers)
-        ]
+        )
+        self._task040_last_initial_memory_mode = memory_mode
+        self._task040_last_initial_memory_non_empty = memory_non_empty
 
         latents = []
         memory_latents = []
@@ -646,6 +739,24 @@ class Task038TrueTxlMemoryModel(_base_mlp_model()):
             self.memory_latent_dim,
         )
         return torch.stack(latents, dim=0).reshape(steps * batch, self._get_latent_dim())
+
+    def _task040_capture_requested_rollout_start(self, batch: int) -> None:
+        if not self._task040_capture_rollout_start_requested:
+            return
+        self._task040_capture_rollout_start_requested = False
+        if not self._memory_tensors or not self._memory_lengths:
+            return
+        if int(self._memory_tensors[0].shape[0]) != int(batch):
+            return
+        non_empty = any(bool((lengths > 0).any().detach().cpu().item()) for lengths in self._memory_lengths)
+        self._task040_rollout_start_snapshot_id += 1
+        self._task040_rollout_start_memory_state = {
+            "mode": "rollout_start_snapshot",
+            "snapshot_id": int(self._task040_rollout_start_snapshot_id),
+            "non_empty": bool(non_empty),
+            "memory_tensors": [tensor.detach().clone() for tensor in self._memory_tensors],
+            "memory_lengths": [lengths.detach().clone() for lengths in self._memory_lengths],
+        }
 
     def task044_memory_latents_from_last_sequence(self) -> Any | None:
         return self._task040_last_sequence_memory_latents
@@ -720,7 +831,12 @@ class Task038TrueTxlMemoryModel(_base_mlp_model()):
             newest_base_obs = newest_base_obs * self.base_obs_passthrough_scale
         return torch.cat((newest_base_obs, memory_latent), dim=-1)
 
-    def _task040_normalized_sequence_history(self, obs: Any) -> Any:
+    def _task040_normalized_sequence_history(
+        self,
+        obs: Any,
+        *,
+        normalizer_states: list[Mapping[str, Any] | None] | None = None,
+    ) -> Any:
         torch = _require_torch()
         obs_list = [obs[obs_group] for obs_group in self.obs_groups]
         history = torch.cat(obs_list, dim=-1)
@@ -733,6 +849,21 @@ class Task038TrueTxlMemoryModel(_base_mlp_model()):
             )
         steps = int(history.shape[0])
         batch = int(history.shape[1])
+        if normalizer_states is not None:
+            if len(normalizer_states) != steps:
+                raise ValueError(
+                    "Task040 normalizer snapshot count mismatch: "
+                    f"got {len(normalizer_states)}, expected {steps}"
+                )
+            normalized_steps = [
+                _task040_apply_obs_normalizer_state(
+                    torch,
+                    history[step],
+                    normalizer_states[step],
+                )
+                for step in range(steps)
+            ]
+            return torch.stack(normalized_steps, dim=0)
         flattened = history.reshape(steps * batch, int(history.shape[-1]))
         normalized = self.obs_normalizer(flattened)
         return normalized.reshape(steps, batch, int(normalized.shape[-1]))
@@ -1335,6 +1466,26 @@ class Task046PostResetRecoveryRewardVecEnvWrapper:
         self._tail_velocity_penalty_sum = torch.zeros((), device=self.device, dtype=torch.float32)
         self._orientation_penalty_sum = torch.zeros((), device=self.device, dtype=torch.float32)
         self._root_height_penalty_sum = torch.zeros((), device=self.device, dtype=torch.float32)
+        self._last_inner_reset_reason = torch.zeros(
+            self.num_envs,
+            device=self.device,
+            dtype=torch.long,
+        )
+        self._eligible_post_fall_sample_count = torch.zeros(
+            (),
+            device=self.device,
+            dtype=torch.float32,
+        )
+        self._timeout_retry_skipped_sample_count = torch.zeros(
+            (),
+            device=self.device,
+            dtype=torch.float32,
+        )
+        self._no_prior_fall_skipped_sample_count = torch.zeros(
+            (),
+            device=self.device,
+            dtype=torch.float32,
+        )
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.env, name)
@@ -1359,16 +1510,19 @@ class Task046PostResetRecoveryRewardVecEnvWrapper:
         return self.env.seed(seed)
 
     def reset(self) -> tuple[Any, dict[str, Any]]:
-        return self.env.reset()
+        obs, extras = self.env.reset()
+        self._last_inner_reset_reason.zero_()
+        return obs, extras
 
     def get_observations(self) -> Any:
         return self.env.get_observations()
 
     def step(self, actions: Any) -> tuple[Any, Any, Any, dict[str, Any]]:
         obs, rewards, dones, extras = self.env.step(actions)
+        extras = dict(extras or {})
+        self._update_reset_reason_state(extras)
         shaped_rewards, debug = self._shape_rewards(rewards, extras)
         if debug:
-            extras = dict(extras)
             extras["task046_post_reset_recovery_reward"] = debug
         return obs, shaped_rewards, dones, extras
 
@@ -1391,6 +1545,15 @@ class Task046PostResetRecoveryRewardVecEnvWrapper:
             "sample_count": int(sample_count),
             "recovery_sample_count": int(self._recovery_sample_count.detach().cpu().item()),
             "tail_sample_count": int(self._tail_sample_count.detach().cpu().item()),
+            "eligible_post_fall_sample_count": int(
+                self._eligible_post_fall_sample_count.detach().cpu().item()
+            ),
+            "timeout_retry_skipped_sample_count": int(
+                self._timeout_retry_skipped_sample_count.detach().cpu().item()
+            ),
+            "no_prior_fall_skipped_sample_count": int(
+                self._no_prior_fall_skipped_sample_count.detach().cpu().item()
+            ),
             "reward_delta_mean": float((self._reward_delta_sum / den).detach().cpu().item()),
             "early_velocity_penalty_mean": float(
                 (self._early_velocity_penalty_sum / den).detach().cpu().item()
@@ -1406,6 +1569,36 @@ class Task046PostResetRecoveryRewardVecEnvWrapper:
             ),
         }
 
+    def _update_reset_reason_state(self, extras: dict[str, Any]) -> None:
+        torch = _require_torch()
+        inner_reset = _any_extras_mask(
+            extras,
+            (INNER_RESET_KEY, TASK037_INNER_RESET_KEY),
+            self.device,
+            self.num_envs,
+        )
+        outer_reset = _any_extras_mask(
+            extras,
+            (OUTER_RESET_KEY, EPISODE_DONE_KEY, TASK037_OUTER_RESET_KEY, TASK037_EPISODE_DONE_KEY),
+            self.device,
+            self.num_envs,
+        )
+        if inner_reset is None:
+            inner_reset = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
+        if outer_reset is None:
+            outer_reset = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
+        reset_reason = extras.get(TASK037_RESET_REASON_KEY)
+        if reset_reason is None:
+            reset_reason = extras.get(RESET_REASON_KEY)
+        if reset_reason is None:
+            reset_reason = torch.zeros(self.num_envs, device=self.device, dtype=torch.long)
+        else:
+            reset_reason = reset_reason.to(device=self.device, dtype=torch.long)
+        if bool(inner_reset.any().item()):
+            self._last_inner_reset_reason[inner_reset] = reset_reason[inner_reset]
+        if bool(outer_reset.any().item()):
+            self._last_inner_reset_reason[outer_reset] = 0
+
     def _shape_rewards(self, rewards: Any, extras: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
         torch = _require_torch()
         trial_index = extras.get(TASK037_TRIAL_INDEX_KEY)
@@ -1417,12 +1610,37 @@ class Task046PostResetRecoveryRewardVecEnvWrapper:
         trial_index = trial_index.to(device=self.device, dtype=torch.long)
         trial_step = trial_step.to(device=self.device, dtype=torch.long)
         final_mask = trial_index >= self.final_trial_index
-        recovery_mask = final_mask & (trial_step > 0) & (trial_step <= self.recovery_window_steps)
-        tail_mask = final_mask & (trial_step > 0) & (trial_step > self.recovery_window_steps)
+        post_fall_mask = self._last_inner_reset_reason == 1
+        post_timeout_mask = self._last_inner_reset_reason == 2
+        recovery_window_mask = final_mask & (trial_step > 0) & (trial_step <= self.recovery_window_steps)
+        tail_window_mask = final_mask & (trial_step > 0) & (trial_step > self.recovery_window_steps)
         if self.tail_window_steps > 0:
-            tail_mask = tail_mask & (trial_step <= self.recovery_window_steps + self.tail_window_steps)
-        if not bool((recovery_mask | tail_mask).any().item()):
+            tail_window_mask = tail_window_mask & (
+                trial_step <= self.recovery_window_steps + self.tail_window_steps
+            )
+        window_mask = recovery_window_mask | tail_window_mask
+        recovery_mask = recovery_window_mask & post_fall_mask
+        tail_mask = tail_window_mask & post_fall_mask
+        skipped_timeout_mask = window_mask & post_timeout_mask
+        skipped_no_prior_fall_mask = window_mask & ~post_fall_mask & ~post_timeout_mask
+        if not bool((window_mask).any().item()):
             return rewards, {}
+        if not bool((recovery_mask | tail_mask).any().item()):
+            self._timeout_retry_skipped_sample_count += skipped_timeout_mask.float().sum()
+            self._no_prior_fall_skipped_sample_count += skipped_no_prior_fall_mask.float().sum()
+            return rewards, {
+                "active_count": 0,
+                "recovery_count": 0,
+                "tail_count": 0,
+                "eligible_post_fall_count": 0,
+                "timeout_retry_skipped_count": int(
+                    skipped_timeout_mask.float().sum().detach().cpu().item()
+                ),
+                "no_prior_fall_skipped_count": int(
+                    skipped_no_prior_fall_mask.float().sum().detach().cpu().item()
+                ),
+                "reward_delta_mean": 0.0,
+            }
 
         robot = self.unwrapped.scene["robot"]
         command = self.unwrapped.command_manager.get_command("twist")
@@ -1451,6 +1669,9 @@ class Task046PostResetRecoveryRewardVecEnvWrapper:
         self._sample_count += active.float().sum()
         self._recovery_sample_count += recovery_mask.float().sum()
         self._tail_sample_count += tail_mask.float().sum()
+        self._eligible_post_fall_sample_count += active.float().sum()
+        self._timeout_retry_skipped_sample_count += skipped_timeout_mask.float().sum()
+        self._no_prior_fall_skipped_sample_count += skipped_no_prior_fall_mask.float().sum()
         self._reward_delta_sum += (-total_penalty[active]).float().sum()
         self._early_velocity_penalty_sum += early_velocity_penalty[active].float().sum()
         self._tail_velocity_penalty_sum += tail_velocity_penalty[active].float().sum()
@@ -1461,6 +1682,13 @@ class Task046PostResetRecoveryRewardVecEnvWrapper:
             "active_count": int(active.float().sum().detach().cpu().item()),
             "recovery_count": int(recovery_mask.float().sum().detach().cpu().item()),
             "tail_count": int(tail_mask.float().sum().detach().cpu().item()),
+            "eligible_post_fall_count": int(active.float().sum().detach().cpu().item()),
+            "timeout_retry_skipped_count": int(
+                skipped_timeout_mask.float().sum().detach().cpu().item()
+            ),
+            "no_prior_fall_skipped_count": int(
+                skipped_no_prior_fall_mask.float().sum().detach().cpu().item()
+            ),
             "reward_delta_mean": float((-total_penalty[active]).mean().detach().cpu().item()),
         }
 
@@ -1880,6 +2108,20 @@ class Task040SequenceAwareTrueTxlPPO(_base_ppo()):
         self.task040_sequence_update_samples = 0
         self.task040_sequence_update_steps = 0
         self.task040_last_loss_dict: dict[str, float] | None = None
+        self.task040_last_logprob_parity: dict[str, Any] | None = None
+        self.task040_last_actor_normalizer_snapshot_count = 0
+        self._task040_rollout_actor_normalizer_states: list[dict[str, Any] | None] = []
+        self.task040_rollout_act_inference_mode_disabled = True
+        self.task040_attention_backend_settings = (
+            _task040_configure_attention_replay_determinism(_require_torch())
+        )
+
+    def act(self, *args: Any, **kwargs: Any) -> Any:
+        self._task040_request_rollout_start_capture_if_needed()
+        self._task040_record_actor_normalizer_state_for_current_step()
+        torch = _require_torch()
+        with torch.inference_mode(False), torch.no_grad():
+            return super().act(*args, **kwargs)
 
     def update(self) -> dict[str, float]:
         if self.rnd:
@@ -1893,126 +2135,148 @@ class Task040SequenceAwareTrueTxlPPO(_base_ppo()):
         nn = torch.nn
         functional = nn.functional
         st = self.storage
+        rollout_start_state = self._task040_rollout_start_state_for_update(st)
+        normalizer_states = self._task040_actor_normalizer_states_for_update(st)
+        self.task040_last_actor_normalizer_snapshot_count = int(len(normalizer_states or []))
+        self.task040_last_logprob_parity = self._task040_logprob_parity_diagnostics(
+            st,
+            rollout_start_state,
+            torch,
+            normalizer_states=normalizer_states,
+        )
         mean_value_loss = 0.0
         mean_surrogate_loss = 0.0
         mean_entropy = 0.0
         mean_fault_aux_loss = 0.0
         update_count = 0
 
-        for _epoch in range(self.num_learning_epochs):
-            for env_start, env_stop in _task040_sequence_env_slices(
-                st.num_envs,
-                self.num_mini_batches,
-            ):
-                obs_seq = st.observations[:, env_start:env_stop]
-                reset_mask = _task040_reset_mask_from_dones(st.dones[:, env_start:env_stop])
-                actions = _task040_flatten_time_env(st.actions[:, env_start:env_stop])
-                old_actions_log_prob = _task040_flatten_time_env(
-                    st.actions_log_prob[:, env_start:env_stop]
-                )
-                old_distribution_params = tuple(
-                    _task040_flatten_time_env(param[:, env_start:env_stop])
-                    for param in st.distribution_params
-                )
-                values_old = _task040_flatten_time_env(st.values[:, env_start:env_stop])
-                returns = _task040_flatten_time_env(st.returns[:, env_start:env_stop])
-                advantages = _task040_flatten_time_env(st.advantages[:, env_start:env_stop])
-                if self.normalize_advantage_per_mini_batch:
-                    with torch.no_grad():
-                        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-
-                self.actor.task040_forward_sequence(
-                    obs_seq,
-                    reset_mask=reset_mask,
-                    stochastic_output=True,
-                )
-                fault_aux_loss = None
-                if self.task044_fault_aux_loss_weight > 0.0:
-                    fault_aux_loss = self._task044_fault_aux_loss(
-                        functional,
-                        st.observations,
-                        env_start=env_start,
-                        env_stop=env_stop,
+        try:
+            for _epoch in range(self.num_learning_epochs):
+                for env_start, env_stop in _task040_sequence_env_slices(
+                    st.num_envs,
+                    self.num_mini_batches,
+                ):
+                    obs_seq = st.observations[:, env_start:env_stop]
+                    reset_mask = _task040_reset_mask_from_dones(st.dones[:, env_start:env_stop])
+                    initial_memory_state = _task040_slice_sequence_initial_memory(
+                        rollout_start_state,
+                        env_start,
+                        env_stop,
                     )
-                actions_log_prob = self.actor.get_output_log_prob(actions)
-                obs_flat = obs_seq.flatten(0, 1)
-                values = self.critic(obs_flat)
-                distribution_params = tuple(self.actor.output_distribution_params)
-                entropy = self.actor.output_entropy
+                    actions = _task040_flatten_time_env(st.actions[:, env_start:env_stop])
+                    old_actions_log_prob = _task040_flatten_time_env(
+                        st.actions_log_prob[:, env_start:env_stop]
+                    )
+                    old_distribution_params = tuple(
+                        _task040_flatten_time_env(param[:, env_start:env_stop])
+                        for param in st.distribution_params
+                    )
+                    values_old = _task040_flatten_time_env(st.values[:, env_start:env_stop])
+                    returns = _task040_flatten_time_env(st.returns[:, env_start:env_stop])
+                    advantages = _task040_flatten_time_env(st.advantages[:, env_start:env_stop])
+                    if self.normalize_advantage_per_mini_batch:
+                        with torch.no_grad():
+                            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-                if self.desired_kl is not None and self.schedule == "adaptive":
-                    with torch.inference_mode():
-                        kl = self.actor.get_kl_divergence(
-                            old_distribution_params,
-                            distribution_params,
+                    self.actor.task040_forward_sequence(
+                        obs_seq,
+                        reset_mask=reset_mask,
+                        initial_memory_state=initial_memory_state,
+                        normalizer_states=normalizer_states,
+                        stochastic_output=True,
+                    )
+                    fault_aux_loss = None
+                    if self.task044_fault_aux_loss_weight > 0.0:
+                        fault_aux_loss = self._task044_fault_aux_loss(
+                            functional,
+                            st.observations,
+                            env_start=env_start,
+                            env_stop=env_stop,
                         )
-                        kl_mean = torch.mean(kl)
-                        if self.is_multi_gpu:
-                            torch.distributed.all_reduce(
-                                kl_mean,
-                                op=torch.distributed.ReduceOp.SUM,
+                    actions_log_prob = self.actor.get_output_log_prob(actions)
+                    obs_flat = obs_seq.flatten(0, 1)
+                    values = self.critic(obs_flat)
+                    distribution_params = tuple(self.actor.output_distribution_params)
+                    entropy = self.actor.output_entropy
+
+                    if self.desired_kl is not None and self.schedule == "adaptive":
+                        with torch.inference_mode():
+                            kl = self.actor.get_kl_divergence(
+                                old_distribution_params,
+                                distribution_params,
                             )
-                            kl_mean /= self.gpu_world_size
-                        if self.gpu_global_rank == 0:
-                            if kl_mean > self.desired_kl * 2.0:
-                                self.learning_rate = max(1e-5, self.learning_rate / 1.5)
-                            elif kl_mean < self.desired_kl / 2.0 and kl_mean > 0.0:
-                                self.learning_rate = min(1e-2, self.learning_rate * 1.5)
-                        if self.is_multi_gpu:
-                            lr_tensor = torch.tensor(self.learning_rate, device=self.device)
-                            torch.distributed.broadcast(lr_tensor, src=0)
-                            self.learning_rate = lr_tensor.item()
-                        for param_group in self.optimizer.param_groups:
-                            param_group["lr"] = self.learning_rate
+                            kl_mean = torch.mean(kl)
+                            if self.is_multi_gpu:
+                                torch.distributed.all_reduce(
+                                    kl_mean,
+                                    op=torch.distributed.ReduceOp.SUM,
+                                )
+                                kl_mean /= self.gpu_world_size
+                            if self.gpu_global_rank == 0:
+                                if kl_mean > self.desired_kl * 2.0:
+                                    self.learning_rate = max(1e-5, self.learning_rate / 1.5)
+                                elif kl_mean < self.desired_kl / 2.0 and kl_mean > 0.0:
+                                    self.learning_rate = min(1e-2, self.learning_rate * 1.5)
+                            if self.is_multi_gpu:
+                                lr_tensor = torch.tensor(self.learning_rate, device=self.device)
+                                torch.distributed.broadcast(lr_tensor, src=0)
+                                self.learning_rate = lr_tensor.item()
+                            for param_group in self.optimizer.param_groups:
+                                param_group["lr"] = self.learning_rate
 
-                ratio = torch.exp(actions_log_prob - torch.squeeze(old_actions_log_prob))
-                surrogate = -torch.squeeze(advantages) * ratio
-                surrogate_clipped = -torch.squeeze(advantages) * torch.clamp(
-                    ratio,
-                    1.0 - self.clip_param,
-                    1.0 + self.clip_param,
-                )
-                surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
-
-                if self.use_clipped_value_loss:
-                    value_clipped = values_old + (values - values_old).clamp(
-                        -self.clip_param,
-                        self.clip_param,
+                    ratio = torch.exp(actions_log_prob - torch.squeeze(old_actions_log_prob))
+                    surrogate = -torch.squeeze(advantages) * ratio
+                    surrogate_clipped = -torch.squeeze(advantages) * torch.clamp(
+                        ratio,
+                        1.0 - self.clip_param,
+                        1.0 + self.clip_param,
                     )
-                    value_losses = (values - returns).pow(2)
-                    value_losses_clipped = (value_clipped - returns).pow(2)
-                    value_loss = torch.max(value_losses, value_losses_clipped).mean()
-                else:
-                    value_loss = (returns - values).pow(2).mean()
+                    surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
 
-                loss = (
-                    surrogate_loss
-                    + self.value_loss_coef * value_loss
-                    - self.entropy_coef * entropy.mean()
-                )
-                if fault_aux_loss is not None:
-                    loss = loss + self.task044_fault_aux_loss_weight * fault_aux_loss
-                self.optimizer.zero_grad()
-                loss.backward()
-                if self.is_multi_gpu:
-                    self.reduce_parameters()
-                nn.utils.clip_grad_norm_(self.actor.parameters(), self.max_grad_norm)
-                nn.utils.clip_grad_norm_(self.critic.parameters(), self.max_grad_norm)
-                self.optimizer.step()
+                    if self.use_clipped_value_loss:
+                        value_clipped = values_old + (values - values_old).clamp(
+                            -self.clip_param,
+                            self.clip_param,
+                        )
+                        value_losses = (values - returns).pow(2)
+                        value_losses_clipped = (value_clipped - returns).pow(2)
+                        value_loss = torch.max(value_losses, value_losses_clipped).mean()
+                    else:
+                        value_loss = (returns - values).pow(2).mean()
 
-                sample_count = int(actions.shape[0])
-                step_count = int(obs_seq.batch_size[0])
-                self.task040_sequence_update_batches += 1
-                self.task040_sequence_update_samples += sample_count
-                self.task040_sequence_update_steps += step_count
-                mean_value_loss += float(value_loss.item())
-                mean_surrogate_loss += float(surrogate_loss.item())
-                mean_entropy += float(entropy.mean().item())
-                if fault_aux_loss is not None:
-                    mean_fault_aux_loss += float(fault_aux_loss.item())
-                    self.task044_fault_aux_updates += 1
-                    self.task044_fault_aux_last_loss = float(fault_aux_loss.item())
-                update_count += 1
+                    loss = (
+                        surrogate_loss
+                        + self.value_loss_coef * value_loss
+                        - self.entropy_coef * entropy.mean()
+                    )
+                    if fault_aux_loss is not None:
+                        loss = loss + self.task044_fault_aux_loss_weight * fault_aux_loss
+                    self.optimizer.zero_grad()
+                    loss.backward()
+                    if self.is_multi_gpu:
+                        self.reduce_parameters()
+                    nn.utils.clip_grad_norm_(self.actor.parameters(), self.max_grad_norm)
+                    nn.utils.clip_grad_norm_(self.critic.parameters(), self.max_grad_norm)
+                    self.optimizer.step()
+
+                    sample_count = int(actions.shape[0])
+                    step_count = _task040_sequence_step_count(obs_seq)
+                    self.task040_sequence_update_batches += 1
+                    self.task040_sequence_update_samples += sample_count
+                    self.task040_sequence_update_steps += step_count
+                    mean_value_loss += float(value_loss.item())
+                    mean_surrogate_loss += float(surrogate_loss.item())
+                    mean_entropy += float(entropy.mean().item())
+                    if fault_aux_loss is not None:
+                        mean_fault_aux_loss += float(fault_aux_loss.item())
+                        self.task044_fault_aux_updates += 1
+                        self.task044_fault_aux_last_loss = float(fault_aux_loss.item())
+                    update_count += 1
+        finally:
+            clear_rollout_start = getattr(self.actor, "task040_clear_rollout_start_state", None)
+            if callable(clear_rollout_start):
+                clear_rollout_start()
+            self._task040_rollout_actor_normalizer_states = []
 
         if update_count <= 0:
             raise RuntimeError("Task040 sequence-aware PPO produced no update batches")
@@ -2093,6 +2357,17 @@ class Task040SequenceAwareTrueTxlPPO(_base_ppo()):
             "sequence_update_samples": int(self.task040_sequence_update_samples),
             "sequence_update_steps": int(self.task040_sequence_update_steps),
             "last_loss_dict": dict(self.task040_last_loss_dict or {}),
+            "last_logprob_parity": dict(self.task040_last_logprob_parity or {}),
+            "rollout_act_inference_mode_disabled": bool(
+                self.task040_rollout_act_inference_mode_disabled
+            ),
+            "attention_backend_settings": dict(self.task040_attention_backend_settings),
+            "actor_normalizer_snapshot_count": int(
+                len(self._task040_rollout_actor_normalizer_states)
+            ),
+            "last_actor_normalizer_snapshot_count": int(
+                self.task040_last_actor_normalizer_snapshot_count
+            ),
             "task044_fault_aux_loss_weight": float(self.task044_fault_aux_loss_weight),
             "task044_fault_aux_obs_key": self.task044_fault_aux_obs_key,
             "task044_fault_aux_num_classes": int(self.task044_fault_aux_num_classes),
@@ -2101,6 +2376,198 @@ class Task040SequenceAwareTrueTxlPPO(_base_ppo()):
             "task044_fault_aux_updates": int(self.task044_fault_aux_updates),
             "task044_fault_aux_last_loss": self.task044_fault_aux_last_loss,
         }
+
+    def _task040_request_rollout_start_capture_if_needed(self) -> None:
+        if not hasattr(self.actor, "task040_forward_sequence"):
+            return
+        storage = getattr(self, "storage", None)
+        if storage is None:
+            return
+        step = getattr(storage, "step", None)
+        if step is None or int(step) != 0:
+            return
+        has_state = getattr(self.actor, "task040_has_rollout_start_state", None)
+        if callable(has_state) and bool(has_state()):
+            return
+        request_capture = getattr(self.actor, "task040_request_rollout_start_capture", None)
+        if callable(request_capture):
+            request_capture()
+
+    def _task040_record_actor_normalizer_state_for_current_step(self) -> None:
+        if not hasattr(self.actor, "task040_forward_sequence"):
+            return
+        storage = getattr(self, "storage", None)
+        if storage is None:
+            return
+        step = getattr(storage, "step", None)
+        if step is None:
+            return
+        step_int = int(step)
+        if step_int < 0:
+            return
+        if step_int == 0:
+            self._task040_rollout_actor_normalizer_states = []
+        max_steps = int(getattr(storage, "num_transitions_per_env", step_int + 1))
+        if step_int >= max_steps:
+            return
+        while len(self._task040_rollout_actor_normalizer_states) <= step_int:
+            self._task040_rollout_actor_normalizer_states.append(None)
+        self._task040_rollout_actor_normalizer_states[step_int] = (
+            _task040_clone_actor_obs_normalizer_state(self.actor)
+        )
+
+    def _task040_actor_normalizer_states_for_update(
+        self,
+        storage: Any,
+    ) -> list[dict[str, Any] | None] | None:
+        states = list(getattr(self, "_task040_rollout_actor_normalizer_states", []))
+        if not states:
+            return None
+        expected_steps = int(storage.num_transitions_per_env)
+        if len(states) != expected_steps:
+            raise RuntimeError(
+                "Task040 actor normalizer snapshot count mismatch: "
+                f"got {len(states)}, expected {expected_steps}"
+            )
+        return states
+
+    def _task040_rollout_start_state_for_update(self, storage: Any) -> dict[str, Any]:
+        get_state = getattr(self.actor, "task040_rollout_start_state", None)
+        state = get_state() if callable(get_state) else None
+        if state is None:
+            raise RuntimeError(
+                "Task040 sequence PPO is missing the rollout-start TXL memory snapshot"
+            )
+        return _task040_validate_rollout_start_state(state, expected_num_envs=int(storage.num_envs))
+
+    def _task040_logprob_parity_diagnostics(
+        self,
+        storage: Any,
+        rollout_start_state: Mapping[str, Any],
+        torch: Any,
+        *,
+        normalizer_states: list[Mapping[str, Any] | None] | None = None,
+    ) -> dict[str, Any]:
+        max_logprob_abs_error = torch.zeros((), device=self.device)
+        max_ratio_abs_error = torch.zeros((), device=self.device)
+        max_stored_logprob_recompute_abs_error = torch.zeros((), device=self.device)
+        max_distribution_param_abs_errors: list[Any] = []
+        slice_count = 0
+        sample_count = 0
+        non_empty_slice_count = 0
+        storage_distribution_params = getattr(storage, "distribution_params", None)
+        with torch.no_grad():
+            for env_start, env_stop in _task040_sequence_env_slices(
+                storage.num_envs,
+                self.num_mini_batches,
+            ):
+                obs_seq = storage.observations[:, env_start:env_stop]
+                reset_mask = _task040_reset_mask_from_dones(storage.dones[:, env_start:env_stop])
+                initial_memory_state = _task040_slice_sequence_initial_memory(
+                    rollout_start_state,
+                    env_start,
+                    env_stop,
+                )
+                actions = _task040_flatten_time_env(storage.actions[:, env_start:env_stop])
+                old_log_prob = torch.squeeze(
+                    _task040_flatten_time_env(storage.actions_log_prob[:, env_start:env_stop])
+                )
+                old_distribution_params = None
+                if storage_distribution_params is not None:
+                    old_distribution_params = tuple(
+                        _task040_flatten_time_env(param[:, env_start:env_stop])
+                        for param in storage_distribution_params
+                    )
+                self.actor.task040_forward_sequence(
+                    obs_seq,
+                    reset_mask=reset_mask,
+                    initial_memory_state=initial_memory_state,
+                    normalizer_states=normalizer_states,
+                    stochastic_output=True,
+                )
+                new_log_prob = self.actor.get_output_log_prob(actions)
+                if old_distribution_params is not None:
+                    new_distribution_params = tuple(
+                        getattr(self.actor, "output_distribution_params", ())
+                    )
+                    for param_index, (old_param, new_param) in enumerate(
+                        zip(old_distribution_params, new_distribution_params)
+                    ):
+                        while len(max_distribution_param_abs_errors) <= param_index:
+                            max_distribution_param_abs_errors.append(
+                                torch.zeros((), device=self.device)
+                            )
+                        if int(old_param.numel()) > 0:
+                            max_distribution_param_abs_errors[param_index] = torch.maximum(
+                                max_distribution_param_abs_errors[param_index],
+                                torch.abs(new_param - old_param).max(),
+                            )
+                    stored_recompute = _task040_distribution_log_prob_from_params(
+                        torch,
+                        old_distribution_params,
+                        actions,
+                    )
+                    if stored_recompute is not None and int(stored_recompute.numel()) > 0:
+                        max_stored_logprob_recompute_abs_error = torch.maximum(
+                            max_stored_logprob_recompute_abs_error,
+                            torch.abs(stored_recompute - old_log_prob).max(),
+                        )
+                logprob_abs_error = torch.abs(new_log_prob - old_log_prob)
+                ratio_abs_error = torch.abs(torch.exp(new_log_prob - old_log_prob) - 1.0)
+                if int(logprob_abs_error.numel()) > 0:
+                    max_logprob_abs_error = torch.maximum(
+                        max_logprob_abs_error,
+                        logprob_abs_error.max(),
+                    )
+                    max_ratio_abs_error = torch.maximum(
+                        max_ratio_abs_error,
+                        ratio_abs_error.max(),
+                    )
+                slice_count += 1
+                sample_count += int(actions.shape[0])
+                if bool(initial_memory_state.get("non_empty", False)):
+                    non_empty_slice_count += 1
+        return {
+            "mode": "rollout_start_snapshot",
+            "rollout_start_memory_non_empty": bool(rollout_start_state.get("non_empty", False)),
+            "non_empty_slice_count": int(non_empty_slice_count),
+            "slice_count": int(slice_count),
+            "sample_count": int(sample_count),
+            "normalizer_replay_mode": (
+                "per_step_snapshot"
+                if normalizer_states is not None
+                else "live_actor_normalizer"
+            ),
+            "normalizer_snapshot_count": int(len(normalizer_states or [])),
+            "max_distribution_param_abs_errors": [
+                float(value.detach().cpu().item()) for value in max_distribution_param_abs_errors
+            ],
+            "max_stored_logprob_recompute_abs_error": float(
+                max_stored_logprob_recompute_abs_error.detach().cpu().item()
+            ),
+            "max_logprob_abs_error": float(max_logprob_abs_error.detach().cpu().item()),
+            "max_ratio_abs_error": float(max_ratio_abs_error.detach().cpu().item()),
+            "threshold": 1e-5,
+            "pass": bool(
+                max_logprob_abs_error.detach().cpu().item() <= 1e-5
+                and max_ratio_abs_error.detach().cpu().item() <= 1e-5
+            ),
+        }
+
+
+def _task040_distribution_log_prob_from_params(
+    torch: Any,
+    distribution_params: tuple[Any, ...],
+    actions: Any,
+) -> Any | None:
+    if len(distribution_params) != 2:
+        return None
+    mean, std = distribution_params
+    try:
+        distribution = torch.distributions.Normal(mean, std)
+    except Exception:
+        return None
+    return distribution.log_prob(actions).sum(dim=-1)
 
 
 class Task037AdaptK160DeterministicInnerResetRunner(_Task037AdaptK160WarmstartMixin, _base_runner()):
@@ -2267,6 +2734,15 @@ def _task040_reset_mask_from_dones(dones: Any) -> Any:
     return reset_mask
 
 
+def _task040_sequence_step_count(obs_seq: Any) -> int:
+    batch_size = getattr(obs_seq, "batch_size", None)
+    if batch_size is not None:
+        return int(batch_size[0])
+    if not hasattr(obs_seq, "shape") or len(obs_seq.shape) <= 0:
+        raise ValueError("Task040 sequence observations must expose a time dimension")
+    return int(obs_seq.shape[0])
+
+
 def _task040_sequence_reset_mask(
     torch: Any,
     reset_mask: Any | None,
@@ -2288,6 +2764,149 @@ def _task040_sequence_reset_mask(
     return reset_mask
 
 
+def _task040_clone_actor_obs_normalizer_state(actor: Any) -> dict[str, Any] | None:
+    if not bool(getattr(actor, "obs_normalization", False)):
+        return None
+    normalizer = getattr(actor, "obs_normalizer", None)
+    mean = getattr(normalizer, "_mean", None)
+    std = getattr(normalizer, "_std", None)
+    if mean is None or std is None:
+        return None
+    count = getattr(normalizer, "count", None)
+    state: dict[str, Any] = {
+        "mean": mean.detach().clone(),
+        "std": std.detach().clone(),
+        "eps": float(getattr(normalizer, "eps", 0.0)),
+    }
+    if count is not None and hasattr(count, "detach"):
+        state["count"] = count.detach().clone()
+    return state
+
+
+def _task040_apply_obs_normalizer_state(
+    torch: Any,
+    values: Any,
+    state: Mapping[str, Any] | None,
+) -> Any:
+    if state is None:
+        return values
+    mean = state.get("mean")
+    std = state.get("std")
+    if mean is None or std is None:
+        raise ValueError("Task040 normalizer state must contain mean/std tensors")
+    mean = mean.detach().to(device=values.device, dtype=values.dtype)
+    std = std.detach().to(device=values.device, dtype=values.dtype)
+    eps = torch.as_tensor(float(state.get("eps", 0.0)), device=values.device, dtype=values.dtype)
+    return (values - mean) / (std + eps)
+
+
+def _task040_validate_rollout_start_state(
+    state: Mapping[str, Any],
+    *,
+    expected_num_envs: int,
+) -> dict[str, Any]:
+    memory_tensors = list(state.get("memory_tensors") or [])
+    memory_lengths = list(state.get("memory_lengths") or [])
+    if not memory_tensors or not memory_lengths or len(memory_tensors) != len(memory_lengths):
+        raise ValueError("Task040 rollout-start state must contain matching memory tensors/lengths")
+    for tensor, lengths in zip(memory_tensors, memory_lengths):
+        if int(tensor.shape[0]) != expected_num_envs:
+            raise ValueError(
+                "Task040 rollout-start tensor env count mismatch: "
+                f"got {int(tensor.shape[0])}, expected {expected_num_envs}"
+            )
+        if int(lengths.shape[0]) != expected_num_envs:
+            raise ValueError(
+                "Task040 rollout-start length env count mismatch: "
+                f"got {int(lengths.shape[0])}, expected {expected_num_envs}"
+            )
+    return {
+        "mode": str(state.get("mode") or "rollout_start_snapshot"),
+        "snapshot_id": int(state.get("snapshot_id") or 0),
+        "non_empty": bool(state.get("non_empty", False)),
+        "memory_tensors": memory_tensors,
+        "memory_lengths": memory_lengths,
+    }
+
+
+def _task040_slice_sequence_initial_memory(
+    state: Mapping[str, Any],
+    env_start: int,
+    env_stop: int,
+) -> dict[str, Any]:
+    memory_tensors = [tensor[env_start:env_stop].detach().clone() for tensor in state["memory_tensors"]]
+    memory_lengths = [
+        lengths[env_start:env_stop].detach().clone() for lengths in state["memory_lengths"]
+    ]
+    non_empty = any(bool((lengths > 0).any().detach().cpu().item()) for lengths in memory_lengths)
+    return {
+        "mode": state.get("mode", "rollout_start_snapshot"),
+        "snapshot_id": int(state.get("snapshot_id", 0)),
+        "non_empty": bool(non_empty),
+        "env_start": int(env_start),
+        "env_stop": int(env_stop),
+        "memory_tensors": memory_tensors,
+        "memory_lengths": memory_lengths,
+    }
+
+
+def _task040_sequence_initial_memory(
+    torch: Any,
+    initial_memory_state: Mapping[str, Any] | None,
+    *,
+    batch: int,
+    num_layers: int,
+    memory_len: int,
+    token_dim: int,
+    device: Any,
+    dtype: Any,
+) -> tuple[list[Any], list[Any], str, bool]:
+    if initial_memory_state is None:
+        return (
+            [
+                torch.zeros((batch, memory_len, token_dim), device=device, dtype=dtype)
+                for _ in range(num_layers)
+            ],
+            [torch.zeros(batch, device=device, dtype=torch.long) for _ in range(num_layers)],
+            "zero_initial_memory",
+            False,
+        )
+    tensors = list(initial_memory_state.get("memory_tensors") or [])
+    lengths = list(initial_memory_state.get("memory_lengths") or [])
+    if len(tensors) != num_layers or len(lengths) != num_layers:
+        raise ValueError(
+            "Task040 initial memory layer mismatch: "
+            f"got tensors={len(tensors)}, lengths={len(lengths)}, expected {num_layers}"
+        )
+    prepared_tensors = []
+    prepared_lengths = []
+    for layer_id, (tensor, layer_lengths) in enumerate(zip(tensors, lengths)):
+        tensor = tensor.detach().to(device=device, dtype=dtype).clone()
+        layer_lengths = layer_lengths.detach().to(device=device, dtype=torch.long).clone()
+        expected_tensor_shape = (batch, memory_len, token_dim)
+        if tuple(tensor.shape) != expected_tensor_shape:
+            raise ValueError(
+                "Task040 initial memory tensor shape mismatch "
+                f"for layer {layer_id}: got {tuple(tensor.shape)}, expected {expected_tensor_shape}"
+            )
+        if tuple(layer_lengths.shape) != (batch,):
+            raise ValueError(
+                "Task040 initial memory length shape mismatch "
+                f"for layer {layer_id}: got {tuple(layer_lengths.shape)}, expected ({batch},)"
+            )
+        if bool((layer_lengths < 0).any().item()) or bool((layer_lengths > memory_len).any().item()):
+            raise ValueError(f"Task040 initial memory lengths out of range for layer {layer_id}")
+        prepared_tensors.append(tensor)
+        prepared_lengths.append(layer_lengths)
+    non_empty = any(bool((layer_lengths > 0).any().detach().cpu().item()) for layer_lengths in prepared_lengths)
+    return (
+        prepared_tensors,
+        prepared_lengths,
+        str(initial_memory_state.get("mode") or "rollout_start_snapshot"),
+        bool(non_empty),
+    )
+
+
 def _task040_append_sequence_memory(
     torch: Any,
     memory: Any,
@@ -2307,6 +2926,48 @@ def _task040_append_sequence_memory(
         updated[env_id, :new_len] = combined
         updated_lengths[env_id] = new_len
     return updated, updated_lengths
+
+
+def _task040_configure_attention_replay_determinism(torch: Any) -> dict[str, Any]:
+    """Keep rollout-time and update-time attention numerics on the same path."""
+
+    settings: dict[str, Any] = {}
+    mha_backend = getattr(getattr(torch, "backends", None), "mha", None)
+    if mha_backend is not None:
+        get_fastpath = getattr(mha_backend, "get_fastpath_enabled", None)
+        set_fastpath = getattr(mha_backend, "set_fastpath_enabled", None)
+        if callable(get_fastpath) and callable(set_fastpath):
+            settings["mha_fastpath_before"] = bool(get_fastpath())
+            set_fastpath(False)
+            settings["mha_fastpath_after"] = bool(get_fastpath())
+
+    cuda_backend = getattr(getattr(torch, "backends", None), "cuda", None)
+    if cuda_backend is not None:
+        for name, enabled in (
+            ("flash", False),
+            ("mem_efficient", False),
+            ("cudnn", False),
+            ("math", True),
+        ):
+            getter = getattr(cuda_backend, f"{name}_sdp_enabled", None)
+            setter = getattr(cuda_backend, f"enable_{name}_sdp", None)
+            if callable(getter) and callable(setter):
+                settings[f"{name}_sdp_before"] = bool(getter())
+                setter(enabled)
+                settings[f"{name}_sdp_after"] = bool(getter())
+
+        matmul_backend = getattr(cuda_backend, "matmul", None)
+        if matmul_backend is not None and hasattr(matmul_backend, "allow_tf32"):
+            settings["cuda_matmul_allow_tf32_before"] = bool(matmul_backend.allow_tf32)
+            matmul_backend.allow_tf32 = False
+            settings["cuda_matmul_allow_tf32_after"] = bool(matmul_backend.allow_tf32)
+
+    cudnn_backend = getattr(getattr(torch, "backends", None), "cudnn", None)
+    if cudnn_backend is not None and hasattr(cudnn_backend, "allow_tf32"):
+        settings["cudnn_allow_tf32_before"] = bool(cudnn_backend.allow_tf32)
+        cudnn_backend.allow_tf32 = False
+        settings["cudnn_allow_tf32_after"] = bool(cudnn_backend.allow_tf32)
+    return settings
 
 
 def _require_torch() -> Any:

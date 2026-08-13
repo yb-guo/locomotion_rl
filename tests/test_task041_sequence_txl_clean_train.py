@@ -244,6 +244,59 @@ def test_task041_sequence_txl_clean_train_pipeline_pass_gate() -> None:
     assert reasons == []
 
 
+def test_task041_sequence_txl_clean_train_loads_train_env_cfg_explicitly() -> None:
+    module = _load_src_tool("task041_sequence_txl_clean_train.py")
+    calls = []
+    expected = object()
+
+    def load_env_cfg(task: str, *, play: bool):
+        calls.append((task, play))
+        return expected
+
+    loaded = module._load_train_env_cfg(load_env_cfg, "task-id")
+
+    assert loaded is expected
+    assert calls == [("task-id", False)]
+
+
+def test_task041_sequence_txl_clean_train_loader_supports_legacy_registry() -> None:
+    module = _load_src_tool("task041_sequence_txl_clean_train.py")
+    calls = []
+    expected = object()
+
+    def load_env_cfg(task: str):
+        calls.append(task)
+        return expected
+
+    loaded = module._load_train_env_cfg(load_env_cfg, "task-id")
+
+    assert loaded is expected
+    assert calls == ["task-id"]
+
+
+@pytest.mark.parametrize(
+    ("mode", "episode_length_s", "expected_reason"),
+    [
+        ("play", 20.0, "env_cfg_mode_not_train"),
+        ("train", 1.0e9, "env_episode_length_s_play_like"),
+    ],
+)
+def test_task041_sequence_txl_clean_train_rejects_play_env_cfg(
+    mode: str,
+    episode_length_s: float,
+    expected_reason: str,
+) -> None:
+    module = _load_src_tool("task041_sequence_txl_clean_train.py")
+    summary = _passing_train_summary()
+    summary["env_cfg_mode"] = mode
+    summary["env_episode_length_s"] = episode_length_s
+
+    passed, reasons = module.evaluate_train_pipeline_pass(summary)
+
+    assert passed is False
+    assert expected_reason in reasons
+
+
 def test_task041_sequence_txl_clean_train_rejects_fallback_and_missing_sequence_update() -> None:
     module = _load_src_tool("task041_sequence_txl_clean_train.py")
     summary = _passing_train_summary()
@@ -257,6 +310,32 @@ def test_task041_sequence_txl_clean_train_rejects_fallback_and_missing_sequence_
     assert "txl_debug_stateless_fallback_seen" in reasons
     assert "txl_debug_no_sequence_update_forward" in reasons
     assert "algorithm_debug_no_sequence_update_batches" in reasons
+
+
+def test_task041_sequence_txl_clean_train_requires_logprob_parity() -> None:
+    module = _load_src_tool("task041_sequence_txl_clean_train.py")
+    summary = _passing_train_summary()
+    summary["algorithm_debug"]["last_logprob_parity"]["max_logprob_abs_error"] = 2e-5
+    summary["algorithm_debug"]["last_logprob_parity"]["max_ratio_abs_error"] = 2e-5
+    summary["algorithm_debug"]["last_logprob_parity"]["pass"] = False
+
+    passed, reasons = module.evaluate_train_pipeline_pass(summary)
+
+    assert passed is False
+    assert "algorithm_debug_logprob_parity_failed" in reasons
+    assert "algorithm_debug_logprob_error_too_high" in reasons
+    assert "algorithm_debug_ratio_error_too_high" in reasons
+
+
+def test_task041_sequence_txl_clean_train_requires_nonempty_rollout_start_memory() -> None:
+    module = _load_src_tool("task041_sequence_txl_clean_train.py")
+    summary = _passing_train_summary()
+    summary["algorithm_debug"]["last_logprob_parity"]["rollout_start_memory_non_empty"] = False
+
+    passed, reasons = module.evaluate_train_pipeline_pass(summary)
+
+    assert passed is False
+    assert "algorithm_debug_rollout_start_memory_empty" in reasons
 
 
 def test_task041_train_pipeline_requires_fault_aux_updates_when_enabled() -> None:
@@ -525,6 +604,8 @@ def test_task041_docs_define_eval_pass_as_goal() -> None:
 def _passing_train_summary() -> dict:
     return {
         "task": "Unitree-G1-Gripper-Flat-Task038-TrainTrueTxlRunnerSmoke",
+        "env_cfg_mode": "train",
+        "env_episode_length_s": 20.0,
         "runner_cls": "Task038TrueTxlMemoryK160Runner",
         "expected_runner_cls": "Task038TrueTxlMemoryK160Runner",
         "algorithm_class": "Task040SequenceAwareTrueTxlPPO",
@@ -552,6 +633,13 @@ def _passing_train_summary() -> dict:
         "algorithm_debug": {
             "sequence_update_batches": 5,
             "last_loss_dict": {"value": 1.0},
+            "last_logprob_parity": {
+                "pass": True,
+                "threshold": 1e-5,
+                "max_logprob_abs_error": 0.0,
+                "max_ratio_abs_error": 0.0,
+                "rollout_start_memory_non_empty": True,
+            },
         },
     }
 

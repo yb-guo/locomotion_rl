@@ -5,6 +5,17 @@ from __future__ import annotations
 from types import MethodType
 from typing import Any
 
+from h200_locomotion_lab.training.multitrial_wrapper import (
+    TASK037_TERMINAL_COMMAND_KEY,
+    TASK037_TERMINAL_GRAVITY_XY_KEY,
+    TASK037_TERMINAL_LIN_VEL_KEY,
+    TASK037_TERMINAL_METRIC_MASK_KEY,
+    TASK037_TERMINAL_METRIC_SCHEMA,
+    TASK037_TERMINAL_METRIC_SCHEMA_KEY,
+    TASK037_TERMINAL_ROOT_Z_KEY,
+    TASK037_TERMINAL_YAW_VEL_KEY,
+)
+
 
 class Task037MjlabInnerResetController:
     """Patch a MJLab ManagerBasedRlEnv to split inner and outer resets."""
@@ -74,6 +85,7 @@ class Task037MjlabInnerResetController:
         final_mask = self.trial_index[env_ids] >= self.num_trials - 1
         outer_ids = env_ids[final_mask]
         inner_ids = env_ids[~final_mask]
+        self._store_terminal_metrics(env_ids)
         snapshot = _ConditionSnapshot.capture(self.env, inner_ids)
         self._original_reset_idx(env_ids)
         if inner_ids.numel() > 0:
@@ -87,6 +99,11 @@ class Task037MjlabInnerResetController:
             self.outer_reset_count[outer_ids] += 1
         self.env.extras["task037_inner_reset_count"] = self.inner_reset_count.clone()
         self.env.extras["task037_outer_reset_count"] = self.outer_reset_count.clone()
+
+    def _store_terminal_metrics(self, env_ids: Any) -> None:
+        metrics = _capture_terminal_metrics(self.env, env_ids, self.torch)
+        if metrics:
+            self.env.extras.update(metrics)
 
 
 class _ConditionSnapshot:
@@ -193,6 +210,43 @@ def _capture_env_condition_tensors(env: Any, env_ids: Any) -> dict[str, Any]:
         if _is_env_tensor(value, env):
             tensors[name] = value.index_select(0, env_ids).clone()
     return tensors
+
+
+def _capture_terminal_metrics(env: Any, env_ids: Any, torch: Any) -> dict[str, Any]:
+    env_ids = env_ids.to(device=env.device, dtype=torch.long).reshape(-1)
+    mask = torch.zeros(env.num_envs, device=env.device, dtype=torch.bool)
+    if env_ids.numel() <= 0:
+        return {
+            TASK037_TERMINAL_METRIC_SCHEMA_KEY: TASK037_TERMINAL_METRIC_SCHEMA,
+            TASK037_TERMINAL_METRIC_MASK_KEY: mask,
+        }
+    scene = getattr(env, "scene", None)
+    command_manager = getattr(env, "command_manager", None)
+    if not isinstance(scene, dict) or "robot" not in scene or command_manager is None:
+        return {}
+    robot = scene["robot"]
+    data = getattr(robot, "data", None)
+    get_command = getattr(command_manager, "get_command", None)
+    if data is None or not callable(get_command):
+        return {}
+    try:
+        command = get_command("twist")
+        lin_vel = data.root_link_lin_vel_b[:, :2]
+        yaw_vel = data.root_link_ang_vel_b[:, 2]
+        gravity_xy = torch.linalg.norm(data.projected_gravity_b[:, :2], dim=-1)
+        root_z = data.root_link_pos_w[:, 2]
+    except Exception:
+        return {}
+    mask[env_ids] = True
+    return {
+        TASK037_TERMINAL_METRIC_SCHEMA_KEY: TASK037_TERMINAL_METRIC_SCHEMA,
+        TASK037_TERMINAL_METRIC_MASK_KEY: mask,
+        TASK037_TERMINAL_COMMAND_KEY: command.to(device=env.device).clone(),
+        TASK037_TERMINAL_LIN_VEL_KEY: lin_vel.to(device=env.device).clone(),
+        TASK037_TERMINAL_YAW_VEL_KEY: yaw_vel.to(device=env.device).clone(),
+        TASK037_TERMINAL_GRAVITY_XY_KEY: gravity_xy.to(device=env.device).clone(),
+        TASK037_TERMINAL_ROOT_Z_KEY: root_z.to(device=env.device).clone(),
+    }
 
 
 def _is_env_tensor(value: Any, env: Any) -> bool:

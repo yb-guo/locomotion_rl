@@ -138,6 +138,8 @@ def test_task037_multitrial_eval_parse_args_supports_matrix_modes() -> None:
             "0.5",
             "--dynamic-recovery-s",
             "1.5",
+            "--dynamic-dead-scale",
+            "0.3",
             "--final-window-s",
             "0.5",
             "--memory-latent-dim",
@@ -160,6 +162,7 @@ def test_task037_multitrial_eval_parse_args_supports_matrix_modes() -> None:
     assert args.dynamic_dead_joint == "left_hip_yaw_joint"
     assert args.dynamic_onset_s == 0.5
     assert args.dynamic_recovery_s == 1.5
+    assert args.dynamic_dead_scale == 0.3
     assert args.final_window_s == 0.5
     assert args.dead_scale == 0.0
     assert args.memory_latent_dim == 32
@@ -169,6 +172,12 @@ def test_task037_multitrial_eval_parse_args_supports_matrix_modes() -> None:
     assert args.adaptation_hidden_dim == 128
     assert args.base_obs_passthrough is True
     assert args.adaptation_warmstart is True
+
+    assert module._dynamic_template(args) == (
+        (0.0, 0.5, None, "normal", 1.0),
+        (0.5, 1.5, "left_hip_yaw_joint", "dead", 0.3),
+        (1.5, None, None, "normal", 1.0),
+    )
 
 
 def test_task037_multitrial_eval_final_window_steps_helper() -> None:

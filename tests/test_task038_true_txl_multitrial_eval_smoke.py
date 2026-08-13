@@ -19,6 +19,7 @@ def test_task038_true_txl_multitrial_eval_parse_args_defaults() -> None:
     assert args.num_envs == 8
     assert args.steps == 60
     assert args.trial_length_s == 0.5
+    assert args.final_window_s == 0.0
     assert args.lin_vel_x == 0.4
     assert args.device == "cuda:0"
     assert args.expected_action_dim == 31

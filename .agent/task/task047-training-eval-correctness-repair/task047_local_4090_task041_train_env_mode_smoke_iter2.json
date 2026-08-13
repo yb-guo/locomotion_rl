@@ -1,0 +1,494 @@
+{
+  "action_dim": 31,
+  "actor_model_class": "Task038TrueTxlMemoryModel",
+  "actor_model_error": null,
+  "actor_scope_parameter_stats": {
+    "frozen_obs_normalizer_delta_max_abs": 36.849456787109375,
+    "frozen_obs_normalizer_delta_norm": 257.8257751464844,
+    "frozen_obs_normalizer_tensor_count": 4,
+    "frozen_obs_normalizer_unchanged": false,
+    "frozen_parameter_delta_max_abs": 0.0,
+    "frozen_parameter_delta_norm": 0.0,
+    "frozen_parameters_unchanged": true,
+    "frozen_tensor_count": 0,
+    "partial_frozen_columns_unchanged": true,
+    "partial_frozen_delta_max_abs": 0.0,
+    "partial_frozen_delta_norm": 0.0,
+    "partial_trainable_delta_max_abs": 0.0,
+    "partial_trainable_delta_norm": 0.0,
+    "trainable_parameter_delta_max_abs": 0.0020013563334941864,
+    "trainable_parameter_delta_norm": 0.8473079204559326,
+    "trainable_tensor_count": 30
+  },
+  "actor_trainable_scope": "all",
+  "actor_trainable_scope_report": {
+    "actor_present": true,
+    "allowed_prefixes": [],
+    "frozen_parameter_count": 0,
+    "frozen_parameter_names": [],
+    "frozen_tensor_count": 0,
+    "normalization_update_disabled": false,
+    "partial_trainable_parameters": [],
+    "scope": "all",
+    "trainable_parameter_count": 3163646,
+    "trainable_parameter_names": [
+      "position_embedding",
+      "distribution.std_param",
+      "mlp.0.weight",
+      "mlp.0.bias",
+      "mlp.2.weight",
+      "mlp.2.bias",
+      "mlp.4.weight",
+      "mlp.4.bias",
+      "mlp.6.weight",
+      "mlp.6.bias",
+      "token_projection.weight",
+      "token_projection.bias",
+      "attention_layers.0.in_proj_weight",
+      "attention_layers.0.in_proj_bias",
+      "attention_layers.0.out_proj.weight",
+      "attention_layers.0.out_proj.bias",
+      "attention_layers.1.in_proj_weight",
+      "attention_layers.1.in_proj_bias",
+      "attention_layers.1.out_proj.weight",
+      "attention_layers.1.out_proj.bias",
+      "norm_layers.0.weight",
+      "norm_layers.0.bias",
+      "norm_layers.1.weight",
+      "norm_layers.1.bias",
+      "memory_output_projection.weight",
+      "memory_output_projection.bias",
+      "adaptation_encoder.0.weight",
+      "adaptation_encoder.0.bias",
+      "adaptation_encoder.2.weight",
+      "adaptation_encoder.2.bias"
+    ],
+    "trainable_tensor_count": 30
+  },
+  "actual_num_envs": 8,
+  "adaptation_warmstart": true,
+  "adaptation_warmstart_scale": 1.0,
+  "algorithm_class": "Task040SequenceAwareTrueTxlPPO",
+  "algorithm_debug": {
+    "actor_normalizer_snapshot_count": 0,
+    "algorithm_class": "Task040SequenceAwareTrueTxlPPO",
+    "last_actor_normalizer_snapshot_count": 2,
+    "last_logprob_parity": {
+      "max_logprob_abs_error": 0.00012969970703125,
+      "max_ratio_abs_error": 0.00012969970703125,
+      "mode": "rollout_start_snapshot",
+      "non_empty_slice_count": 1,
+      "normalizer_replay_mode": "per_step_snapshot",
+      "normalizer_snapshot_count": 2,
+      "pass": false,
+      "rollout_start_memory_non_empty": true,
+      "sample_count": 16,
+      "slice_count": 1,
+      "threshold": 1e-05
+    },
+    "last_loss_dict": {
+      "entropy": 43.98808288574219,
+      "surrogate": 3.919005393981934e-06,
+      "value": 0.1491875797510147
+    },
+    "sequence_update_batches": 2,
+    "sequence_update_samples": 32,
+    "sequence_update_steps": 4,
+    "task044_fault_aux_last_loss": null,
+    "task044_fault_aux_loss_weight": 0.0,
+    "task044_fault_aux_max_trial_step": -1,
+    "task044_fault_aux_min_trial_index": 0,
+    "task044_fault_aux_num_classes": 0,
+    "task044_fault_aux_obs_key": "task044_fault_label",
+    "task044_fault_aux_updates": 0
+  },
+  "base_obs_passthrough": true,
+  "base_obs_passthrough_scale": 1.0,
+  "checkpoint": "/home/xyzl/yubo/locomotion_rl/outputs/task047/train_env_mode_smoke/logs_iter2/model_1.pt",
+  "checkpoint_exists": true,
+  "command": [
+    "/home/xyzl/yubo/locomotion_rl/src/h200_locomotion_lab/tools/task041_sequence_txl_clean_train.py",
+    "--output-json",
+    "/home/xyzl/yubo/locomotion_rl/.agent/task/task047-training-eval-correctness-repair/task047_local_4090_task041_train_env_mode_smoke_iter2.json",
+    "--log-dir",
+    "/home/xyzl/yubo/locomotion_rl/outputs/task047/train_env_mode_smoke/logs_iter2",
+    "--num-envs",
+    "8",
+    "--rollout-steps",
+    "2",
+    "--iterations",
+    "2",
+    "--save-interval",
+    "1",
+    "--num-mini-batches",
+    "1",
+    "--num-learning-epochs",
+    "1",
+    "--seed",
+    "4100402",
+    "--device",
+    "cuda:0",
+    "--run-name",
+    "task047_train_env_mode_smoke_iter2"
+  ],
+  "desired_kl": 0.01,
+  "device": "cuda:0",
+  "diagnostic_note": "Task041 train pipeline evidence only; eval quality is proven only by task041_sequence_txl_clean_eval.",
+  "env_cfg_mode": "train",
+  "env_episode_length_s": 20.0,
+  "eval_claim": false,
+  "expected_action_dim": 31,
+  "expected_actor_model_class": "Task038TrueTxlMemoryModel",
+  "expected_algorithm_class": "Task040SequenceAwareTrueTxlPPO",
+  "expected_runner_cls": "Task038TrueTxlMemoryK160Runner",
+  "experiment_name": "task041_sequence_txl_clean_train",
+  "failure_reasons": [
+    "algorithm_debug_logprob_parity_failed",
+    "algorithm_debug_logprob_error_too_high",
+    "algorithm_debug_ratio_error_too_high"
+  ],
+  "final_iteration": 1,
+  "iterations": 2,
+  "json_path": "/home/xyzl/yubo/locomotion_rl/.agent/task/task047-training-eval-correctness-repair/task047_local_4090_task041_train_env_mode_smoke_iter2.json",
+  "learn_returned": true,
+  "learning_rate": 0.001,
+  "log_dir": "/home/xyzl/yubo/locomotion_rl/outputs/task047/train_env_mode_smoke/logs_iter2",
+  "log_dir_exists": true,
+  "log_dir_files": [
+    "events.out.tfevents.1786447725.xyzl-Embodiment-plantform.1839902.0",
+    "git/locomotion_rl.diff",
+    "model_0.pt",
+    "model_1.pt"
+  ],
+  "memory_latent_dim": 32,
+  "memory_latent_scale": 1.0,
+  "num_envs": 8,
+  "num_learning_epochs": 1,
+  "num_mini_batches": 1,
+  "obs": {
+    "actor": {
+      "finite": true,
+      "shape": [
+        8,
+        104
+      ]
+    },
+    "actor_history": {
+      "finite": true,
+      "shape": [
+        8,
+        21600
+      ]
+    },
+    "critic": {
+      "finite": true,
+      "shape": [
+        8,
+        119
+      ]
+    }
+  },
+  "obs_all_finite": true,
+  "obs_error": null,
+  "pass": false,
+  "policy_action_finite": true,
+  "policy_action_shape": [
+    8,
+    31
+  ],
+  "policy_error": null,
+  "quality_claim": false,
+  "quality_gate_pass": false,
+  "reproduction_claim": false,
+  "resume_checkpoint": null,
+  "rollout_steps": 2,
+  "run_name": "task047_train_env_mode_smoke_iter2",
+  "runner_cls": "Task038TrueTxlMemoryK160Runner",
+  "save_interval": 1,
+  "schema": "task041_sequence_txl_clean_train_v1",
+  "seed": 4100402,
+  "superiority_claim": false,
+  "task": "Unitree-G1-Gripper-Flat-Task038-TrainTrueTxlRunnerSmoke",
+  "task041_sequence_txl_clean_train_only": true,
+  "task044_fault_aux_loss_weight": 0.0,
+  "task044_fault_aux_max_trial_step": -1,
+  "task044_fault_aux_min_trial_index": 0,
+  "task044_fault_aux_num_classes": 0,
+  "task046_post_reset_recovery_reward": false,
+  "task046_post_reset_recovery_reward_cfg": {
+    "early_velocity_weight": 0.0,
+    "enabled": false,
+    "final_trial_index": 2,
+    "min_root_z": 0.7,
+    "orientation_weight": 0.0,
+    "recovery_window_steps": 50,
+    "root_height_weight": 0.0,
+    "tail_velocity_weight": 0.0,
+    "tail_window_steps": 50
+  },
+  "task046_post_reset_recovery_reward_debug": {},
+  "task046_retry_context": false,
+  "task046_retry_context_cfg": {
+    "enabled": false,
+    "final_trial_index": 2,
+    "num_trials": 3,
+    "step_window_steps": 50
+  },
+  "task046_retry_context_debug": {},
+  "total_action_dim": 31,
+  "train_pipeline_pass": false,
+  "training_claim": false,
+  "txl_debug": {
+    "adaptation_output_norm_last": 0.9983834028244019,
+    "adaptation_warmstart_scale": 1.0,
+    "base_obs_passthrough_scale": 1.0,
+    "env_cache_stateful_forward_batches": 4,
+    "env_cache_stateful_forward_samples": 32,
+    "envs": [
+      {
+        "env_id": 0,
+        "incremental_steps": 4,
+        "inner_reset_events": 0,
+        "last_attended_previous_memory_lengths": [
+          48,
+          48
+        ],
+        "memory_lengths": [
+          64,
+          64
+        ],
+        "outer_reset_events": 0,
+        "segments_appended": 4,
+        "tokens_appended": 64
+      },
+      {
+        "env_id": 1,
+        "incremental_steps": 4,
+        "inner_reset_events": 0,
+        "last_attended_previous_memory_lengths": [
+          48,
+          48
+        ],
+        "memory_lengths": [
+          64,
+          64
+        ],
+        "outer_reset_events": 0,
+        "segments_appended": 4,
+        "tokens_appended": 64
+      },
+      {
+        "env_id": 2,
+        "incremental_steps": 4,
+        "inner_reset_events": 0,
+        "last_attended_previous_memory_lengths": [
+          48,
+          48
+        ],
+        "memory_lengths": [
+          64,
+          64
+        ],
+        "outer_reset_events": 0,
+        "segments_appended": 4,
+        "tokens_appended": 64
+      },
+      {
+        "env_id": 3,
+        "incremental_steps": 4,
+        "inner_reset_events": 0,
+        "last_attended_previous_memory_lengths": [
+          48,
+          48
+        ],
+        "memory_lengths": [
+          64,
+          64
+        ],
+        "outer_reset_events": 0,
+        "segments_appended": 4,
+        "tokens_appended": 64
+      },
+      {
+        "env_id": 4,
+        "incremental_steps": 4,
+        "inner_reset_events": 0,
+        "last_attended_previous_memory_lengths": [
+          48,
+          48
+        ],
+        "memory_lengths": [
+          64,
+          64
+        ],
+        "outer_reset_events": 0,
+        "segments_appended": 4,
+        "tokens_appended": 64
+      },
+      {
+        "env_id": 5,
+        "incremental_steps": 4,
+        "inner_reset_events": 0,
+        "last_attended_previous_memory_lengths": [
+          48,
+          48
+        ],
+        "memory_lengths": [
+          64,
+          64
+        ],
+        "outer_reset_events": 0,
+        "segments_appended": 4,
+        "tokens_appended": 64
+      },
+      {
+        "env_id": 6,
+        "incremental_steps": 4,
+        "inner_reset_events": 0,
+        "last_attended_previous_memory_lengths": [
+          48,
+          48
+        ],
+        "memory_lengths": [
+          64,
+          64
+        ],
+        "outer_reset_events": 0,
+        "segments_appended": 4,
+        "tokens_appended": 64
+      },
+      {
+        "env_id": 7,
+        "incremental_steps": 4,
+        "inner_reset_events": 0,
+        "last_attended_previous_memory_lengths": [
+          48,
+          48
+        ],
+        "memory_lengths": [
+          64,
+          64
+        ],
+        "outer_reset_events": 0,
+        "segments_appended": 4,
+        "tokens_appended": 64
+      }
+    ],
+    "last_attended_previous_memory_lengths": [
+      [
+        48,
+        48
+      ],
+      [
+        48,
+        48
+      ],
+      [
+        48,
+        48
+      ],
+      [
+        48,
+        48
+      ],
+      [
+        48,
+        48
+      ],
+      [
+        48,
+        48
+      ],
+      [
+        48,
+        48
+      ],
+      [
+        48,
+        48
+      ]
+    ],
+    "memory_latent_enabled": true,
+    "memory_len": 64,
+    "memory_residual_enabled": true,
+    "num_layers": 2,
+    "policy_memory_latent_norm_last": 1.0118794441223145,
+    "segment_len": 16,
+    "segments_appended": 32,
+    "sequence_update_forward_batches": 4,
+    "sequence_update_forward_samples": 64,
+    "sequence_update_forward_steps": 8,
+    "sequence_update_reset_events": 0,
+    "stateful_memory_enabled": true,
+    "stateless_fallback_forward_batches": 0,
+    "stateless_fallback_forward_samples": 0,
+    "stateless_forward_batches": 0,
+    "stateless_forward_samples": 0,
+    "task040_last_initial_memory_mode": "rollout_start_snapshot",
+    "task040_last_initial_memory_non_empty": true,
+    "task040_rollout_start_snapshot": {
+      "available": false,
+      "capture_requested": false,
+      "mode": "none",
+      "non_empty": false,
+      "num_envs": 0,
+      "snapshot_id": 0
+    },
+    "task042_memory_ablation_mode": "none",
+    "tokens_appended": 512,
+    "total_actor_forward_batches": 4,
+    "total_actor_forward_samples": 32,
+    "txl_residual_output_norm_last": 0.12437451630830765,
+    "txl_residual_raw_norm_last": 0.12437451630830765
+  },
+  "txl_debug_error": null,
+  "txl_parameter_stats": {
+    "attention_layers_delta_norm": 0.25070205330848694,
+    "groups": {
+      "attention_layers": {
+        "after_norm": 21.650392532348633,
+        "before_norm": 21.647571563720703,
+        "delta_norm": 0.25070205330848694,
+        "parameter_count": 132096,
+        "tensor_count": 8
+      },
+      "memory_output_projection": {
+        "after_norm": 0.1003057137131691,
+        "before_norm": 0.0,
+        "delta_norm": 0.1003057137131691,
+        "parameter_count": 4128,
+        "tensor_count": 2
+      },
+      "norm_layers": {
+        "after_norm": 16.001079559326172,
+        "before_norm": 16.0,
+        "delta_norm": 0.016683917492628098,
+        "parameter_count": 512,
+        "tensor_count": 4
+      },
+      "position_embedding": {
+        "after_norm": 0.033019185066223145,
+        "before_norm": 0.0,
+        "delta_norm": 0.033019185066223145,
+        "parameter_count": 2048,
+        "tensor_count": 1
+      },
+      "token_projection": {
+        "after_norm": 11.315312385559082,
+        "before_norm": 11.313708305358887,
+        "delta_norm": 0.0944916382431984,
+        "parameter_count": 17408,
+        "tensor_count": 2
+      }
+    },
+    "memory_output_projection_delta_norm": 0.1003057137131691,
+    "memory_output_projection_weight_norm_after": 0.1003057137131691,
+    "memory_output_projection_weight_norm_before": 0.0,
+    "norm_layers_delta_norm": 0.016683917492628098,
+    "position_embedding_delta_norm": 0.033019185066223145,
+    "token_projection_delta_norm": 0.0944916382431984,
+    "tracked_param_count": 156192,
+    "trainable_param_count": 3163646
+  },
+  "wall_time_s": 2.444546699523926
+}

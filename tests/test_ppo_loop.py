@@ -70,6 +70,78 @@ def test_compute_gae_known_values() -> None:
     assert returns.squeeze(1).tolist() == pytest.approx([3.0, 2.0, 1.0])
 
 
+def test_compute_gae_bootstraps_timeouts_without_crossing_reset_boundary() -> None:
+    torch = pytest.importorskip("torch")
+    config = PPOConfig(n_envs=3, rollout_steps=3, minibatch_size=9, gamma=1.0, gae_lambda=1.0)
+    batch = RolloutBatch(
+        observations=torch.zeros((3, 3, 90)),
+        actions=torch.zeros((3, 3, 27)),
+        rewards=torch.zeros((3, 3)),
+        dones=torch.tensor(
+            [
+                [True, True, False],
+                [False, False, True],
+                [False, False, False],
+            ]
+        ),
+        values=torch.zeros((3, 3)),
+        log_probs=torch.zeros((3, 3)),
+        next_observation=torch.zeros((3, 90)),
+        next_value=torch.tensor([5.0, 5.0, 5.0]),
+        collect_time_s=1.0,
+        env_steps=9,
+        reward_mean=0.0,
+        reward_component_means={},
+        done_count=3,
+        timeout_count=2,
+        fallen_count=1,
+        reset_count=3,
+        height_bad_count=0,
+        termination_height_bad_count=0,
+        tilt_bad_count=0,
+        height_reset_count=0,
+        tilt_reset_count=0,
+        full_env_reset_wave=False,
+        full_env_reset_wave_count=0,
+        episode_length_mean=1.0,
+        episode_length_min=1.0,
+        episode_length_max=1.0,
+        completed_episode_length_mean=0.0,
+        completed_episode_count=0,
+        root_height_mean=0.8,
+        root_height_min=0.8,
+        upright_mean=1.0,
+        terminated=torch.tensor(
+            [
+                [True, False, False],
+                [False, False, False],
+                [False, False, False],
+            ]
+        ),
+        truncated=torch.tensor(
+            [
+                [False, True, False],
+                [False, False, True],
+                [False, False, False],
+            ]
+        ),
+        terminal_values=torch.tensor(
+            [
+                [99.0, 3.0, 99.0],
+                [99.0, 99.0, 7.0],
+                [99.0, 99.0, 99.0],
+            ]
+        ),
+    )
+
+    advantages, returns = compute_gae(batch, config)
+
+    assert advantages[:, 0].tolist() == pytest.approx([0.0, 5.0, 5.0])
+    assert advantages[:, 1].tolist() == pytest.approx([3.0, 5.0, 5.0])
+    assert advantages[:, 2].tolist() == pytest.approx([7.0, 7.0, 5.0])
+    assert torch.allclose(returns, advantages)
+
+
 def test_tanh_gaussian_log_prob_is_finite_near_bounds() -> None:
     torch = pytest.importorskip("torch")
     config = PPOConfig(n_envs=1, rollout_steps=1, minibatch_size=1)
@@ -199,9 +271,10 @@ class _MetricModel:
         return action, log_prob, value, entropy
 
     def forward(self, observation: object) -> tuple[object, object]:
+        batch_size = int(observation.shape[0])
         return (
-            self.torch.zeros((self.config.n_envs, self.config.action_dim)),
-            self.torch.zeros((self.config.n_envs,)),
+            self.torch.zeros((batch_size, self.config.action_dim)),
+            self.torch.zeros((batch_size,)),
         )
 
 

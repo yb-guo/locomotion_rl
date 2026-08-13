@@ -7,7 +7,7 @@ import shutil
 from pathlib import Path
 
 
-ROOT = Path("/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab")
+ROOT = Path("/home/xyzl/yubo/locomotion_rl/external/unitree_rl_mjlab")
 
 
 GRIPPER_CONSTANTS = '''"""G1-like whole-body robot with two simple gripper joints."""

@@ -14,6 +14,17 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Mapping
 
+from h200_locomotion_lab.training.multitrial_wrapper import (
+    TASK037_TERMINAL_COMMAND_KEY,
+    TASK037_TERMINAL_GRAVITY_XY_KEY,
+    TASK037_TERMINAL_LIN_VEL_KEY,
+    TASK037_TERMINAL_METRIC_MASK_KEY,
+    TASK037_TERMINAL_METRIC_SCHEMA,
+    TASK037_TERMINAL_METRIC_SCHEMA_KEY,
+    TASK037_TERMINAL_ROOT_Z_KEY,
+    TASK037_TERMINAL_YAW_VEL_KEY,
+)
+
 
 DEFAULT_TASK = "Unitree-G1-Gripper-Flat-Task037-AdaptK4-DeterministicInnerReset-Fast2p0"
 DEFAULT_JOINTS = (
@@ -97,6 +108,12 @@ def _install_wandb_stub() -> None:
 def _install_wcwidth_stub() -> None:
     """Provide width helpers for prettytable in the slim H200 conda env."""
 
+    try:
+        import wcwidth  # noqa: F401
+        return
+    except ImportError:
+        pass
+
     if "wcwidth" in sys.modules:
         return
     wcwidth_module = types.ModuleType("wcwidth")
@@ -109,6 +126,7 @@ def _install_wcwidth_stub() -> None:
 
     wcwidth_module.wcwidth = _wcwidth
     wcwidth_module.wcswidth = _wcswidth
+    wcwidth_module.width = _wcswidth
     sys.modules["wcwidth"] = wcwidth_module
 
 
@@ -131,6 +149,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--dynamic-dead-joint", choices=DEFAULT_JOINTS)
     parser.add_argument("--dynamic-onset-s", type=float, default=0.5)
     parser.add_argument("--dynamic-recovery-s", type=float, default=1.5)
+    parser.add_argument("--dynamic-dead-scale", type=float, default=0.0)
     parser.add_argument("--force-dead-joint", choices=DEFAULT_JOINTS)
     parser.add_argument("--dead-scale", type=float, default=0.0)
     parser.add_argument(
@@ -270,8 +289,6 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
             command = base_env.command_manager.get_command("twist")
             lin_vel = robot.data.root_link_lin_vel_b[:, :2]
             yaw_vel = robot.data.root_link_ang_vel_b[:, 2]
-            lin_error = torch.linalg.norm(command[:, :2] - lin_vel, dim=-1)
-            yaw_error = torch.abs(command[:, 2] - yaw_vel)
             gravity_xy = torch.linalg.norm(robot.data.projected_gravity_b[:, :2], dim=-1)
             root_z = robot.data.root_link_pos_w[:, 2]
 
@@ -282,6 +299,26 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
                 extras.get("reset_reason", torch.zeros(args.num_envs, device=args.device)),
                 args.device,
             )
+            metric_values = _apply_terminal_metric_overrides(
+                torch,
+                extras,
+                terminal_mask=trial_done,
+                command=command,
+                lin_vel=lin_vel,
+                yaw_vel=yaw_vel,
+                gravity_xy=gravity_xy,
+                root_z=root_z,
+                device=args.device,
+                num_envs=args.num_envs,
+            )
+            command = metric_values["command"]
+            lin_vel = metric_values["lin_vel"]
+            yaw_vel = metric_values["yaw_vel"]
+            gravity_xy = metric_values["gravity_xy"]
+            root_z = metric_values["root_z"]
+            terminal_metric_mask = metric_values["terminal_metric_mask"]
+            lin_error = torch.linalg.norm(command[:, :2] - lin_vel, dim=-1)
+            yaw_error = torch.abs(command[:, 2] - yaw_vel)
 
             for trial_idx, accumulator in enumerate(trial_stats):
                 mask = trial_before == trial_idx
@@ -294,6 +331,7 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
                     yaw_error=yaw_error,
                     gravity_xy=gravity_xy,
                     root_z=root_z,
+                    terminal_metric_mask=terminal_metric_mask,
                 )
                 accumulator.add_reset_events(mask & trial_done, reset_reason)
 
@@ -310,6 +348,7 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
                     yaw_error=yaw_error,
                     gravity_xy=gravity_xy,
                     root_z=root_z,
+                    terminal_metric_mask=terminal_metric_mask,
                 )
                 final_window_stats.add_reset_events(window_mask & trial_done, reset_reason)
             if final_tail_window_stats is not None:
@@ -325,6 +364,7 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
                     yaw_error=yaw_error,
                     gravity_xy=gravity_xy,
                     root_z=root_z,
+                    terminal_metric_mask=terminal_metric_mask,
                 )
                 final_tail_window_stats.add_reset_events(
                     tail_window_mask & trial_done,
@@ -382,6 +422,13 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
         )
         result = {
             "task": args.task,
+            "metric_schema": "task037_multitrial_eval_metrics_v2",
+            "terminal_metric_schema": TASK037_TERMINAL_METRIC_SCHEMA,
+            "terminal_metric_contract": {
+                "default_source": "post_step_state",
+                "terminal_override_source": "pre_reset_terminal_state",
+                "terminal_override_mask_key": TASK037_TERMINAL_METRIC_MASK_KEY,
+            },
             "checkpoint": str(checkpoint),
             "command": list(sys.argv),
             "seed": args.seed,
@@ -406,6 +453,7 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
             "dynamic_dead_joint": args.dynamic_dead_joint,
             "dynamic_onset_s": args.dynamic_onset_s,
             "dynamic_recovery_s": args.dynamic_recovery_s,
+            "dynamic_dead_scale": args.dynamic_dead_scale,
             "force_dead_joint": args.force_dead_joint,
             "dead_scale": args.dead_scale,
             "thresholds": thresholds,
@@ -447,6 +495,7 @@ class _TrialAccumulator:
         self.gravity_xy_max = torch.zeros((), device=device, dtype=torch.float32)
         self.root_z_min = torch.full((), float("inf"), device=device, dtype=torch.float32)
         self.root_z_sum = torch.zeros((), device=device, dtype=torch.float32)
+        self.terminal_metric_sample_count = torch.zeros((), device=device, dtype=torch.float32)
         self.reset_reason_counts: dict[str, int] = {}
 
     def add_sample(
@@ -460,10 +509,13 @@ class _TrialAccumulator:
         yaw_error: Any,
         gravity_xy: Any,
         root_z: Any,
+        terminal_metric_mask: Any | None = None,
     ) -> None:
         if not bool(mask.any().item()):
             return
         self.sample_count += mask.float().sum()
+        if terminal_metric_mask is not None:
+            self.terminal_metric_sample_count += (mask & terminal_metric_mask).float().sum()
         self.reward_sum += reward[mask].float().sum()
         selected_command = command[mask].float()
         selected_lin_vel = lin_vel[mask].float()
@@ -493,6 +545,7 @@ class _TrialAccumulator:
 
     def to_json(self, *, trial_idx: int, num_envs: int) -> dict[str, Any]:
         sample_count = float(self.sample_count.item())
+        terminal_metric_sample_count = int(self.terminal_metric_sample_count.item())
         den = max(sample_count, 1.0)
         trial_done_count = sum(self.reset_reason_counts.values())
         fall_count = self.reset_reason_counts.get("1", 0) + self.reset_reason_counts.get("3", 0)
@@ -507,6 +560,12 @@ class _TrialAccumulator:
             "zero_fall_ratio": float(1.0 - (fall_count / max(trial_done_count, 1))),
             "timeout_count": int(timeout_count),
             "reset_reason_counts": dict(sorted(self.reset_reason_counts.items())),
+            "metric_schema": "task037_trial_metric_accumulator_v2",
+            "metric_source": {
+                "post_step_state_count": int(sample_count) - terminal_metric_sample_count,
+                "terminal_frame_count": terminal_metric_sample_count,
+                "terminal_frame_schema": TASK037_TERMINAL_METRIC_SCHEMA,
+            },
             "reward_mean": float((self.reward_sum / den).item()),
             "lin_vel_command": {
                 "mean_x": float((self.command_x_sum / den).item()),
@@ -624,7 +683,13 @@ def _dynamic_template(args: argparse.Namespace) -> Any:
             raise ValueError("--dynamic-recovery-s must be greater than --dynamic-onset-s")
         return (
             (0.0, args.dynamic_onset_s, None, "normal", 1.0),
-            (args.dynamic_onset_s, args.dynamic_recovery_s, args.dynamic_dead_joint, "dead", 0.0),
+            (
+                args.dynamic_onset_s,
+                args.dynamic_recovery_s,
+                args.dynamic_dead_joint,
+                "dead",
+                args.dynamic_dead_scale,
+            ),
             (args.dynamic_recovery_s, None, None, "normal", 1.0),
         )
     return DYNAMIC_CASES[args.dynamic_case]
@@ -674,6 +739,135 @@ def _long_tensor(torch: Any, value: Any, device: str) -> Any:
     if hasattr(value, "to"):
         return value.to(device=device, dtype=torch.long)
     return torch.as_tensor(value, device=device, dtype=torch.long)
+
+
+def _apply_terminal_metric_overrides(
+    torch: Any,
+    extras: Mapping[str, Any],
+    *,
+    terminal_mask: Any,
+    command: Any,
+    lin_vel: Any,
+    yaw_vel: Any,
+    gravity_xy: Any,
+    root_z: Any,
+    device: str,
+    num_envs: int,
+) -> dict[str, Any]:
+    terminal_metric_mask = _terminal_metric_mask(
+        torch,
+        extras,
+        terminal_mask=terminal_mask,
+        device=device,
+        num_envs=num_envs,
+    )
+    if not bool(terminal_metric_mask.any().item()):
+        return {
+            "command": command,
+            "lin_vel": lin_vel,
+            "yaw_vel": yaw_vel,
+            "gravity_xy": gravity_xy,
+            "root_z": root_z,
+            "terminal_metric_mask": terminal_metric_mask,
+        }
+    command = command.clone()
+    lin_vel = lin_vel.clone()
+    yaw_vel = yaw_vel.clone()
+    gravity_xy = gravity_xy.clone()
+    root_z = root_z.clone()
+    command[terminal_metric_mask] = _terminal_tensor(
+        torch,
+        extras,
+        TASK037_TERMINAL_COMMAND_KEY,
+        device=device,
+        shape=(num_envs, int(command.shape[-1])),
+    )[terminal_metric_mask]
+    lin_vel[terminal_metric_mask] = _terminal_tensor(
+        torch,
+        extras,
+        TASK037_TERMINAL_LIN_VEL_KEY,
+        device=device,
+        shape=(num_envs, int(lin_vel.shape[-1])),
+    )[terminal_metric_mask]
+    yaw_vel[terminal_metric_mask] = _terminal_tensor(
+        torch,
+        extras,
+        TASK037_TERMINAL_YAW_VEL_KEY,
+        device=device,
+        shape=(num_envs,),
+    )[terminal_metric_mask]
+    gravity_xy[terminal_metric_mask] = _terminal_tensor(
+        torch,
+        extras,
+        TASK037_TERMINAL_GRAVITY_XY_KEY,
+        device=device,
+        shape=(num_envs,),
+    )[terminal_metric_mask]
+    root_z[terminal_metric_mask] = _terminal_tensor(
+        torch,
+        extras,
+        TASK037_TERMINAL_ROOT_Z_KEY,
+        device=device,
+        shape=(num_envs,),
+    )[terminal_metric_mask]
+    return {
+        "command": command,
+        "lin_vel": lin_vel,
+        "yaw_vel": yaw_vel,
+        "gravity_xy": gravity_xy,
+        "root_z": root_z,
+        "terminal_metric_mask": terminal_metric_mask,
+    }
+
+
+def _terminal_metric_mask(
+    torch: Any,
+    extras: Mapping[str, Any],
+    *,
+    terminal_mask: Any,
+    device: str,
+    num_envs: int,
+) -> Any:
+    if extras.get(TASK037_TERMINAL_METRIC_SCHEMA_KEY) != TASK037_TERMINAL_METRIC_SCHEMA:
+        return torch.zeros(num_envs, device=device, dtype=torch.bool)
+    mask_value = extras.get(TASK037_TERMINAL_METRIC_MASK_KEY)
+    if mask_value is None:
+        return torch.zeros(num_envs, device=device, dtype=torch.bool)
+    required_keys = (
+        TASK037_TERMINAL_COMMAND_KEY,
+        TASK037_TERMINAL_LIN_VEL_KEY,
+        TASK037_TERMINAL_YAW_VEL_KEY,
+        TASK037_TERMINAL_GRAVITY_XY_KEY,
+        TASK037_TERMINAL_ROOT_Z_KEY,
+    )
+    if any(key not in extras for key in required_keys):
+        return torch.zeros(num_envs, device=device, dtype=torch.bool)
+    metric_mask = _bool_tensor(torch, mask_value, device)
+    if tuple(metric_mask.shape) != (num_envs,):
+        raise ValueError(
+            f"terminal metric mask must have shape ({num_envs},), got {tuple(metric_mask.shape)}"
+        )
+    return metric_mask & _bool_tensor(torch, terminal_mask, device)
+
+
+def _terminal_tensor(
+    torch: Any,
+    extras: Mapping[str, Any],
+    key: str,
+    *,
+    device: str,
+    shape: tuple[int, ...],
+) -> Any:
+    if key not in extras:
+        raise ValueError(f"terminal metric extras missing {key}")
+    value = extras[key]
+    if hasattr(value, "to"):
+        tensor = value.to(device=device)
+    else:
+        tensor = torch.as_tensor(value, device=device)
+    if tuple(tensor.shape) != shape:
+        raise ValueError(f"{key} must have shape {shape}, got {tuple(tensor.shape)}")
+    return tensor
 
 
 def _thresholds(args: argparse.Namespace) -> dict[str, float]:

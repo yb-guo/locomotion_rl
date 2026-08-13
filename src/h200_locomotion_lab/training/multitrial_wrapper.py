@@ -17,6 +17,14 @@ TASK037_FALL_KEY = "task037_fall"
 TASK037_TIMEOUT_KEY = "task037_trial_timeout"
 TASK037_RESET_REASON_KEY = "task037_reset_reason"
 TASK037_CONDITION_ID_KEY = "task037_condition_id"
+TASK037_TERMINAL_METRIC_SCHEMA = "task037_terminal_metrics_v1"
+TASK037_TERMINAL_METRIC_SCHEMA_KEY = "task037_terminal_metric_schema"
+TASK037_TERMINAL_METRIC_MASK_KEY = "task037_terminal_metric_mask"
+TASK037_TERMINAL_COMMAND_KEY = "task037_terminal_command"
+TASK037_TERMINAL_LIN_VEL_KEY = "task037_terminal_lin_vel_b_xy"
+TASK037_TERMINAL_YAW_VEL_KEY = "task037_terminal_yaw_vel_b"
+TASK037_TERMINAL_GRAVITY_XY_KEY = "task037_terminal_gravity_xy"
+TASK037_TERMINAL_ROOT_Z_KEY = "task037_terminal_root_z"
 TRIAL_DONE_KEY = "trial_done"
 EPISODE_DONE_KEY = "episode_done"
 INNER_RESET_KEY = "inner_reset"
@@ -122,6 +130,12 @@ class Task037MultiTrialVecEnvWrapper:
         episode_done = trial_done & final_trial
         inner_reset = trial_done & ~episode_done
         outer_reset = episode_done
+        terminal_metric_extras = _capture_terminal_metric_extras(
+            self.unwrapped,
+            trial_done,
+            self.device,
+            self.num_envs,
+        )
 
         if bool(inner_reset.any().item()):
             inner_ids = _mask_to_env_ids(inner_reset)
@@ -148,6 +162,8 @@ class Task037MultiTrialVecEnvWrapper:
         extras[TASK037_FINAL_TRIAL_KEY] = final_trial
         reset_reason = _reset_reason(raw_done, fall, timeout)
         extras[TASK037_RESET_REASON_KEY] = reset_reason
+        for key, value in terminal_metric_extras.items():
+            extras.setdefault(key, value)
         extras[TRIAL_DONE_KEY] = trial_done
         extras[EPISODE_DONE_KEY] = episode_done
         extras[INNER_RESET_KEY] = inner_reset
@@ -200,6 +216,8 @@ class Task037MultiTrialVecEnvWrapper:
             TASK037_RESET_REASON_KEY,
             torch.zeros(self.num_envs, device=self.device, dtype=torch.long),
         )
+        extras.setdefault(TASK037_TERMINAL_METRIC_SCHEMA_KEY, TASK037_TERMINAL_METRIC_SCHEMA)
+        extras.setdefault(TASK037_TERMINAL_METRIC_MASK_KEY, false_mask.clone())
         extras.setdefault(TRIAL_DONE_KEY, false_mask.clone())
         extras.setdefault(EPISODE_DONE_KEY, false_mask.clone())
         extras.setdefault(INNER_RESET_KEY, false_mask.clone())
@@ -280,6 +298,45 @@ def _merge_obs_for_env_ids(obs: Any, reset_obs: Any, env_ids: Any) -> Any:
         )
     merged[env_ids] = selected
     return merged
+
+
+def _capture_terminal_metric_extras(
+    env: Any,
+    terminal_mask: Any,
+    device: Any,
+    num_envs: int,
+) -> dict[str, Any]:
+    torch = _require_torch()
+    mask = _as_bool_tensor(terminal_mask, device, num_envs)
+    extras: dict[str, Any] = {
+        TASK037_TERMINAL_METRIC_SCHEMA_KEY: TASK037_TERMINAL_METRIC_SCHEMA,
+        TASK037_TERMINAL_METRIC_MASK_KEY: mask.clone(),
+    }
+    if not bool(mask.any().item()):
+        return extras
+    scene = getattr(env, "scene", None)
+    command_manager = getattr(env, "command_manager", None)
+    if not isinstance(scene, dict) or "robot" not in scene or command_manager is None:
+        return extras
+    robot = scene["robot"]
+    data = getattr(robot, "data", None)
+    get_command = getattr(command_manager, "get_command", None)
+    if data is None or not callable(get_command):
+        return extras
+    try:
+        command = get_command("twist")
+        lin_vel = data.root_link_lin_vel_b[:, :2]
+        yaw_vel = data.root_link_ang_vel_b[:, 2]
+        gravity_xy = torch.linalg.norm(data.projected_gravity_b[:, :2], dim=-1)
+        root_z = data.root_link_pos_w[:, 2]
+    except Exception:
+        return extras
+    extras[TASK037_TERMINAL_COMMAND_KEY] = command.to(device=device).clone()
+    extras[TASK037_TERMINAL_LIN_VEL_KEY] = lin_vel.to(device=device).clone()
+    extras[TASK037_TERMINAL_YAW_VEL_KEY] = yaw_vel.to(device=device).clone()
+    extras[TASK037_TERMINAL_GRAVITY_XY_KEY] = gravity_xy.to(device=device).clone()
+    extras[TASK037_TERMINAL_ROOT_Z_KEY] = root_z.to(device=device).clone()
+    return extras
 
 
 def _require_torch() -> Any:

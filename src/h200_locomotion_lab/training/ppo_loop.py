@@ -107,6 +107,9 @@ class RolloutBatch:
     root_height_mean: float
     root_height_min: float
     upright_mean: float
+    terminated: Any | None = None
+    truncated: Any | None = None
+    terminal_values: Any | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,6 +248,7 @@ def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -
     }
     values: list[Any] = []
     log_probs: list[Any] = []
+    terminal_observations: list[Any] = []
     reset_count = 0
     full_env_reset_wave_count = 0
     synchronize_device(getattr(observation, "device", None))
@@ -255,12 +259,18 @@ def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -
             transition = env.step(action)
             reward = transition.reward
             done = transition.done
+            terminal_observation = getattr(transition, "terminal_observation", None)
+            if terminal_observation is None:
+                terminal_observation = transition.info.get("terminal_observation")
+            if terminal_observation is None:
+                terminal_observation = transition.observation
             observations.append(observation)
             actions.append(action)
             rewards.append(reward)
             dones.append(done)
             truncated_flags.append(transition.truncated)
             terminated_flags.append(transition.terminated)
+            terminal_observations.append(terminal_observation)
             components = transition.info.get("components", {})
             if "height_bad" in components:
                 height_bad_flags.append(components["height_bad"])
@@ -287,12 +297,18 @@ def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -
             full_env_reset_wave_count += int(bool(transition.info.get("full_env_reset_wave", False)))
             observation = transition.observation
         next_value = model.forward(observation)[1]
+        terminal_observation_tensor = torch.stack(terminal_observations)
+        terminal_values = model.forward(
+            terminal_observation_tensor.reshape(-1, config.obs_dim)
+        )[1].reshape(config.rollout_steps, config.n_envs)
     synchronize_device(getattr(observation, "device", None))
     collect_time_s = time.perf_counter() - started
     observation_tensor = torch.stack(observations)
     action_tensor = torch.stack(actions)
     reward_tensor = torch.stack(rewards)
     done_tensor = torch.stack(dones)
+    terminated_tensor = torch.stack(terminated_flags)
+    truncated_tensor = torch.stack(truncated_flags)
     value_tensor = torch.stack(values)
     log_prob_tensor = torch.stack(log_probs)
     assert_finite_tensor(observation_tensor, "observation")
@@ -337,6 +353,9 @@ def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -
         root_height_mean=mean_tensors(torch, root_height_values),
         root_height_min=min_tensors(torch, root_height_values),
         upright_mean=mean_tensors(torch, upright_values),
+        terminated=terminated_tensor,
+        truncated=truncated_tensor,
+        terminal_values=terminal_values,
     )
 
 
@@ -344,16 +363,41 @@ def compute_gae(batch: RolloutBatch, config: PPOConfig) -> tuple[Any, Any]:
     torch = require_torch()
     advantages = torch.zeros_like(batch.rewards)
     last_advantage = torch.zeros_like(batch.next_value)
+    terminated = _rollout_mask_or_default(
+        torch,
+        batch.terminated,
+        default=batch.dones,
+        like=batch.dones,
+    )
+    truncated = _rollout_mask_or_default(
+        torch,
+        batch.truncated,
+        default=torch.zeros_like(batch.dones, dtype=torch.bool),
+        like=batch.dones,
+    )
+    terminal_values = batch.terminal_values
+    if terminal_values is None:
+        terminal_values = torch.zeros_like(batch.values)
     for step in reversed(range(config.rollout_steps)):
         next_value = batch.next_value if step == config.rollout_steps - 1 else batch.values[step + 1]
-        next_not_done = 1.0 - batch.dones[step].float()
-        delta = batch.rewards[step] + config.gamma * next_value * next_not_done - batch.values[step]
-        last_advantage = delta + config.gamma * config.gae_lambda * next_not_done * last_advantage
+        bootstrap_value = torch.where(truncated[step], terminal_values[step], next_value)
+        not_terminated = 1.0 - terminated[step].float()
+        continue_mask = 1.0 - batch.dones[step].float()
+        delta = batch.rewards[step] + config.gamma * bootstrap_value * not_terminated - batch.values[step]
+        last_advantage = delta + config.gamma * config.gae_lambda * continue_mask * last_advantage
         advantages[step] = last_advantage
     returns = advantages + batch.values
     assert_finite_tensor(advantages, "advantages")
     assert_finite_tensor(returns, "returns")
     return advantages, returns
+
+
+def _rollout_mask_or_default(torch: Any, value: Any | None, *, default: Any, like: Any) -> Any:
+    if value is None:
+        value = default
+    if hasattr(value, "to"):
+        return value.to(device=like.device, dtype=torch.bool)
+    return torch.as_tensor(value, device=like.device, dtype=torch.bool)
 
 
 def ppo_update(

@@ -6,7 +6,7 @@ import copy
 import json
 from collections import Counter
 from collections.abc import Mapping
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 from xml.etree import ElementTree as ET
 
@@ -349,7 +349,7 @@ def _rewrite_relative_meshdir_for_output(
     meshdir = info["meshdir_before"]
     if meshdir is None:
         return info
-    if Path(meshdir).is_absolute():
+    if _is_absolute_meshdir(meshdir):
         return info
     if source_path.parent.resolve() == output_path.parent.resolve():
         return info
@@ -373,6 +373,10 @@ def _meshdir_info(root: ET.Element, source_path: Path) -> dict[str, Any]:
         "meshdir_after": meshdir,
         "meshdir_rewritten": False,
     }
+
+
+def _is_absolute_meshdir(meshdir: str) -> bool:
+    return Path(meshdir).is_absolute() or PureWindowsPath(meshdir).is_absolute()
 
 
 def _append_missing_attr_limitations(

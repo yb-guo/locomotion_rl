@@ -25,6 +25,7 @@ outputs/
 .agent/task/*/artifacts/
 
 # Simulator and upstream clones
+external/
 IsaacLab/
 GR00T-WholeBodyControl/
 genesis_assets/
