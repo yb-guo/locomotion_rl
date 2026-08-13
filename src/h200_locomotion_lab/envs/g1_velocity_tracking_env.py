@@ -72,6 +72,7 @@ class G1VelocityTrackingStep:
     terminated: Any
     truncated: Any
     done: Any
+    terminal_observation: Any | None = None
     info: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -118,6 +119,7 @@ class G1VelocityTrackingVectorizedEnv:
             episode_lengths,
             done_env_ids,
         )
+        terminal_observation = self._observation(state)
         if reset_count:
             self.backend.reset(done_env_ids)
             self._reset_bookkeeping(done_env_ids)
@@ -135,6 +137,7 @@ class G1VelocityTrackingVectorizedEnv:
             "episode_lengths": episode_lengths,
             "completed_episode_lengths": completed_episode_lengths,
             "full_env_reset_wave": reset_count == self.n_envs,
+            "terminal_observation": terminal_observation,
         }
         return G1VelocityTrackingStep(
             observation=observation,
@@ -142,6 +145,7 @@ class G1VelocityTrackingVectorizedEnv:
             terminated=terminated,
             truncated=truncated,
             done=done,
+            terminal_observation=terminal_observation,
             info=info,
         )
 

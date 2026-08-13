@@ -80,6 +80,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=3801601)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--trial-length-s", type=float, default=0.5)
+    parser.add_argument(
+        "--final-window-s",
+        type=float,
+        default=0.0,
+        help=(
+            "Optional first-N-seconds diagnostic window inside the final trial. "
+            "Passed through to task037_multitrial_eval_checkpoint."
+        ),
+    )
     parser.add_argument("--lin-vel-x", type=float, default=0.4)
     parser.add_argument("--lin-vel-y", type=float, default=0.0)
     parser.add_argument("--ang-vel-z", type=float, default=0.0)

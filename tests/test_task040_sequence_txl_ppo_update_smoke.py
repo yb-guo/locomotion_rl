@@ -1,6 +1,7 @@
 import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -18,7 +19,7 @@ def test_task040_sequence_txl_ppo_update_parse_args_defaults() -> None:
     assert args.log_dir == module.DEFAULT_LOG_DIR
     assert args.num_envs == 8
     assert args.rollout_steps == 2
-    assert args.iterations == 1
+    assert args.iterations == 2
     assert args.num_mini_batches == 1
     assert args.device == "cuda:0"
     assert args.expected_action_dim == 31
@@ -182,6 +183,170 @@ def test_task040_sequence_txl_ppo_update_requires_sequence_counters_and_loss() -
     assert "algorithm_debug_missing_loss_dict" in reasons
 
 
+def test_task040_sequence_txl_ppo_update_requires_logprob_parity() -> None:
+    module = _load_src_tool("task040_sequence_txl_ppo_update_smoke.py")
+    summary = _passing_summary()
+    summary["algorithm_debug"]["last_logprob_parity"]["max_logprob_abs_error"] = 2e-5
+    summary["algorithm_debug"]["last_logprob_parity"]["pass"] = False
+
+    passed, reasons = module.evaluate_probe_pass(summary)
+
+    assert passed is False
+    assert "algorithm_debug_logprob_parity_failed" in reasons
+    assert "algorithm_debug_logprob_error_too_high" in reasons
+
+
+def test_task040_sequence_txl_ppo_update_requires_nonempty_rollout_start_memory() -> None:
+    module = _load_src_tool("task040_sequence_txl_ppo_update_smoke.py")
+    summary = _passing_summary()
+    summary["algorithm_debug"]["last_logprob_parity"]["rollout_start_memory_non_empty"] = False
+
+    passed, reasons = module.evaluate_probe_pass(summary)
+
+    assert passed is False
+    assert "algorithm_debug_rollout_start_memory_empty" in reasons
+
+
+def test_task040_sequence_logprob_parity_uses_per_env_rollout_start_memory() -> None:
+    torch = _import_torch()
+    wrapper = _load_training_module("rsl_history_wrapper.py")
+    alg = object.__new__(wrapper.Task040SequenceAwareTrueTxlPPO)
+    alg.actor = _ParityActor(torch)
+    alg.num_mini_batches = 2
+    alg.device = "cpu"
+    storage = _parity_storage(torch)
+    rollout_start_state = {
+        "mode": "rollout_start_snapshot",
+        "snapshot_id": 1,
+        "non_empty": True,
+        "memory_tensors": [torch.zeros((4, 2, 1))],
+        "memory_lengths": [torch.tensor([2, 4, 1, 3])],
+    }
+    storage.actions_log_prob = _expected_parity_log_probs(
+        torch,
+        initial_lengths=rollout_start_state["memory_lengths"][0],
+        dones=storage.dones,
+        actions=storage.actions,
+    )
+
+    diagnostics = alg._task040_logprob_parity_diagnostics(storage, rollout_start_state, torch)
+    zero_state = {
+        **rollout_start_state,
+        "non_empty": False,
+        "memory_lengths": [torch.zeros(4, dtype=torch.long)],
+    }
+    zero_diagnostics = alg._task040_logprob_parity_diagnostics(storage, zero_state, torch)
+
+    assert diagnostics["pass"] is True
+    assert diagnostics["rollout_start_memory_non_empty"] is True
+    assert diagnostics["non_empty_slice_count"] == 2
+    assert diagnostics["max_logprob_abs_error"] <= 1e-5
+    assert diagnostics["max_ratio_abs_error"] <= 1e-5
+    assert zero_diagnostics["pass"] is False
+    assert zero_diagnostics["max_logprob_abs_error"] > 1.0
+
+
+def test_task040_sequence_logprob_parity_uses_per_step_actor_normalizer_state() -> None:
+    torch = _import_torch()
+    wrapper = _load_training_module("rsl_history_wrapper.py")
+    alg = object.__new__(wrapper.Task040SequenceAwareTrueTxlPPO)
+    alg.actor = _ParityActor(torch)
+    alg.num_mini_batches = 2
+    alg.device = "cpu"
+    storage = _parity_storage(torch)
+    rollout_start_state = {
+        "mode": "rollout_start_snapshot",
+        "snapshot_id": 1,
+        "non_empty": True,
+        "memory_tensors": [torch.zeros((4, 2, 1))],
+        "memory_lengths": [torch.tensor([2, 4, 1, 3])],
+    }
+    normalizer_biases = [0.0, 3.0, -2.0]
+    normalizer_states = [
+        {"mean": torch.tensor([[bias]], dtype=torch.float32), "std": torch.ones(1, 1), "eps": 0.0}
+        for bias in normalizer_biases
+    ]
+    storage.actions_log_prob = _expected_parity_log_probs(
+        torch,
+        initial_lengths=rollout_start_state["memory_lengths"][0],
+        dones=storage.dones,
+        actions=storage.actions,
+        normalizer_biases=normalizer_biases,
+    )
+
+    diagnostics = alg._task040_logprob_parity_diagnostics(
+        storage,
+        rollout_start_state,
+        torch,
+        normalizer_states=normalizer_states,
+    )
+    live_normalizer_diagnostics = alg._task040_logprob_parity_diagnostics(
+        storage,
+        rollout_start_state,
+        torch,
+    )
+
+    assert diagnostics["pass"] is True
+    assert diagnostics["normalizer_replay_mode"] == "per_step_snapshot"
+    assert diagnostics["normalizer_snapshot_count"] == 3
+    assert diagnostics["max_logprob_abs_error"] <= 1e-5
+    assert live_normalizer_diagnostics["pass"] is False
+    assert live_normalizer_diagnostics["normalizer_replay_mode"] == "live_actor_normalizer"
+    assert live_normalizer_diagnostics["max_logprob_abs_error"] > 1.0
+
+
+def test_task040_sequence_step_count_accepts_tensor_and_tensordict_shapes() -> None:
+    torch = _import_torch()
+    wrapper = _load_training_module("rsl_history_wrapper.py")
+
+    assert wrapper._task040_sequence_step_count(torch.zeros((3, 2, 1))) == 3
+    assert wrapper._task040_sequence_step_count(SimpleNamespace(batch_size=(4, 2))) == 4
+
+
+def test_task040_sequence_actor_head_replays_rollout_batch_shape_per_step() -> None:
+    torch = _import_torch()
+    wrapper = _load_training_module("rsl_history_wrapper.py")
+    actor = object.__new__(wrapper.Task038TrueTxlMemoryModel)
+    actor.mlp = _ShapeRecordingMlp(torch)
+    obs = torch.zeros((3, 2, 1))
+    latents = torch.arange(12, dtype=torch.float32).reshape(6, 2)
+
+    output = actor._task040_forward_sequence_mlp_per_rollout_step(obs, latents)
+
+    assert actor.mlp.calls == [(2, 2), (2, 2), (2, 2)]
+    expected = torch.cat(
+        (
+            latents[:2].sum(dim=-1, keepdim=True) + 1.0,
+            latents[2:4].sum(dim=-1, keepdim=True) + 2.0,
+            latents[4:].sum(dim=-1, keepdim=True) + 3.0,
+        ),
+        dim=0,
+    )
+    assert torch.equal(output, expected)
+
+
+def test_task040_attention_backend_configuration_disables_mismatched_fastpaths() -> None:
+    wrapper = _load_training_module("rsl_history_wrapper.py")
+    fake_torch = SimpleNamespace(
+        backends=SimpleNamespace(
+            mha=_FakeMhaBackend(),
+            cuda=_FakeCudaBackend(),
+            cudnn=SimpleNamespace(allow_tf32=True),
+        )
+    )
+
+    settings = wrapper._task040_configure_attention_replay_determinism(fake_torch)
+
+    assert settings["mha_fastpath_before"] is True
+    assert settings["mha_fastpath_after"] is False
+    assert settings["flash_sdp_after"] is False
+    assert settings["mem_efficient_sdp_after"] is False
+    assert settings["cudnn_sdp_after"] is False
+    assert settings["math_sdp_after"] is True
+    assert settings["cuda_matmul_allow_tf32_after"] is False
+    assert settings["cudnn_allow_tf32_after"] is False
+
+
 def test_task040_sequence_txl_ppo_update_rejects_overclaim_flags() -> None:
     module = _load_src_tool("task040_sequence_txl_ppo_update_smoke.py")
     summary = _passing_summary()
@@ -251,6 +416,150 @@ def _load_src_tool(name: str):
     return module
 
 
+def _load_training_module(name: str):
+    path = ROOT / "src" / "h200_locomotion_lab" / "training" / name
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[path.stem] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _import_torch():
+    import pytest
+
+    return pytest.importorskip("torch")
+
+
+class _ParityActor:
+    def __init__(self, torch) -> None:
+        self.torch = torch
+        self._log_prob = None
+
+    def task040_forward_sequence(
+        self,
+        obs,
+        *,
+        reset_mask,
+        initial_memory_state,
+        normalizer_states=None,
+        stochastic_output,
+    ):
+        del stochastic_output
+        lengths = initial_memory_state["memory_lengths"][0].clone().to(dtype=self.torch.float32)
+        rows = []
+        for step in range(int(obs.shape[0])):
+            reset = reset_mask[step]
+            lengths[reset] = 0.0
+            normalizer_bias = 0.0
+            if normalizer_states is not None:
+                state = normalizer_states[step]
+                if state is not None:
+                    normalizer_bias = state["mean"].reshape(-1)[0].to(dtype=self.torch.float32)
+            rows.append(obs[step, :, 0] + lengths + normalizer_bias)
+            lengths += 1.0
+        self._log_prob = self.torch.stack(rows, dim=0).reshape(-1)
+        return obs.reshape(int(obs.shape[0]) * int(obs.shape[1]), -1)
+
+    def get_output_log_prob(self, actions):
+        del actions
+        assert self._log_prob is not None
+        return self._log_prob
+
+
+class _FakeMhaBackend:
+    def __init__(self) -> None:
+        self.enabled = True
+
+    def get_fastpath_enabled(self) -> bool:
+        return self.enabled
+
+    def set_fastpath_enabled(self, value: bool) -> None:
+        self.enabled = bool(value)
+
+
+class _FakeCudaBackend:
+    def __init__(self) -> None:
+        self.flash = True
+        self.mem_efficient = True
+        self.cudnn = True
+        self.math = False
+        self.matmul = SimpleNamespace(allow_tf32=True)
+
+    def flash_sdp_enabled(self) -> bool:
+        return self.flash
+
+    def enable_flash_sdp(self, value: bool) -> None:
+        self.flash = bool(value)
+
+    def mem_efficient_sdp_enabled(self) -> bool:
+        return self.mem_efficient
+
+    def enable_mem_efficient_sdp(self, value: bool) -> None:
+        self.mem_efficient = bool(value)
+
+    def cudnn_sdp_enabled(self) -> bool:
+        return self.cudnn
+
+    def enable_cudnn_sdp(self, value: bool) -> None:
+        self.cudnn = bool(value)
+
+    def math_sdp_enabled(self) -> bool:
+        return self.math
+
+    def enable_math_sdp(self, value: bool) -> None:
+        self.math = bool(value)
+
+
+class _ShapeRecordingMlp:
+    def __init__(self, torch) -> None:
+        self.torch = torch
+        self.calls = []
+
+    def __call__(self, values):
+        self.calls.append(tuple(values.shape))
+        return values.sum(dim=-1, keepdim=True) + float(len(self.calls))
+
+
+def _parity_storage(torch):
+    observations = torch.tensor(
+        [
+            [[10.0], [20.0], [30.0], [40.0]],
+            [[11.0], [21.0], [31.0], [41.0]],
+            [[12.0], [22.0], [32.0], [42.0]],
+        ]
+    )
+    actions = observations.clone()
+    dones = torch.tensor(
+        [
+            [False, False, False, False],
+            [False, True, False, False],
+            [False, False, True, False],
+        ]
+    )
+    return SimpleNamespace(
+        num_envs=4,
+        observations=observations,
+        actions=actions,
+        actions_log_prob=torch.zeros((3, 4)),
+        dones=dones,
+    )
+
+
+def _expected_parity_log_probs(torch, *, initial_lengths, dones, actions, normalizer_biases=None):
+    reset_mask = torch.zeros_like(dones, dtype=torch.bool)
+    reset_mask[1:] = dones[:-1]
+    lengths = initial_lengths.clone().to(dtype=torch.float32)
+    rows = []
+    for step in range(int(actions.shape[0])):
+        lengths[reset_mask[step]] = 0.0
+        normalizer_bias = 0.0 if normalizer_biases is None else float(normalizer_biases[step])
+        rows.append(actions[step, :, 0] + lengths + normalizer_bias)
+        lengths += 1.0
+    return torch.stack(rows, dim=0)
+
+
 def _passing_summary() -> dict:
     return {
         "task": "Unitree-G1-Gripper-Flat-Task038-TrainTrueTxlRunnerSmoke",
@@ -264,7 +573,7 @@ def _passing_summary() -> dict:
         "actual_num_envs": 8,
         "num_envs": 8,
         "rollout_steps": 2,
-        "iterations": 1,
+        "iterations": 2,
         "num_mini_batches": 1,
         "action_dim": 31,
         "total_action_dim": 31,
@@ -278,10 +587,21 @@ def _passing_summary() -> dict:
             "sequence_update_forward_samples": 16,
         },
         "algorithm_debug": {
-            "sequence_update_batches": 1,
-            "sequence_update_samples": 16,
-            "sequence_update_steps": 2,
+            "sequence_update_batches": 2,
+            "sequence_update_samples": 32,
+            "sequence_update_steps": 4,
             "last_loss_dict": {"value": 1.0, "surrogate": 0.0, "entropy": 0.5},
+            "last_logprob_parity": {
+                "mode": "rollout_start_snapshot",
+                "rollout_start_memory_non_empty": True,
+                "non_empty_slice_count": 1,
+                "slice_count": 1,
+                "sample_count": 16,
+                "max_logprob_abs_error": 0.0,
+                "max_ratio_abs_error": 0.0,
+                "threshold": 1e-5,
+                "pass": True,
+            },
         },
         "log_dir_exists": True,
         "wall_time_s": 1.5,

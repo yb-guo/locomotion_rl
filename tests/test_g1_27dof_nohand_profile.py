@@ -20,8 +20,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PROFILE_27DOF_PATH = REPO_ROOT / "configs/robots/unitree_g1_27dof_nohand_genesis.yaml"
 PROFILE_29DOF_PATH = REPO_ROOT / "configs/robots/unitree_g1_29dof_sonic.yaml"
 PREPARED_ASSET_PATH = (
-    "/root/h200-locomotion-lab-runs/task002-sonic-mujoco-smoke/"
-    "GR00T-WholeBodyControl/gear_sonic/data/robots/g1/g1_27dof_nohand.xml"
+    "/home/xyzl/yubo/locomotion_rl/external/unitree_rl_mjlab/src/assets/robots/unitree_g1/"
+    "xmls/g1_27dof_nohand.xml"
 )
 
 

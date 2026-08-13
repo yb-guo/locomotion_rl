@@ -51,7 +51,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--log-dir", type=Path, default=DEFAULT_LOG_DIR)
     parser.add_argument("--num-envs", type=int, default=8)
     parser.add_argument("--rollout-steps", type=int, default=2)
-    parser.add_argument("--iterations", type=int, default=1)
+    parser.add_argument("--iterations", type=int, default=2)
     parser.add_argument("--seed", type=int, default=4004001)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--num-mini-batches", type=int, default=1)
@@ -72,8 +72,8 @@ def preflight_args(args: argparse.Namespace) -> None:
     reasons: list[str] = []
     if args.task != DEFAULT_TASK:
         reasons.append("task_not_train_true_txl_runner_smoke")
-    if int(args.iterations) != 1:
-        reasons.append("iterations_not_one")
+    if int(args.iterations) <= 0:
+        reasons.append("iterations_not_positive")
     if int(args.num_mini_batches) <= 0:
         reasons.append("num_mini_batches_not_positive")
     if int(args.num_envs) % int(args.num_mini_batches) != 0:
@@ -138,7 +138,7 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
         total_action_dim = _total_action_dim(base) or action_dim
         actual_num_envs = int(getattr(rollout_env, "num_envs", args.num_envs))
 
-        runner.learn(num_learning_iterations=1, init_at_random_ep_len=False)
+        runner.learn(num_learning_iterations=args.iterations, init_at_random_ep_len=False)
         learn_returned = True
 
         post_learn = collect_post_learn_diagnostics(
@@ -250,8 +250,20 @@ def evaluate_probe_pass(summary: dict[str, Any]) -> tuple[bool, list[str]]:
         reasons.append("algorithm_debug_no_sequence_update_batches")
     if not algorithm_debug.get("last_loss_dict"):
         reasons.append("algorithm_debug_missing_loss_dict")
-    if int(summary.get("iterations") or 0) != 1:
-        reasons.append("iterations_not_one")
+    parity = algorithm_debug.get("last_logprob_parity") or {}
+    if not parity:
+        reasons.append("algorithm_debug_missing_logprob_parity")
+    else:
+        if not parity.get("pass"):
+            reasons.append("algorithm_debug_logprob_parity_failed")
+        if float(parity.get("max_logprob_abs_error") or 0.0) > float(parity.get("threshold") or 1e-5):
+            reasons.append("algorithm_debug_logprob_error_too_high")
+        if float(parity.get("max_ratio_abs_error") or 0.0) > float(parity.get("threshold") or 1e-5):
+            reasons.append("algorithm_debug_ratio_error_too_high")
+        if not parity.get("rollout_start_memory_non_empty"):
+            reasons.append("algorithm_debug_rollout_start_memory_empty")
+    if int(summary.get("iterations") or 0) <= 0:
+        reasons.append("iterations_not_positive")
     if int(summary.get("num_envs") or 0) <= 0:
         reasons.append("num_envs_not_positive")
     if int(summary.get("rollout_steps") or 0) <= 0:
@@ -375,6 +387,12 @@ def _install_wandb_stub() -> None:
 def _install_wcwidth_stub() -> None:
     """Provide width helpers for prettytable in the slim H200 conda env."""
 
+    try:
+        import wcwidth  # noqa: F401
+        return
+    except ImportError:
+        pass
+
     if "wcwidth" in sys.modules:
         return
     wcwidth_module = types.ModuleType("wcwidth")
@@ -387,6 +405,7 @@ def _install_wcwidth_stub() -> None:
 
     wcwidth_module.wcwidth = _wcwidth
     wcwidth_module.wcswidth = _wcswidth
+    wcwidth_module.width = _wcswidth
     sys.modules["wcwidth"] = wcwidth_module
 
 

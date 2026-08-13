@@ -53,6 +53,14 @@ H200 Locomotion Lab 的 agent 入口。
 - `task/task044-memory-required-fault-identification-target/task.md`
 - `task/task045-left-knee-continuous-stability-tail-gate/task.md`
 - `task/task046-retry-after-fall-adaptation-eval/task.md`
+- `task/task047-training-eval-correctness-repair/task.md`
+- `task/task048-local-4090-previous-gait-reproduction/task.md`
+- `task/task049-true-txl-bridge-continuation/task.md`
+- `task/task050-task049-fault-recovery-eval/task.md`
+- `task/task051-fault-specialized-true-txl-training/task.md`
+- `task/task052-fixed-stage-fault-curriculum/task.md`
+- `task/task053-sampled-fault-curriculum/task.md`
+- `task/task054-longer-sampled-fault-continuation/task.md`
 
 ## Consensus
 
@@ -62,11 +70,13 @@ H200 Locomotion Lab 的 agent 入口。
 - `.agent/task` 放可执行任务，任务必须拆成小的 closed unit。
 - 每个 subtask 固定 `Route / Log / Review`。
 - 不把 H200 上完整 Isaac Sim/RTX 路线当主线。
+- 当前用户指定执行目标：本地 RTX 4090 + MuJoCo-only 训练；Genesis 不作为
+  本地训练依赖或验收门槛，除非后续明确重开该路线。
 - 所有训练和仿真路径都必须有 smoke test、失败条件和退出规则。
 
 ## Lessons
 
 - H200 是训练卡，不是 RTX 仿真工作站。
 - 先复现官方最短链路，再改算法。
-- SONIC 先跑 MuJoCo sim2sim，再试 Isaac Lab headless。
+- SONIC 先跑 MuJoCo sim2sim；Isaac Lab/Genesis 不参与当前本地训练路线。
 - LocoFormer 先做最小可验证版本，不从 full scale 开始。

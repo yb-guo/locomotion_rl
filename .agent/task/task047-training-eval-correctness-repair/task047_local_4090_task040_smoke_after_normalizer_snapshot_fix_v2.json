@@ -1,0 +1,205 @@
+{
+  "action_dim": 31,
+  "actor_model_class": "Task038TrueTxlMemoryModel",
+  "actor_model_error": null,
+  "actual_num_envs": 2,
+  "algorithm_class": "Task040SequenceAwareTrueTxlPPO",
+  "algorithm_debug": {
+    "actor_normalizer_snapshot_count": 0,
+    "algorithm_class": "Task040SequenceAwareTrueTxlPPO",
+    "last_actor_normalizer_snapshot_count": 2,
+    "last_logprob_parity": {
+      "max_logprob_abs_error": 0.0,
+      "max_ratio_abs_error": 0.0,
+      "mode": "rollout_start_snapshot",
+      "non_empty_slice_count": 1,
+      "normalizer_replay_mode": "per_step_snapshot",
+      "normalizer_snapshot_count": 2,
+      "pass": true,
+      "rollout_start_memory_non_empty": true,
+      "sample_count": 4,
+      "slice_count": 1,
+      "threshold": 1e-05
+    },
+    "last_loss_dict": {
+      "entropy": 43.988075256347656,
+      "surrogate": 8.940696716308594e-08,
+      "value": 0.16056840121746063
+    },
+    "sequence_update_batches": 2,
+    "sequence_update_samples": 8,
+    "sequence_update_steps": 4,
+    "task044_fault_aux_last_loss": null,
+    "task044_fault_aux_loss_weight": 0.0,
+    "task044_fault_aux_max_trial_step": -1,
+    "task044_fault_aux_min_trial_index": 0,
+    "task044_fault_aux_num_classes": 0,
+    "task044_fault_aux_obs_key": "task044_fault_label",
+    "task044_fault_aux_updates": 0
+  },
+  "command": [
+    "/home/xyzl/yubo/locomotion_rl/src/h200_locomotion_lab/tools/task040_sequence_txl_ppo_update_smoke.py",
+    "--device",
+    "cuda:0",
+    "--num-envs",
+    "2",
+    "--rollout-steps",
+    "2",
+    "--iterations",
+    "2",
+    "--num-mini-batches",
+    "1",
+    "--output-json",
+    ".agent/task/task047-training-eval-correctness-repair/task047_local_4090_task040_smoke_after_normalizer_snapshot_fix_v2.json"
+  ],
+  "device": "cuda:0",
+  "eval_claim": false,
+  "expected_action_dim": 31,
+  "expected_actor_model_class": "Task038TrueTxlMemoryModel",
+  "expected_algorithm_class": "Task040SequenceAwareTrueTxlPPO",
+  "expected_runner_cls": "Task038TrueTxlMemoryK160Runner",
+  "failure_reasons": [],
+  "iterations": 2,
+  "json_path": "/home/xyzl/yubo/locomotion_rl/.agent/task/task047-training-eval-correctness-repair/task047_local_4090_task040_smoke_after_normalizer_snapshot_fix_v2.json",
+  "learn_returned": true,
+  "log_dir": "/home/xyzl/yubo/locomotion_rl/outputs/task040/sequence_txl_ppo_update_smoke",
+  "log_dir_exists": true,
+  "log_dir_files": [
+    "events.out.tfevents.1786268931.xyzl-Embodiment-plantform.896588.0",
+    "events.out.tfevents.1786361333.xyzl-Embodiment-plantform.3040944.0",
+    "events.out.tfevents.1786361843.xyzl-Embodiment-plantform.3076238.0",
+    "events.out.tfevents.1786361969.xyzl-Embodiment-plantform.3088222.0",
+    "git/locomotion_rl.diff",
+    "model_0.pt",
+    "model_1.pt"
+  ],
+  "num_envs": 2,
+  "num_mini_batches": 1,
+  "obs": {
+    "actor": {
+      "finite": true,
+      "shape": [
+        2,
+        104
+      ]
+    },
+    "actor_history": {
+      "finite": true,
+      "shape": [
+        2,
+        21600
+      ]
+    },
+    "critic": {
+      "finite": true,
+      "shape": [
+        2,
+        119
+      ]
+    }
+  },
+  "obs_all_finite": true,
+  "obs_error": null,
+  "pass": true,
+  "policy_action_finite": true,
+  "policy_action_shape": [
+    2,
+    31
+  ],
+  "policy_error": null,
+  "quality_claim": false,
+  "reproduction_claim": false,
+  "rollout_steps": 2,
+  "runner_cls": "Task038TrueTxlMemoryK160Runner",
+  "seed": 4004001,
+  "sequence_aware_ppo_update_smoke_only": true,
+  "superiority_claim": false,
+  "task": "Unitree-G1-Gripper-Flat-Task038-TrainTrueTxlRunnerSmoke",
+  "total_action_dim": 31,
+  "training_claim": false,
+  "txl_debug": {
+    "adaptation_output_norm_last": null,
+    "adaptation_warmstart_scale": 1.0,
+    "base_obs_passthrough_scale": 1.0,
+    "env_cache_stateful_forward_batches": 4,
+    "env_cache_stateful_forward_samples": 8,
+    "envs": [
+      {
+        "env_id": 0,
+        "incremental_steps": 4,
+        "inner_reset_events": 0,
+        "last_attended_previous_memory_lengths": [
+          48,
+          48
+        ],
+        "memory_lengths": [
+          64,
+          64
+        ],
+        "outer_reset_events": 0,
+        "segments_appended": 4,
+        "tokens_appended": 64
+      },
+      {
+        "env_id": 1,
+        "incremental_steps": 4,
+        "inner_reset_events": 0,
+        "last_attended_previous_memory_lengths": [
+          48,
+          48
+        ],
+        "memory_lengths": [
+          64,
+          64
+        ],
+        "outer_reset_events": 0,
+        "segments_appended": 4,
+        "tokens_appended": 64
+      }
+    ],
+    "last_attended_previous_memory_lengths": [
+      [
+        48,
+        48
+      ],
+      [
+        48,
+        48
+      ]
+    ],
+    "memory_latent_enabled": true,
+    "memory_len": 64,
+    "memory_residual_enabled": true,
+    "num_layers": 2,
+    "policy_memory_latent_norm_last": 9.473396301269531,
+    "segment_len": 16,
+    "segments_appended": 8,
+    "sequence_update_forward_batches": 4,
+    "sequence_update_forward_samples": 16,
+    "sequence_update_forward_steps": 8,
+    "sequence_update_reset_events": 0,
+    "stateful_memory_enabled": true,
+    "stateless_fallback_forward_batches": 0,
+    "stateless_fallback_forward_samples": 0,
+    "stateless_forward_batches": 0,
+    "stateless_forward_samples": 0,
+    "task040_last_initial_memory_mode": "rollout_start_snapshot",
+    "task040_last_initial_memory_non_empty": true,
+    "task040_rollout_start_snapshot": {
+      "available": false,
+      "capture_requested": false,
+      "mode": "none",
+      "non_empty": false,
+      "num_envs": 0,
+      "snapshot_id": 0
+    },
+    "task042_memory_ablation_mode": "none",
+    "tokens_appended": 128,
+    "total_actor_forward_batches": 4,
+    "total_actor_forward_samples": 8,
+    "txl_residual_output_norm_last": 9.473396301269531,
+    "txl_residual_raw_norm_last": 9.473396301269531
+  },
+  "txl_debug_error": null,
+  "wall_time_s": 2.5122296810150146
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import os
 import sys
@@ -24,7 +25,6 @@ from h200_locomotion_lab.tools.task038_true_txl_runner_smoke_probe import (
     _action_dim,
     _agent_cfg_as_dict,
     _actor_model,
-    _load_env_cfg,
     _set_if_present,
     _total_action_dim,
 )
@@ -55,6 +55,7 @@ TXL_RESIDUAL_PARAMETER_PREFIXES = (
     "memory_output_projection",
 )
 MEMORY_OUTPUT_PROJECTION_PARAMETER_PREFIXES = ("memory_output_projection",)
+PLAY_LIKE_EPISODE_LENGTH_S = 1.0e8
 
 
 def parse_args(argv: list[str] | None = None, *, description: str | None = None) -> argparse.Namespace:
@@ -215,6 +216,33 @@ def preflight_args(args: argparse.Namespace) -> None:
         raise PreflightError(reasons)
 
 
+def _load_train_env_cfg(load_env_cfg: Any, task: str) -> Any:
+    """Load the registered training config without inheriting play overrides."""
+    try:
+        signature = inspect.signature(load_env_cfg)
+    except (TypeError, ValueError):
+        signature = None
+    if signature is not None:
+        parameters = signature.parameters
+        accepts_play = "play" in parameters or any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters.values()
+        )
+        if not accepts_play:
+            return load_env_cfg(task)
+    return load_env_cfg(task, play=False)
+
+
+def _env_episode_length_s(env_cfg: Any) -> float | None:
+    value = getattr(env_cfg, "episode_length_s", None)
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def run_train(args: argparse.Namespace) -> dict[str, Any]:
     preflight_args(args)
     os.environ.setdefault("MUJOCO_GL", "egl")
@@ -236,7 +264,8 @@ def run_train(args: argparse.Namespace) -> dict[str, Any]:
     configure_torch_backends()
     torch.set_grad_enabled(True)
 
-    env_cfg = _load_env_cfg(load_env_cfg, args.task)
+    env_cfg = _load_train_env_cfg(load_env_cfg, args.task)
+    env_episode_length_s = _env_episode_length_s(env_cfg)
     agent_cfg = load_rl_cfg(args.task)
     _set_if_present(env_cfg, "seed", args.seed)
     if hasattr(getattr(env_cfg, "scene", None), "num_envs"):
@@ -373,6 +402,8 @@ def run_train(args: argparse.Namespace) -> dict[str, Any]:
             "command": list(sys.argv),
             "seed": args.seed,
             "device": args.device,
+            "env_cfg_mode": "train",
+            "env_episode_length_s": env_episode_length_s,
             "num_envs": args.num_envs,
             "actual_num_envs": actual_num_envs,
             "rollout_steps": args.rollout_steps,
@@ -552,6 +583,13 @@ def evaluate_train_pipeline_pass(summary: dict[str, Any]) -> tuple[bool, list[st
     reasons: list[str] = []
     if summary.get("task") != DEFAULT_TASK:
         reasons.append("task_not_task041_sequence_txl_clean_train")
+    if summary.get("env_cfg_mode") != "train":
+        reasons.append("env_cfg_mode_not_train")
+    episode_length_s = summary.get("env_episode_length_s")
+    if episode_length_s is None or float(episode_length_s) <= 0.0:
+        reasons.append("env_episode_length_s_missing_or_invalid")
+    elif float(episode_length_s) >= PLAY_LIKE_EPISODE_LENGTH_S:
+        reasons.append("env_episode_length_s_play_like")
     if summary.get("runner_cls") != summary.get("expected_runner_cls"):
         reasons.append("runner_cls_mismatch")
     if summary.get("algorithm_class") != summary.get("expected_algorithm_class"):
@@ -577,6 +615,19 @@ def evaluate_train_pipeline_pass(summary: dict[str, Any]) -> tuple[bool, list[st
         reasons.append("algorithm_debug_no_sequence_update_batches")
     if not algorithm_debug.get("last_loss_dict"):
         reasons.append("algorithm_debug_missing_loss_dict")
+    parity = algorithm_debug.get("last_logprob_parity") or {}
+    if not parity:
+        reasons.append("algorithm_debug_missing_logprob_parity")
+    else:
+        threshold = float(parity.get("threshold") or 1e-5)
+        if not parity.get("pass"):
+            reasons.append("algorithm_debug_logprob_parity_failed")
+        if float(parity.get("max_logprob_abs_error") or 0.0) > threshold:
+            reasons.append("algorithm_debug_logprob_error_too_high")
+        if float(parity.get("max_ratio_abs_error") or 0.0) > threshold:
+            reasons.append("algorithm_debug_ratio_error_too_high")
+        if not parity.get("rollout_start_memory_non_empty"):
+            reasons.append("algorithm_debug_rollout_start_memory_empty")
     fault_aux_weight = float(summary.get("task044_fault_aux_loss_weight") or 0.0)
     if fault_aux_weight > 0.0:
         if int(algorithm_debug.get("task044_fault_aux_updates") or 0) <= 0:

@@ -1,0 +1,70 @@
+{
+  "actor_l1_after": 869.6015000548214,
+  "actor_l1_before": 868.9477274417877,
+  "command": [
+    "/home/xyzl/yubo/locomotion_rl/src/h200_locomotion_lab/tools/task047_local_cuda_ppo_core_smoke.py",
+    "--device",
+    "cuda:0",
+    "--output-json",
+    ".agent/task/task047-training-eval-correctness-repair/task047_local_4090_ppo_core_smoke_after_normalizer_snapshot_fix.json"
+  ],
+  "config": {
+    "action_dim": 8,
+    "epochs": 2,
+    "hidden_dim": 64,
+    "minibatch_size": 32,
+    "n_envs": 16,
+    "obs_dim": 32,
+    "ppo_updates": 2,
+    "rollout_steps": 4
+  },
+  "cuda_memory_allocated_bytes": 17278464,
+  "cuda_memory_reserved_bytes": 23068672,
+  "device": "cuda:0",
+  "failure_reasons": [],
+  "gpu_name": "NVIDIA GeForce RTX 4090",
+  "host": "xyzl-Embodiment-plantform",
+  "pass": true,
+  "scope": "local CUDA PPO core only; not a robot locomotion quality claim",
+  "torch_cuda_build": "12.1",
+  "torch_version": "2.5.1+cu121",
+  "updates": [
+    {
+      "action_device": "cuda:0",
+      "approx_kl": 1.0940711945295334e-05,
+      "clip_fraction": 0.0,
+      "collect_time_s": 0.29361390601843596,
+      "done_count": 4,
+      "entropy": 7.350957870483398,
+      "env_steps": 64,
+      "observation_device": "cuda:0",
+      "policy_loss": -0.0012687891721725464,
+      "reward_mean": 0.987464427947998,
+      "terminal_values_device": "cuda:0",
+      "timeout_count": 4,
+      "update": 0,
+      "update_samples_per_sec": 1150.5017743762116,
+      "value_loss": 2.804821491241455
+    },
+    {
+      "action_device": "cuda:0",
+      "approx_kl": 3.842636942863464e-06,
+      "clip_fraction": 0.0,
+      "collect_time_s": 0.005450109951198101,
+      "done_count": 4,
+      "entropy": 7.350130081176758,
+      "env_steps": 64,
+      "observation_device": "cuda:0",
+      "policy_loss": -0.000710795633494854,
+      "reward_mean": 0.9898375272750854,
+      "terminal_values_device": "cuda:0",
+      "timeout_count": 4,
+      "update": 1,
+      "update_samples_per_sec": 14951.6557063509,
+      "value_loss": 2.68813419342041
+    }
+  ],
+  "value_l1_after": 874.5068318878766,
+  "value_l1_before": 874.1558079719543,
+  "wall_time_s": 0.443222685251385
+}

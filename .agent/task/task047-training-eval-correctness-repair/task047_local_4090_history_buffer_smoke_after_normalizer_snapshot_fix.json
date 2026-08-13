@@ -1,0 +1,81 @@
+{
+  "action_dim": 31,
+  "actor_fault_leakage_check": "passed",
+  "actor_field_count": 135,
+  "actor_frame_dim": 135,
+  "actor_input_dim_stack": 540,
+  "base_actor_obs_dim": 104,
+  "benchmark": {
+    "benchmark_steps": 16,
+    "cuda_memory_allocated_bytes": 623104,
+    "elapsed_s": 0.0013950350694358349,
+    "history_frames_per_sec": 734031.7261085882
+  },
+  "buffer_device": "cuda:0",
+  "command": "/home/xyzl/yubo/locomotion_rl/src/h200_locomotion_lab/tools/task033_history_buffer_smoke.py --num-envs 64 --history-len 4 --steps 8 --benchmark-steps 16 --device cuda --output-json .agent/task/task047-training-eval-correctness-repair/task047_local_4090_history_buffer_smoke_after_normalizer_snapshot_fix.json",
+  "debug_field_count": 5,
+  "device": "cuda:0",
+  "dtype": "torch.float32",
+  "expected_reset_env_valid_count": 4,
+  "failure_reasons": [],
+  "flat_shape": [
+    64,
+    540
+  ],
+  "forbidden_actor_terms": [
+    "active_failure",
+    "failure",
+    "fault",
+    "motor_scale",
+    "scale_factor",
+    "dead_motor",
+    "weak_motor",
+    "joint_id",
+    "failure_mask"
+  ],
+  "gpu_name": "NVIDIA GeForce RTX 4090",
+  "h200_checkout": "unknown",
+  "history_len": 4,
+  "host": "xyzl-Embodiment-plantform",
+  "is_gpu_resident": true,
+  "latest_shape": [
+    64,
+    4,
+    135
+  ],
+  "num_envs": 64,
+  "pass": true,
+  "repo_commit": "unknown",
+  "reset_env": 1,
+  "reset_env_valid_count": 4,
+  "reset_env_zero_prefix": 0,
+  "reset_policy": "clear reset env ids before appending the current frame",
+  "reset_step": 3,
+  "status": "passed",
+  "storage_shape": [
+    64,
+    4,
+    135
+  ],
+  "valid_count_max": 4,
+  "valid_count_min": 4,
+  "valid_count_sample": [
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4
+  ],
+  "write_index": 0
+}

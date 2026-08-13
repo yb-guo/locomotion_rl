@@ -9,12 +9,12 @@ This is an agent-driven research project. The main entrypoint is:
 ```
 
 Use `.agent/doc` for long-lived decisions and `.agent/task` for executable work.
-The repo is set up around the practical constraint that H100/H200 GPUs are
-excellent CUDA training cards, but are not RTX simulator workstations. The
-default path is therefore:
+The repo is set up around the practical constraint that CUDA training GPUs and
+RTX simulator workstations have different strengths. The current local training
+route is RTX 4090 + MuJoCo-only:
 
 1. Run GEAR-SONIC sim2sim through MuJoCo.
-2. Run new RL experiments in Genesis or MuJoCo.
+2. Run new RL experiments in MuJoCo.
 3. Keep Isaac Lab as an optional headless smoke-test target, not as the core
    dependency for this repo.
 4. Reproduce LocoFormer ideas in a small, inspectable setting before scaling.
@@ -61,18 +61,22 @@ python -m pip install -e ".[dev]"
 
 ## Heavy Dependencies
 
-Install these only on the target Linux machine:
+Install the local MuJoCo training environment into this repo with uv:
 
 ```bash
-# Genesis path
-python -m pip install -e ".[genesis]"
+UV_PROJECT_ENVIRONMENT=.venv uv sync --extra dev --extra training
+```
 
-# MuJoCo path
+Equivalent pip commands, if uv is unavailable:
+
+```bash
 python -m pip install -e ".[mujoco]"
-
-# Optional training utilities
 python -m pip install -e ".[training]"
 ```
+
+Genesis is not part of the current local training route. Historical Genesis
+adapters and task notes remain in the repository, but they are not an
+environment gate for MuJoCo training.
 
 Isaac Lab is intentionally not a hard dependency here. If you test it on an H200,
 run only the official GEAR-SONIC headless smoke test first and stop if the stack

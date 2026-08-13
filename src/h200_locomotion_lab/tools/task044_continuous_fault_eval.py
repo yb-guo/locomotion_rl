@@ -54,6 +54,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--dynamic-onset-s", type=float, default=2.0)
     parser.add_argument("--dynamic-recovery-s", type=float, default=999.0)
+    parser.add_argument("--dynamic-dead-scale", type=float, default=0.0)
     parser.add_argument("--startup-excluded-s", type=float, default=0.5)
     parser.add_argument("--post-fault-window-s", type=float, default=2.0)
     parser.add_argument("--reset-time-bin-s", type=float, default=0.5)
@@ -142,6 +143,7 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
             train_cfg,
             device=args.device,
         )
+        runner_cls_name = type(runner).__name__
         runner.load(
             str(checkpoint),
             load_cfg={"actor": True},
@@ -285,15 +287,20 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
         thresholds = _thresholds(args)
         physical_continuity_pass = physical_reset_events == 0 and inner_reset_events_total == 0
         post_fault_window_pass = _post_fault_window_pass(post_fault_window, thresholds)
-        pipeline_pass = (
-            action_dim == args.expected_action_dim
-            and total_action_dim == args.expected_action_dim
-            and type(actor).__name__ == args.expected_actor_model_class
-            and physical_continuity_pass
+        pipeline_pass = _continuous_pipeline_pass(
+            runner_cls=runner_cls_name,
+            expected_runner_cls=args.expected_runner_cls,
+            action_dim=action_dim,
+            total_action_dim=total_action_dim,
+            expected_action_dim=args.expected_action_dim,
+            actor_model_class=type(actor).__name__ if actor is not None else None,
+            expected_actor_model_class=args.expected_actor_model_class,
+            physical_continuity_pass=physical_continuity_pass,
         )
         quality_gate_pass = pipeline_pass and post_fault_window_pass
         failure_reasons = _failure_reasons(
             args=args,
+            runner_cls=runner_cls_name,
             action_dim=action_dim,
             total_action_dim=total_action_dim,
             actor_model_class=type(actor).__name__ if actor is not None else None,
@@ -329,8 +336,9 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
             "dynamic_dead_joint": args.dynamic_dead_joint,
             "dynamic_onset_s": args.dynamic_onset_s,
             "dynamic_recovery_s": args.dynamic_recovery_s,
+            "dynamic_dead_scale": args.dynamic_dead_scale,
             "startup_excluded_s": args.startup_excluded_s,
-            "runner_cls": TASK044_CONTINUOUS_EXPECTED_RUNNER_CLS,
+            "runner_cls": runner_cls_name,
             "actor_model_class": type(actor).__name__ if actor is not None else None,
             "expected_runner_cls": args.expected_runner_cls,
             "expected_actor_model_class": args.expected_actor_model_class,
@@ -669,9 +677,31 @@ def _post_fault_window_pass(window: dict[str, Any], thresholds: dict[str, float]
     )
 
 
+def _continuous_pipeline_pass(
+    *,
+    runner_cls: str | None,
+    expected_runner_cls: str,
+    action_dim: int | None,
+    total_action_dim: int | None,
+    expected_action_dim: int,
+    actor_model_class: str | None,
+    expected_actor_model_class: str,
+    physical_continuity_pass: bool,
+) -> bool:
+    return (
+        runner_cls == expected_runner_cls
+        and expected_runner_cls == TASK044_CONTINUOUS_EXPECTED_RUNNER_CLS
+        and action_dim == expected_action_dim
+        and total_action_dim == expected_action_dim
+        and actor_model_class == expected_actor_model_class
+        and physical_continuity_pass
+    )
+
+
 def _failure_reasons(
     *,
     args: argparse.Namespace,
+    runner_cls: str | None,
     action_dim: int | None,
     total_action_dim: int | None,
     actor_model_class: str | None,
@@ -681,6 +711,8 @@ def _failure_reasons(
     thresholds: dict[str, float],
 ) -> list[str]:
     reasons: list[str] = []
+    if runner_cls != args.expected_runner_cls:
+        reasons.append("runner_cls_mismatch")
     if args.expected_runner_cls != TASK044_CONTINUOUS_EXPECTED_RUNNER_CLS:
         reasons.append("expected_runner_cls_not_continuous")
     if actor_model_class != args.expected_actor_model_class:
