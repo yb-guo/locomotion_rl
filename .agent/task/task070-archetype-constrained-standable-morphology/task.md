@@ -1,6 +1,6 @@
 # Task070 — 成熟运动学先验约束的可站立程序化形态
 
-状态：**redesign_required_motor_dof_preserving_v2 — 旧 R0–R5 仅为历史执行证据，未满足用户最终确认的 motor-DoF-preserving structural prior contract**。
+状态：**redesign_required_motor_dof_preserving_v2 — 用户已完成 attempt010 视觉验收，但旧 R0–R5 仅为历史执行证据，未满足用户最终确认的 motor-DoF-preserving structural prior contract**。
 
 进入条件：Task069 已由独立只读 reviewer 批准其“四家族程序化形态包络”窄 claim，
 并冻结 `legacy_v2` 与 `locoformer_paper_faithful_morphology_v1` 的 manifest、XML、contract、
@@ -994,9 +994,16 @@ bijection、body-tree/axis coverage、23/29DoF biped、12DoF quadruped、25/31Do
   `35 passed`，WholeBody contract/extended pytest `30 passed`，targeted Ruff passed。所有 manifest
   保持 `user_visual_acceptance=false`、`counts_toward_task070_v2_pass=false`；follow-up high-risk
   read-only reviewer 在动态腰链补测后报告无 P0/P1/P2；Task070 未标记 passed。
+- 2026-08-26：用户明确表示“目前我认证过了，感觉还行”。通过 append-only
+  `016-user-visual-acceptance.md` 将 attempt010 的有效视觉验收记录为
+  `user_visual_acceptance=true`；不改写 frozen JSON，且
+  `counts_toward_task070_v2_pass=false`、stance `0/18`、walking `false`、Task070 not passed
+  保持不变。
 - 硬件假设：RTX 5060 Ti-first、本地 MuJoCo/headless；H200 disabled。
 
 ## Review
+
+- 2026-08-26 user acceptance overlay：用户明确表示“目前我认证过了，感觉还行”；`user_visual_acceptance=true`，绑定 attempt010 audit/visual/arena SHA，且 `counts_toward_task070_v2_pass=false`。
 
 状态：**redesign_required_motor_dof_preserving_v2**。
 

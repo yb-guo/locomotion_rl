@@ -1,10 +1,11 @@
 # Task071 — Task070 v2 多形态训练就绪门
 
-状态：**planned / not_started**。
+状态：**active / r0_physical_probe_failed_closed**。
 
 进入条件：Task070 v2 的最终输入 artifact、manifest/descriptor SHA 和 case registry 已冻结；
-Task070 的用户视觉验收仍为前置 gate。在用户尚未接受最终视觉 witness 时，本任务只允许准备 R0
-contract，不得把任何 case 加入训练采样池或启动 PPO smoke。
+Task070 的用户视觉验收为前置 gate。2026-08-26 用户已通过 append-only overlay 接受 attempt010，
+因此本任务可执行 R0/R1 gate；在具体物理属性与 fresh dynamic gate 未通过前，不得把任何 case
+加入训练采样池或启动 PPO smoke。
 
 ## 目标与边界
 
@@ -102,6 +103,14 @@ smoke。不得 claim all 18 train-ready、会站/会走、LocoFormer reproductio
 
 ## Log
 
+- 2026-08-26：用户视觉 gate 已满足；R0 输入冻结。G1/Go2 v2 physical probe static integrity
+  `2/2`，training physics admission `0/2`。两者的 geometry/mass/friction 都有确定性随机变化，
+  但 metadata 要求的 motor strength、KP、KD、delay 均未随机化；G1 的非零 COM 还没有随随机
+  link geometry 一致缩放。fresh dynamic rerun=`blocked_environment`（locked MuJoCo 3.12 wheel
+  不在共享 cache；精确 locked/offline CPython 3.14 probe exit1；此前在线下载两次卡住后
+  exit130 的 transcript 未保留、仅作历史背景），Task070 旧 generic stance 仅 `0/2`。按
+  fail-closed 停止，没有 PPO/长训练；不得标记 passed。
+
 - 2026-08-26：由 Task070 当前结论建立；未开始训练或 artifact 生成。已知基线为 18/18
   compile/reset/paired actuator response、generic stance 0/18、无 gait、8 candidate humanoids
   `policy_adapter_compatible=false`。
@@ -109,7 +118,13 @@ smoke。不得 claim all 18 train-ready、会站/会走、LocoFormer reproductio
 
 ## Review
 
-状态：**not_started**。
+状态：**R0 physical probe independently reviewed；Task071 not passed**。
+
+- 2026-08-26：独立只读 reviewer 首轮指出动态阻断命令不可复现、static gate 未逐项核对 compiler
+  输出两个 P2。补入 exact locked/offline 命令、returncode/output/SHA，以及 compiled
+  mass/friction、resolved motor config、effort/KP/KD、geometry hash 断言后复核；无剩余
+  P0/P1/P2。结论仍为 static `2/2`、training physics `0/2`、R1
+  `blocked_environment`，不得进入训练。
 
 通过标准：独立只读 reviewer 确认 Task070 未被覆盖、`whole_body_v1_45` 未漂移、Tier A/B/C 分母未
 混淆、所有 unknown evidence fail-closed，并确认最终报告没有超出本任务 claim 边界。Task071 未经

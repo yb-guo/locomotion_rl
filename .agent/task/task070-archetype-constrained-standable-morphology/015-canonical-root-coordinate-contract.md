@@ -57,13 +57,15 @@
 
 ## Review
 
+- 2026-08-26 append-only user acceptance overlay：用户明确表示“目前我认证过了，感觉还行”；`user_visual_acceptance=true`，绑定 audit `f96da04079f8155221b4067cac6af31968182209f809a08ee1face32d28b8547`、visual `0251b4b8e3cbcdf7984676a659669a8860c6d13664f846c8ff06c307451c141a`、arena `8a8d281d9ede3d32713ceb92c96976f8eacab864d35d6feba1c31fb2db52436d`。`counts_toward_task070_v2_pass=false`、stance `0/18`、walking `false`、Task070 not passed 保持不变。
+
 - Canonical-root geometric/runtime audit: **execution passed**.
 - Attempt010 primitive-link visual check: **execution agent passed**.
 - Follow-up high-risk read-only review: **no P0/P1/P2 findings**. Its initial
   T1/STAR1 dynamic-waist test-gap finding was resolved by the two-case
   `qpos=0.31`, `qvel=0.8` regression and rebound audit.
-- `user_visual_acceptance=false` and
-  `counts_toward_task070_v2_pass=false` remain mandatory until the user reviews
-  attempt010.
+- Frozen attempt010 JSON still records `user_visual_acceptance=false`; the
+  append-only overlay above is now the effective `user_visual_acceptance=true`
+  record. `counts_toward_task070_v2_pass=false` remains mandatory.
 - This work does not turn the flat-arena smoke into a stance or walking claim;
   Task070 remains not passed.
