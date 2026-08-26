@@ -16,6 +16,7 @@ from h200_locomotion_lab.core.whole_body import WholeBodyStep
 from h200_locomotion_lab.robots.motor_process import MotorProcess, MotorProcessConfig
 from h200_locomotion_lab.robots.procedural_morphology import (
     CANONICAL_ROOT_SITE_NAME,
+    MOTOR_DOF_PRESERVING_ARCHETYPE_MORPHOLOGY_PROFILE_VERSION,
     MorphologyBlueprint,
     PhysicalParams,
     compile_mjcf,
@@ -61,6 +62,28 @@ class WholeBodyMuJoCoShardConfig:
     @property
     def trial_steps(self) -> int:
         return round(self.control_hz * self.trial_seconds)
+
+
+def _motor_process_baselines(
+    blueprint: MorphologyBlueprint,
+    physical: PhysicalParams | None,
+    control_hz: float,
+) -> tuple[tuple[float, ...], tuple[int, ...], tuple[float, ...]]:
+    """Return runtime baselines, keeping compiled v2 effort authoritative."""
+    v2 = blueprint.profile_version == MOTOR_DOF_PRESERVING_ARCHETYPE_MORPHOLOGY_PROFILE_VERSION
+    if v2:
+        strength = (1.0,) * len(blueprint.joints)
+    else:
+        strength = tuple(
+            physical.motor_strength.get(joint.semantic_slot, 1.0)
+            if physical
+            else 1.0
+            for joint in blueprint.joints
+        )
+    delay_steps = round((physical.delay_ms if physical else 0.0) * control_hz / 1000.0)
+    latency = (delay_steps,) * len(blueprint.joints)
+    ema = ((physical.ema_alpha if physical else 1.0),) * len(blueprint.joints)
+    return strength, latency, ema
 
 
 class WholeBodyMuJoCoShard:
@@ -134,15 +157,9 @@ class WholeBodyMuJoCoShard:
         self._trial_step = np.zeros(num_envs, dtype=np.int64)
         self._trial_index = np.zeros(num_envs, dtype=np.int64)
         self._rngs = tuple(random.Random(self.config.seed + 1009 * index) for index in range(num_envs))
-        baseline_strength = tuple(
-            (physical.motor_strength.get(joint.semantic_slot, 1.0) if physical else 1.0)
-            for joint in blueprint.joints
+        baseline_strength, baseline_latency, baseline_ema = _motor_process_baselines(
+            blueprint, physical, self.config.control_hz
         )
-        baseline_latency = tuple(
-            (round((physical.delay_ms if physical else 0.0) * self.config.control_hz / 1000.0),)
-            * len(blueprint.joints)
-        )
-        baseline_ema = tuple((physical.ema_alpha if physical else 1.0,) * len(blueprint.joints))
         process_config = motor_config or MotorProcessConfig(control_hz=self.config.control_hz)
         self._motor = tuple(
             MotorProcess(

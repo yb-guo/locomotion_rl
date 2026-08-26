@@ -1,6 +1,6 @@
 # Task071 — Task070 v2 多形态训练就绪门
 
-状态：**active / r0_physical_probe_failed_closed**。
+状态：**active / r0_physical_passed_r1_environment_blocked**。
 
 进入条件：Task070 v2 的最终输入 artifact、manifest/descriptor SHA 和 case registry 已冻结；
 Task070 的用户视觉验收为前置 gate。2026-08-26 用户已通过 append-only overlay 接受 attempt010，
@@ -103,6 +103,24 @@ smoke。不得 claim all 18 train-ready、会站/会走、LocoFormer reproductio
 
 ## Log
 
+- 2026-08-26：按用户要求继续执行下一 gate。仅修改 motor-DoF-preserving v2 sampler：COM 现在按
+  `base COM × global_scale × link_scale` 缩放；G1/Go2 只在完整 audited companion motor config、
+  exact family/group slot coverage 且非 candidate 时，按 shared motor-family effort/bandwidth latent
+  与 shared transmission-group efficiency latent 组合采样 strength/KP/KD，并采样全局 `0–40 ms`
+  baseline delay。没有逐 slot 独立噪声，不声称 exact physical transmission mapping；Spot 等证据
+  不完整 center 与 Tier-C candidate 保持 identity/fail-closed。nominal sampled strength 仅缩放
+  `compile_mjcf` actuator force range；v2 `MotorProcess` baseline strength 固定为 `1`，只负责后续
+  runtime fault，避免重复缩放 position target。R0 probe 现为 static `2/2`、physical-stack
+  admission `2/2`，并通过同一 runtime helper 验证 50 Hz delay-step 量化；这不是 train-ready
+  claim。G1 COM 最大编译舍入残差 `2.13e-10 m`，两 case failure reasons 均为空。新增 4 个
+  Task071 静态回归 case；连同 frozen R0 compatibility baseline 共 targeted `5/5` 通过，targeted
+  Ruff 通过。完整 `tests/test_task070_morphology.py` 为 `26 passed / 13 failed`：其中 12 个失败由
+  当前 locked dev 环境缺少 MuJoCo 直接或间接引起，另 1 个是既有 Task070 visual artifact status
+  断言；不将其记录为 full-suite pass。R1 仍未执行：locked Python 3.11
+  `mujoco==3.12.0` wheel 不在共享 cache；最新在线获取经 4 次 retry 后在 `127.7 s` timeout，精确
+  offline probe exit1。因此按 gate 停止，没有使用旧版/项目 `.venv` 绕过 lock，没有 no-update
+  rollout 或 PPO update，Task071 未 passed。
+
 - 2026-08-26：用户视觉 gate 已满足；R0 输入冻结。G1/Go2 v2 physical probe static integrity
   `2/2`，training physics admission `0/2`。两者的 geometry/mass/friction 都有确定性随机变化，
   但 metadata 要求的 motor strength、KP、KD、delay 均未随机化；G1 的非零 COM 还没有随随机
@@ -125,6 +143,14 @@ smoke。不得 claim all 18 train-ready、会站/会走、LocoFormer reproductio
   mass/friction、resolved motor config、effort/KP/KD、geometry hash 断言后复核；无剩余
   P0/P1/P2。结论仍为 static `2/2`、training physics `0/2`、R1
   `blocked_environment`，不得进入训练。
+
+- 2026-08-26：本轮独立只读 reviewer 首轮发现 v2 sampled strength 同时进入 compiled actuator
+  force range 与 runtime position target、以及 probe 未验证 runtime delay step 两个 P1。修复为
+  v2 nominal strength 只归 compiler、`MotorProcess` identity baseline 只保留 fault ownership，并由
+  runtime helper 验证 50 Hz delay 量化；同时把 admission 命名收窄为
+  `r0_physical_stack_admission`。复核提出旧 profile helper regression 的一个 P2，补入 legacy、
+  paper-faithful、archetype-constrained 三 profile 回归。最终复核 P0/P1/P2 均无。残余阻断仍是
+  locked MuJoCo wheel 缺失；未执行 rollout/PPO，Task071 未 passed。
 
 通过标准：独立只读 reviewer 确认 Task070 未被覆盖、`whole_body_v1_45` 未漂移、Tier A/B/C 分母未
 混淆、所有 unknown evidence fail-closed，并确认最终报告没有超出本任务 claim 边界。Task071 未经

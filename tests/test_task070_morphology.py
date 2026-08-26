@@ -34,6 +34,8 @@ from h200_locomotion_lab.robots.procedural_morphology import (
     MOTOR_DOF_PRESERVING_ARCHETYPE_MORPHOLOGY_CONTRACT_HASH,
     MOTOR_DOF_PRESERVING_ARCHETYPE_MORPHOLOGY_CONTRACT_VERSION,
     MOTOR_DOF_PRESERVING_ARCHETYPE_MORPHOLOGY_PROFILE_VERSION,
+    LocoFormerMorphologyGenerator,
+    MorphologyGenerator,
     compile_mjcf,
     compile_with_mujoco,
     morphology_blueprint_hash,
@@ -1293,3 +1295,97 @@ def test_task070_flat_arena_smoke_checks_motion_without_claiming_walking(
             assert metric.startswith("max_command_induced_")
             assert actuator_record[metric] >= actuator_record["response_threshold"]
         assert record["stance_hold"]["solver_fatal"] is False
+
+
+def test_task071_v2_correlated_physical_sampling_is_com_and_slot_auditable() -> None:
+    from h200_locomotion_lab.envs.whole_body_mujoco import _motor_process_baselines
+
+    for reference_id, family in (("unitree_g1", "biped"), ("unitree_go2", "quadruped")):
+        generator = MotorDofPreservingArchetypePreviewGenerator(reference_id=reference_id)
+        blueprint = generator.generate(family, 0)
+        nominal = generator.sample_physical_params(blueprint, 701, range_fraction=0.0)
+        full = generator.sample_physical_params(blueprint, 701, range_fraction=1.0)
+        other = generator.sample_physical_params(blueprint, 70000002, range_fraction=1.0)
+        replay = generator.sample_physical_params(blueprint, 701, range_fraction=1.0)
+        assert full == replay
+        assert full.motor_strength != other.motor_strength
+        assert full.kp_scales != other.kp_scales
+        assert full.kd_scales != other.kd_scales
+        assert full.delay_ms != other.delay_ms
+        strength, latency, _ = _motor_process_baselines(blueprint, full, 50.0)
+        assert strength == (1.0,) * len(blueprint.joints)
+        assert latency == (round(full.delay_ms * 50.0 / 1000.0),) * len(blueprint.joints)
+        _, other_latency, _ = _motor_process_baselines(blueprint, other, 50.0)
+        assert latency != other_latency
+        assert nominal.motor_strength == {slot: 1.0 for slot in nominal.motor_strength}
+        assert nominal.kp_scales == nominal.kd_scales == nominal.motor_strength
+        assert nominal.delay_ms == 0.0
+        assert full.metadata["task071_correlated_actuation"]["eligible"] is True
+        audit = full.metadata["task071_correlated_actuation"]
+        assert set(audit["slot_composition"]) == {joint.semantic_slot for joint in blueprint.joints}
+        assert audit["independent_per_slot_noise"] is False
+        assert audit["delay_runtime_owner"] == "WholeBodyMuJoCoShard→MotorProcess"
+        families = audit["family_latents"]
+        groups = audit["group_efficiency_latents"]
+        for factors in audit["slot_composition"].values():
+            family = families[factors["family_id"]]
+            efficiency = groups[factors["group_id"]]
+            assert factors["motor_strength"] == pytest.approx(
+                family["effort"] * efficiency
+            )
+            assert factors["kp_scale"] == pytest.approx(
+                family["bandwidth"] * (0.5 + 0.5 * family["effort"])
+            )
+            assert factors["kd_scale"] == pytest.approx(
+                family["bandwidth"] * (0.75 + 0.25 * family["effort"])
+            )
+        xml = ET.fromstring(compile_mjcf(blueprint, full))
+        bodies = {node.attrib["name"]: node for node in xml.findall(".//body")}
+        for link in blueprint.links:
+            actual = tuple(float(value) for value in bodies[link.name].find("inertial").attrib["pos"].split())
+            assert actual == pytest.approx(full.com_offsets[link.name])
+            assert full.com_offsets[link.name] == pytest.approx(
+                tuple(value * full.global_scale * full.link_scales[link.name] for value in link.com)
+            )
+        actuators = {node.attrib["name"]: node for node in xml.findall(".//actuator/*")}
+        resolved = {
+            record["anonymous_semantic_slot"]: record["final_compiled"]
+            for record in blueprint.profile_metadata["motor_configuration"]["resolved_anonymous_actuators"]
+        }
+        for actuator in blueprint.actuators:
+            node = actuators[actuator.name]
+            source = resolved[actuator.semantic_slot]
+            assert float(node.attrib["kp"]) == pytest.approx(source["kp"] * full.kp_scales[actuator.semantic_slot], rel=1e-5)
+            assert float(node.attrib["kv"]) == pytest.approx(source["kd"] * full.kd_scales[actuator.semantic_slot], rel=1e-5)
+            assert float(node.attrib["forcerange"].split()[1]) == pytest.approx(source["effort_limit"] * full.motor_strength[actuator.semantic_slot], rel=1e-5)
+
+
+@pytest.mark.parametrize("reference_id, family", [("spot_base", "quadruped"), ("agibot_x1_serial", "biped")])
+def test_task071_v2_incomplete_or_candidate_evidence_remains_fail_closed_identity(
+    reference_id: str, family: str
+) -> None:
+    generator = MotorDofPreservingArchetypePreviewGenerator(reference_id=reference_id)
+    blueprint = generator.generate(family, 0)
+    physical = generator.sample_physical_params(blueprint, 702, range_fraction=1.0)
+    audit = physical.metadata["task071_correlated_actuation"]
+    assert audit["eligible"] is False
+    assert physical.motor_strength == {slot: 1.0 for slot in physical.motor_strength}
+    assert physical.kp_scales == physical.kd_scales == physical.motor_strength
+    assert physical.delay_ms == 0.0
+
+
+def test_task071_legacy_profiles_keep_physical_strength_runtime_baselines() -> None:
+    from h200_locomotion_lab.envs.whole_body_mujoco import _motor_process_baselines
+
+    for generator in (
+        MorphologyGenerator(),
+        LocoFormerMorphologyGenerator(),
+        ArchetypeConstrainedMorphologyGenerator(),
+    ):
+        blueprint = generator.generate("biped", 3)
+        physical = generator.sample_physical_params(blueprint, 4)
+        strength, latency, ema = _motor_process_baselines(blueprint, physical, 50.0)
+        expected = tuple(physical.motor_strength[joint.semantic_slot] for joint in blueprint.joints)
+        assert strength == expected
+        assert latency == (round(physical.delay_ms * 50.0 / 1000.0),) * len(blueprint.joints)
+        assert ema == (physical.ema_alpha,) * len(blueprint.joints)

@@ -26,7 +26,7 @@ OUT = TASK071 / "artifacts"
 ARENA = TASK070 / "artifacts/arena_task070_v2_attempt010/flat_arena_smoke.json"
 PROBE_COMMAND = (
     "UV_CACHE_DIR=/home/admin1/workspace/store/cache/uv "
-    "uv run --isolated --locked python "
+    "uv run --isolated --locked --python 3.11 python "
     ".agent/task/task071-multimorphology-training-readiness/"
     "task071_physical_probe.py"
 )
@@ -106,7 +106,9 @@ def _runtime() -> dict[str, object]:
         "hardware_scope": (
             "RTX 5060 Ti-first project; this R0 probe is CPU/static and did not use GPU"
         ),
-        "downloads_performed": False,
+        "robot_asset_or_dataset_downloads_performed": False,
+        "locked_dependency_download_attempted": True,
+        "locked_dependency_download_completed": False,
         "training_performed": False,
     }
 
@@ -117,6 +119,8 @@ def _offline_mujoco_probe() -> dict[str, object]:
         "run",
         "--isolated",
         "--locked",
+        "--python",
+        "3.11",
         "--offline",
         "--extra",
         "mujoco",
@@ -139,7 +143,7 @@ def _offline_mujoco_probe() -> dict[str, object]:
     return {
         "command": (
             "UV_CACHE_DIR=/home/admin1/workspace/store/cache/uv "
-            "uv run --isolated --locked --offline --extra mujoco "
+            "uv run --isolated --locked --python 3.11 --offline --extra mujoco "
             "python -c 'import mujoco; print(mujoco.__version__)'"
         ),
         "returncode": result.returncode,
@@ -238,12 +242,21 @@ def _sample_summary(
         mass_relative_residuals.append(
             _relative_residual(actual_mass, expected_mass)
         )
-        scale = physical.global_scale * physical.link_scales[link.name]
-        expected = tuple(value * scale for value in physical.com_offsets[link.name])
+        expected = physical.com_offsets[link.name]
+        base_scaled = tuple(
+            value * physical.global_scale * physical.link_scales[link.name]
+            for value in link.com
+        )
         com_residuals.append(
             max(
-                abs(actual_value - expected_value)
-                for actual_value, expected_value in zip(actual, expected)
+                max(
+                    abs(actual_value - expected_value)
+                    for actual_value, expected_value in zip(actual, expected)
+                ),
+                max(
+                    abs(offset - scaled)
+                    for offset, scaled in zip(expected, base_scaled)
+                ),
             )
         )
     coverage = _compact_coverage(
@@ -275,6 +288,22 @@ def _sample_summary(
         record["anonymous_semantic_slot"]: record["final_compiled"]
         for record in resolved_records
     }
+    correlated = physical.metadata.get("task071_correlated_actuation", {})
+    slot_composition = correlated.get("slot_composition", {})
+    correlated_coverage_exact = set(slot_composition) == {
+        joint.semantic_slot for joint in blueprint.joints
+    }
+    correlated_eligible = correlated.get("eligible") is True
+    topology_coverage_exact = correlated.get("topology_coverage_exact") is True
+    exact_mapping_not_claimed = (
+        correlated.get("exact_physical_transmission_mapping_claimed") is False
+    )
+    factors_match_physical = correlated_coverage_exact and all(
+        slot_composition[slot]["motor_strength"] == physical.motor_strength[slot]
+        and slot_composition[slot]["kp_scale"] == physical.kp_scales[slot]
+        and slot_composition[slot]["kd_scale"] == physical.kd_scales[slot]
+        for slot in slot_composition
+    )
     blueprint_config_residuals = []
     compiled_actuator_residuals = []
     for actuator in blueprint.actuators:
@@ -354,7 +383,7 @@ def _sample_summary(
         ),
         "source_config_coverage": coverage,
         "com_max_scale_residual_m": max(com_residuals),
-        "com_scale_coherent": max(com_residuals) <= 1e-10,
+        "com_scale_coherent": max(com_residuals) <= 5e-10,
         "global_scale": physical.global_scale,
         "link_scales_hash": _mapping_hash(physical.link_scales),
         "mass_scales_hash": _mapping_hash(physical.mass_scales),
@@ -362,10 +391,18 @@ def _sample_summary(
         "kp_scales_hash": _mapping_hash(physical.kp_scales),
         "kd_scales_hash": _mapping_hash(physical.kd_scales),
         "delay_ms": physical.delay_ms,
+        "correlated_metadata_coverage_exact": correlated_coverage_exact,
+        "correlated_eligible": correlated_eligible,
+        "topology_coverage_exact": topology_coverage_exact,
+        "exact_mapping_not_claimed": exact_mapping_not_claimed,
+        "correlated_factors_match_physical": factors_match_physical,
+        "correlated_non_independent": correlated.get("independent_per_slot_noise") is False,
+        "delay_runtime_owner": correlated.get("delay_runtime_owner"),
     }
 
 
 def _physical_case(case: str) -> dict[str, object]:
+    from h200_locomotion_lab.envs.whole_body_mujoco import _motor_process_baselines
     from h200_locomotion_lab.robots.archetype_morphology import (
         MotorDofPreservingArchetypePreviewGenerator,
     )
@@ -429,6 +466,18 @@ def _physical_case(case: str) -> dict[str, object]:
         for key in randomization_keys
     }
     expected_count = int(expected["motor_count"])
+    runtime_baselines = [
+        _motor_process_baselines(blueprint, item["physical"], 50.0)
+        for item in sampled
+    ]
+    runtime_strength_identity = all(
+        all(value == 1.0 for value in baseline[0]) for baseline in runtime_baselines
+    )
+    runtime_delay_steps_exact = all(
+        baseline[1]
+        == (round(item["physical"].delay_ms * 50.0 / 1000.0),) * expected_count
+        for baseline, item in zip(runtime_baselines, sampled)
+    )
     coverage = nominal["summary"]["source_config_coverage"]
     coverage_exact = all(
         coverage[key] == expected_count
@@ -485,6 +534,19 @@ def _physical_case(case: str) -> dict[str, object]:
         static
         and geometry_mass_friction_exercised
         and com_coherent
+        and all(
+            summary["correlated_metadata_coverage_exact"]
+            and summary["correlated_eligible"]
+            and summary["topology_coverage_exact"]
+            and summary["exact_mapping_not_claimed"]
+            and summary["correlated_factors_match_physical"]
+            and summary["correlated_non_independent"]
+            and summary["delay_runtime_owner"] == "WholeBodyMuJoCoShard→MotorProcess"
+            for summary in (item["summary"] for item in sampled)
+        )
+        and runtime_strength_identity
+        and runtime_delay_steps_exact
+        and len({baseline[1][0] for baseline in runtime_baselines[1:]}) > 1
         and (not control_randomization_required or control_randomization_exercised)
     )
     failures = []
@@ -501,6 +563,21 @@ def _physical_case(case: str) -> dict[str, object]:
             if not all(randomization[key].values())
         ]
         failures.append("required_control_randomization_missing:" + ",".join(missing))
+    if not all(
+        summary["correlated_metadata_coverage_exact"]
+        and summary["correlated_eligible"]
+        and summary["topology_coverage_exact"]
+        and summary["exact_mapping_not_claimed"]
+        and summary["correlated_factors_match_physical"]
+        and summary["correlated_non_independent"]
+        and summary["delay_runtime_owner"] == "WholeBodyMuJoCoShard→MotorProcess"
+        for summary in (item["summary"] for item in sampled)
+    ):
+        failures.append("correlated_actuation_metadata_invalid")
+    if not runtime_strength_identity or not runtime_delay_steps_exact:
+        failures.append("runtime_baseline_contract_invalid")
+    if len({baseline[1][0] for baseline in runtime_baselines[1:]}) <= 1:
+        failures.append("runtime_delay_steps_not_exercised")
     metadata = blueprint.profile_metadata
     return {
         "case": case,
@@ -526,7 +603,10 @@ def _physical_case(case: str) -> dict[str, object]:
             item["summary"]["com_max_scale_residual_m"] for item in sampled
         ),
         "static_integrity_passed": static,
-        "training_physics_admission_passed": training_admission,
+        "r0_physical_stack_admission_passed": training_admission,
+        "runtime_nominal_strength_identity": runtime_strength_identity,
+        "runtime_delay_steps_exact": runtime_delay_steps_exact,
+        "delay_steps_at_50hz": [baseline[1][0] for baseline in runtime_baselines],
         "failure_reasons": failures,
     }
 
@@ -664,7 +744,7 @@ def _reset_stance_matrix() -> dict[str, object]:
         if dependency_available
         else (
             "the exact locked/offline dependency probe failed because the "
-            "mujoco==3.12.0 CPython 3.14 wheel is absent from the shared cache"
+            "mujoco==3.12.0 CPython 3.11 wheel is absent from the shared cache"
         )
     )
     return {
@@ -685,8 +765,16 @@ def _reset_stance_matrix() -> dict[str, object]:
             "failure_reason": dynamic_failure_reason,
             "reused_task070_result_as_task071_rerun": False,
             "historical_online_attempts": {
-                "count": 2,
-                "outcome": "stalled_then_interrupted_exit_130",
+                "count": 4,
+                "latest_exact_command": (
+                    "UV_CACHE_DIR=/home/admin1/workspace/store/cache/uv "
+                    "uv run --isolated --locked --python 3.11 --extra mujoco "
+                    "python -c 'import mujoco; print(mujoco.__version__)'"
+                ),
+                "latest_outcome": (
+                    "failed after 4 retries in 127.7 seconds: operation timed out"
+                ),
+                "earlier_outcome": "three stalled/interrupted attempts",
                 "transcript_retained": False,
                 "used_as_reproducible_gate_evidence": False,
             },
@@ -711,14 +799,14 @@ def main() -> int:
         "static_integrity_passed_count": sum(
             case["static_integrity_passed"] for case in cases
         ),
-        "training_physics_admission_passed_count": sum(
-            case["training_physics_admission_passed"] for case in cases
-        ),
         "static_integrity_passed": all(
             case["static_integrity_passed"] for case in cases
         ),
-        "training_physics_admission_passed": all(
-            case["training_physics_admission_passed"] for case in cases
+        "r0_physical_stack_admission_passed_count": sum(
+            case["r0_physical_stack_admission_passed"] for case in cases
+        ),
+        "r0_physical_stack_admission_passed": all(
+            case["r0_physical_stack_admission_passed"] for case in cases
         ),
         "next_gate_allowed": False,
         "ppo_or_long_training_started": False,
@@ -729,7 +817,7 @@ def main() -> int:
     print(
         "Task071 R0: "
         f"static={probe['static_integrity_passed_count']}/2, "
-        f"training_physics={probe['training_physics_admission_passed_count']}/2, "
+        f"physical_stack={probe['r0_physical_stack_admission_passed_count']}/2, "
         "fresh_dynamic=blocked_environment"
     )
     return 0

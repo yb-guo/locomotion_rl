@@ -2057,21 +2057,150 @@ class MotorDofPreservingArchetypePreviewGenerator:
             radius = 0.5 * (high - low) * range_fraction
             return rng.uniform(midpoint - radius, midpoint + radius)
 
+        global_scale = centered(0.98, 1.02)
+        link_scales = {link.name: centered(0.98, 1.02) for link in blueprint.links}
+        slots = [joint.semantic_slot for joint in blueprint.joints]
+        stack = blueprint.profile_metadata.get("actuation_stack", {})
+        transmission = stack.get("transmission_model", {})
+        coherent = stack.get("coherent_motor_config", {})
+        coverage = blueprint.profile_metadata.get("motor_configuration", {}).get(
+            "source_config_coverage", {}
+        )
+        source_count = len(slots)
+        coverage_complete = (
+            coverage.get("source_motor_count") == source_count
+            and coverage.get("config_record_count") == source_count
+            and coverage.get("usable_quantitative_prior_count") == source_count
+            and coverage.get("rejected_placeholder_count") == 0
+        )
+        families = coherent.get("families", [])
+        groups = transmission.get("groups", [])
+        family_slots = [
+            slot for family in families for slot in family.get("anonymous_semantic_slots", [])
+        ]
+        group_slots = [
+            slot for group in groups for slot in group.get("anonymous_semantic_slots", [])
+        ]
+        topology_coverage_exact = (
+            len(family_slots) == source_count
+            and len(group_slots) == source_count
+            and len(set(family_slots)) == source_count
+            and len(set(group_slots)) == source_count
+            and set(family_slots) == set(slots)
+            and set(group_slots) == set(slots)
+        )
+        companion_config = bool(families) and all(
+            isinstance(family.get("source_config"), Mapping)
+            and family["source_config"].get("provenance")
+            == "upstream_local_companion_config"
+            for family in families
+        )
+        candidate_fail_closed = blueprint.profile_metadata.get(
+            "candidate_prior_status"
+        ) == "candidate_fail_closed"
+        eligible = bool(
+            coverage_complete
+            and topology_coverage_exact
+            and companion_config
+            and not candidate_fail_closed
+        )
+        reason = "eligible_complete_companion_source" if eligible else (
+            "source_config_or_transmission_evidence_incomplete"
+        )
+        family_latents: dict[str, dict[str, float]] = {}
+        group_latents: dict[str, float] = {}
+        if eligible and range_fraction:
+            for family in families:
+                family_id = str(family["family_id"])
+                family_latents[family_id] = {
+                    "effort": 1.0 + rng.uniform(-0.10, 0.10) * range_fraction,
+                    "bandwidth": 1.0 + rng.uniform(-0.10, 0.10) * range_fraction,
+                }
+            for group in groups:
+                group_latents[str(group["group_id"])] = (
+                    1.0 + rng.uniform(-0.05, 0.0) * range_fraction
+                )
+        family_by_slot = {
+            str(slot): family
+            for family in families
+            for slot in family.get("anonymous_semantic_slots", [])
+        }
+        group_by_slot = {
+            str(slot): group
+            for group in groups
+            for slot in group.get("anonymous_semantic_slots", [])
+        }
+        motor_strength: dict[str, float] = {}
+        kp_scales: dict[str, float] = {}
+        kd_scales: dict[str, float] = {}
+        for slot in slots:
+            family = family_by_slot.get(slot)
+            group = group_by_slot.get(slot)
+            family_id = str(family["family_id"]) if family else ""
+            group_id = str(group["group_id"]) if group else ""
+            effort = family_latents.get(family_id, {}).get("effort", 1.0)
+            bandwidth = family_latents.get(family_id, {}).get("bandwidth", 1.0)
+            efficiency = group_latents.get(group_id, 1.0)
+            motor_strength[slot] = effort * efficiency
+            kp_scales[slot] = bandwidth * (0.5 + 0.5 * effort)
+            kd_scales[slot] = bandwidth * (0.75 + 0.25 * effort)
+        delay_ms = rng.uniform(0.0, 40.0) * range_fraction if eligible else 0.0
+        correlation_metadata = {
+            "contract": "task071_v2_correlated_actuation_randomization_v1",
+            "eligible": eligible,
+            "reason": reason,
+            "source_config_coverage_complete": coverage_complete,
+            "candidate_fail_closed": candidate_fail_closed,
+            "topology_coverage_exact": topology_coverage_exact,
+            "formula": {
+                "motor_strength": "family_effort * group_efficiency",
+                "kp_scale": "family_bandwidth * (0.5 + 0.5 * family_effort)",
+                "kd_scale": "family_bandwidth * (0.75 + 0.25 * family_effort)",
+                "family_effort_bandwidth_range": "[0.90, 1.10]",
+                "group_efficiency_range": "[0.95, 1.00]",
+                "delay_ms_range": "[0, 40] milliseconds",
+            },
+            "family_latents": family_latents,
+            "group_efficiency_latents": group_latents,
+            "slot_composition": {
+                slot: {
+                    "family_id": str(family_by_slot[slot]["family_id"])
+                    if slot in family_by_slot else None,
+                    "group_id": str(group_by_slot[slot]["group_id"])
+                    if slot in group_by_slot else None,
+                    "motor_strength": motor_strength[slot],
+                    "kp_scale": kp_scales[slot],
+                    "kd_scale": kd_scales[slot],
+                }
+                for slot in slots
+            },
+            "independent_per_slot_noise": False,
+            "delay_runtime_owner": "WholeBodyMuJoCoShard→MotorProcess",
+            "nominal_strength_owner": "compile_mjcf.actuator_forcerange",
+            "runtime_fault_strength_owner": "MotorProcess_with_identity_nominal_baseline",
+            "exact_physical_transmission_mapping_claimed": False,
+        }
+
         return PhysicalParams(
-            global_scale=centered(0.98, 1.02),
-            link_scales={link.name: centered(0.98, 1.02) for link in blueprint.links},
+            global_scale=global_scale,
+            link_scales=link_scales,
             mass_scales={link.name: centered(0.96, 1.04) for link in blueprint.links},
-            com_offsets={link.name: link.com for link in blueprint.links},
+            com_offsets={
+                link.name: tuple(
+                    value * global_scale * link_scales[link.name] for value in link.com
+                )
+                for link in blueprint.links
+            },
             joint_limit_scales={joint.semantic_slot: 1.0 for joint in blueprint.joints},
             nominal_offsets={joint.semantic_slot: 0.0 for joint in blueprint.joints},
             friction=centered(0.85, 1.05),
-            motor_strength={joint.semantic_slot: 1.0 for joint in blueprint.joints},
-            kp_scales={joint.semantic_slot: 1.0 for joint in blueprint.joints},
-            kd_scales={joint.semantic_slot: 1.0 for joint in blueprint.joints},
-            delay_ms=0.0,
+            motor_strength=motor_strength,
+            kp_scales=kp_scales,
+            kd_scales=kd_scales,
+            delay_ms=delay_ms,
             ema_alpha=1.0,
             payload_mass=0.0,
-            metadata={"task070_v2_preview": True},
+            metadata={"task070_v2_preview": True, "task071_correlated_actuation": correlation_metadata},
         )
 
 
