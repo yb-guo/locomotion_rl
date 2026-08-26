@@ -925,39 +925,59 @@ def _reset_stance_matrix() -> dict[str, object]:
 
 def main() -> int:
     sys.path.insert(0, str(ROOT / "src"))
-    cases = [_physical_case(case) for case in EXPECTED_CASES]
-    probe = {
-        "artifact": "task071_r0_physical_attribute_probe",
-        "runtime": _runtime(),
-        "denominator": len(EXPECTED_CASES),
-        "cases": cases,
-        "static_integrity_passed_count": sum(
-            case["static_integrity_passed"] for case in cases
-        ),
-        "static_integrity_passed": all(
-            case["static_integrity_passed"] for case in cases
-        ),
-        "r0_physical_stack_admission_passed_count": sum(
-            case["r0_physical_stack_admission_passed"] for case in cases
-        ),
-        "r0_physical_stack_admission_passed": all(
-            case["r0_physical_stack_admission_passed"] for case in cases
-        ),
-        "next_gate_allowed": False,
-        "ppo_or_long_training_started": False,
-    }
+    from task071_physics_overlay import (
+        OVERLAY_PATH,
+        bound_r1_matrix,
+        generate_overlay,
+        run_bound_r1,
+    )
+
+    overlay = generate_overlay()
+    bound_r1 = run_bound_r1(overlay)
+    prior_probe_path = OUT / "r0_physical_attribute_probe.json"
+    if not prior_probe_path.is_file():
+        raise ValueError("missing reviewed Task071 R0 physical probe artifact")
+    probe = json.loads(prior_probe_path.read_text(encoding="utf-8"))
+    if (
+        probe.get("artifact") != "task071_r0_physical_attribute_probe"
+        or probe.get("denominator") != 2
+        or probe.get("static_integrity_passed_count") != 2
+        or probe.get("r0_physical_stack_admission_passed_count") != 2
+    ):
+        raise ValueError("reviewed Task071 R0 physical probe artifact is invalid")
+    probe.update(
+        {
+            "official_sim_physics_overlay": {
+                "version": overlay["overlay_version"],
+                "path": _relative(OVERLAY_PATH),
+                "sha256": _sha256_path(OVERLAY_PATH),
+                "mapping_counts": [
+                    record["mapping_counts"] for record in overlay["records"]
+                ],
+                "frozen_lineage_preserved_count": overlay["summary"][
+                    "lineage_preserved"
+                ],
+                "structure_preserved_count": overlay["summary"][
+                    "structure_preserved"
+                ],
+                "real_system_identified": False,
+            },
+            "next_gate_allowed": False,
+            "ppo_or_long_training_started": False,
+        }
+    )
     _write("r0_physical_attribute_probe.json", probe)
-    _write("r0_training_case_registry.json", _registry())
-    r1 = _reset_stance_matrix()
+    r1 = bound_r1_matrix(bound_r1)
     _write("r1_reset_stance_matrix.json", r1)
     print(
-        "Task071 R0: "
+        "Task071 official bound physics: "
         f"static={probe['static_integrity_passed_count']}/2, "
         f"physical_stack={probe['r0_physical_stack_admission_passed_count']}/2, "
-        f"dependency_available={r1['fresh_dynamic_rerun']['dependency_available']}, "
-        f"fresh_dynamic={r1['fresh_dynamic_rerun']['status']}, "
+        f"lineage={overlay['summary']['lineage_preserved']}/2, "
+        f"response={bound_r1['summary']['all_actuators_responsive']}/2, "
         f"stance={r1['fresh_stance_passed']}/{r1['fresh_stance_denominator']}, "
-        "r1_admission=False, next_gate=False, ppo=False"
+        f"r1_admission={r1['task071_r1_admission_passed']}, "
+        "next_gate=False, ppo=False"
     )
     return 0
 

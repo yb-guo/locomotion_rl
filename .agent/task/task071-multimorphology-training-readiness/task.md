@@ -103,6 +103,28 @@ smoke。不得 claim all 18 train-ready、会站/会走、LocoFormer reproductio
 
 ## Log
 
+- 2026-08-27：完成 versioned `official_sim_physics_overlay_v1` 正式绑定。工具只消费冻结
+  attempt010 descriptor/manifest/XML，不调用当前 generator；逐 body 使用官方 Unitree commit
+  `4134cb5dc7ff1ba7f484deda48b5274b58694519` 的 nominal mass、local COM、inertial quaternion、
+  diagonal inertia，并按冻结 morphology scale 应用 `COM × s`、`inertia × s²`。joint
+  damping/armature/frictionloss 与 actuator force range 来自 MuJoCo 3.12 编译后的官方有效值，
+  position KP/KD 保持冻结 companion config，terminal friction 来自官方接触 geom；runtime fault
+  process 未叠加。G1 映射 `30 body / 29 joint / 29 actuator / 2 terminal`，Go2 为
+  `13/12/12/4`；结构 signature、canonical root、匿名 primitive geometry、joint order/axis/range、
+  position-actuator 语义均 `2/2` 保持，冻结 raw SHA 未改变。bound compile 为 G1
+  `nq/nv/nu=36/35/29`、Go2 `19/18/12`，finite `2/2`。证据
+  `artifacts/official_sim_physics_overlay_v1.json` SHA256
+  `dc954b9229df4ddd1d7a2b7556e1b2efa53ac680b066256d8ab12cfbe8b199c7`。
+- 2026-08-27：使用同一冻结 blueprint/physical manifest 直接加载 bound XML，完成 fresh R1：
+  compile/accounting/lineage/reset/paired actuator response 均 `2/2`，response 每 actuator `32`
+  steps；stance `1000 × 0.002 s` 仍为 `0/2`，故 R1 admission=false、next gate=false，未进入
+  R2/PPO。G1 主要表现为翻倒（max roll/pitch `3.13 rad`、base height drift `1.66 m`）；Go2
+  support gate 失败且出现 terminal unload（minimum terminal load `0 N`）。证据
+  `artifacts/r1_g1_go2_bound_official_sim_physics_overlay_v1.json` SHA256
+  `e1c6a979ebea892343721db4b260677f02ec7b9aac24123a9be94f4552366b36`；本轮已消除旧
+  `frozen descriptor lineage mismatch`，但没有消除 stance 动力学失败。官方参数仍只是 nominal
+  simulator prior，`real_system_identified=false`，Task071 未 passed。
+
 - 2026-08-27：按用户显式授权，把官方完整仿真资产稀疏检出到 ignored
   `.external/task071_full_sim_assets/`：Unitree `4134cb5`、DeepRobotics `e6753d2`、Booster
   `508cbee`、LimX `02adfbd`、EngineAI `335c60e`，5/5 固定 commit、官方 origin、detached clean。
@@ -158,6 +180,13 @@ smoke。不得 claim all 18 train-ready、会站/会走、LocoFormer reproductio
 - 待执行：R0–R6 逐阶段记录命令、硬件、SHA、denominator、失败原因和是否允许进入下一 gate。
 
 ## Review
+
+- 2026-08-27：overlay fail-closed mapping 与 bound R1 targeted regression `6 passed`（含篡改
+  bound XML path/SHA 的两个负例），targeted Ruff 通过。R1 每次从冻结输入重建并校验 persisted
+  overlay，caller 自报路径/SHA 不能进入动力学证据。fresh bound evidence 证明 lineage `2/2`，
+  因此旧 lineage mismatch 不再是当前 G1/Go2 阻断；当前决定性阻断为 stance `0/2`。未执行
+  rollout/PPO，不得声称 train-ready。最终只读复审无 P0/P1/P2/P3 findings；残余风险为 ignored
+  官方资产与 MuJoCo 3.12 环境依赖，以及尚未通过的 stance gate。
 
 状态：**R0 physical probe independently reviewed；R1 dynamic failed stance 0/2；Task071 not passed**。
 
