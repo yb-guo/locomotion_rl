@@ -17,8 +17,8 @@ fail-closed 的 train-readiness gate。当前基线是：18/18 compile/reset/pai
 本任务不得把现状描述为“全部 18 个可训练”。
 
 本任务不改变 Task070 的视觉验收；`user_visual_acceptance` 仍由 Task070 管理，不由本任务代签。
-不下载新资产、数据集、checkpoint，不启动长训练。所有 unknown provenance 保持 unknown，不猜补
-真实电机参数。
+除用户逐次显式授权并固定 commit 的官方 simulator asset intake 外，不下载数据集、checkpoint、
+策略或 motion，不启动长训练。所有 unknown provenance 保持 unknown，不猜补真实电机参数。
 
 分层 case registry：
 
@@ -103,6 +103,22 @@ smoke。不得 claim all 18 train-ready、会站/会走、LocoFormer reproductio
 
 ## Log
 
+- 2026-08-27：按用户显式授权，把官方完整仿真资产稀疏检出到 ignored
+  `.external/task071_full_sim_assets/`：Unitree `4134cb5`、DeepRobotics `e6753d2`、Booster
+  `508cbee`、LimX `02adfbd`、EngineAI `335c60e`，5/5 固定 commit、官方 origin、detached clean。
+  未检出 `.mnn/.npz/.npy/.csv/.onnx/.pt/.pth/.ckpt`，Booster motions 及 EngineAI policy/
+  trajectory 明确排除。locked/offline MuJoCo 3.12 编译审计 8/8：G1 `nu=29`、Go2 `12`、
+  Lite3 `12`、T1 23DoF `23`、HU_D04 `31`、PM01 EDU `24`、T800 `25`、T800Pro `43`；
+  actuator count 8/8 exact、finite physics 8/8、jointed-body inertial gate 8/8。EngineAI 三型还取得
+  enabled/sign/offset、PD stand KP/KD 和 parallel-ankle transform 的官方 YAML，slot count 3/3
+  与 MJCF `nu` 一致；它们仍不是电气参数系统辨识。PM01 EDU 24DoF（含 head yaw）不得替换
+  Task070 的 23DoF PM01；T800Pro palm YAML 引用的 `forward_net.mnn` 因禁用策略/checkpoint
+  范围未下载，故完整 palm transmission 仍 fail-closed。证据：
+  `artifacts/r0_official_sim_asset_intake.json`，SHA256
+  `cb5aeefbda305ec79b48db5cbb34380b8893847c5168990abefe66be5873d4fb`。本轮没有训练；
+  official asset intake pass 只表示 nominal prior 可编译，不改变 R1 stance `0/2`、frozen
+  descriptor lineage mismatch 或 Task071 not passed。
+
 - 2026-08-26：locked/offline `mujoco==3.12.0` CPython 3.11 import 已从 shared UV cache 成功；消费并
   校验 fresh arena artifact `artifacts/r1_g1_go2_fresh_arena.json`（exact G1 biped + Go2 quadruped，
   `stance_steps=1000`、`response_steps=32`、source SHA）。dynamic run 已完成但 stance `0/2`，因此
@@ -144,6 +160,12 @@ smoke。不得 claim all 18 train-ready、会站/会走、LocoFormer reproductio
 ## Review
 
 状态：**R0 physical probe independently reviewed；R1 dynamic failed stance 0/2；Task071 not passed**。
+
+- 2026-08-27：官方资产 intake readback 确认 5/5 repo pin/origin/clean、8/8 MuJoCo compile 与 exact
+  actuator count、禁用后缀 0 命中；artifact 明确 vendor mesh 只留在 ignored `.external`、不复制进
+  anonymous witness，并把 PM01 版本差异、Lite3 welded point-mass feet、LimX helper-body 极小惯量、
+  T800Pro palm 外部模型缺口保留为 warning。该审计未审核站立、步态、rollout 或 PPO，不能作为
+  Task071 admission/pass。
 
 - 2026-08-26：fresh R1 arena artifact 已由 probe 做 exact denominator、metadata、response/stance
   duration、source path/SHA 校验；locked/offline dependency available，dynamic completed，stance
