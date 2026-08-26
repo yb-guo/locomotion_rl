@@ -71,4 +71,3 @@ def _require_torch() -> Any:
     except Exception as exc:  # pragma: no cover - optional training dependency
         raise RuntimeError(f"torch import failed: {exc}") from exc
     return torch
-
