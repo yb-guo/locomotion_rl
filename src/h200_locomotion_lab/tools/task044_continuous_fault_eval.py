@@ -13,6 +13,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.tools import task037_multitrial_eval_checkpoint as metrics_eval
 from h200_locomotion_lab.tools.task041_sequence_txl_clean_eval import (
     _install_ipython_display_stub,
@@ -23,7 +24,6 @@ from h200_locomotion_lab.tools.task044_hidden_fault_eval import (
     HIDDEN_FAULT_CONTRACT,
     TASK044_PERSISTENT_HIDDEN_POSE_TIGHT_TASK_ID,
 )
-
 
 TASK044_CONTINUOUS_EXPECTED_RUNNER_CLS = "Task044TrueTxlMemoryK160ContinuousRunner"
 
@@ -92,13 +92,16 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
     _install_wandb_stub()
     _install_wcwidth_stub()
 
+    import mjlab.tasks as _mjlab_tasks
+    import src.tasks as _project_tasks
+
+    del _mjlab_tasks, _project_tasks  # Imports register task packages by side effect.
     import torch
-    import mjlab.tasks  # noqa: F401
-    import src.tasks  # noqa: F401
     from mjlab.envs import ManagerBasedRlEnv
     from mjlab.rl import RslRlVecEnvWrapper
     from mjlab.tasks.registry import load_env_cfg, load_rl_cfg
     from mjlab.utils.torch import configure_torch_backends
+
     from h200_locomotion_lab.training.rsl_history_wrapper import (
         Task044TrueTxlMemoryK160ContinuousRunner,
     )
@@ -442,7 +445,7 @@ def _make_physical_reset_time_diagnostic(
     if bin_s <= 0.0:
         raise ValueError("bin_s must be positive")
     eval_time_s = float(steps) * float(dt)
-    bin_count = max(int(math.ceil(eval_time_s / bin_s)), 1)
+    bin_count = max(math.ceil(eval_time_s / bin_s), 1)
     phases = {
         "pre_fault": _empty_reset_time_bucket(),
         "fault_onset_to_post_window_start": _empty_reset_time_bucket(),
@@ -729,7 +732,7 @@ def main() -> None:
     args = parse_args()
     try:
         summary = run_eval(args)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         summary = build_failure_summary(args, exc)
     write_json_summary(args.output_json, summary)
     print(json.dumps(summary, indent=2, sort_keys=True))

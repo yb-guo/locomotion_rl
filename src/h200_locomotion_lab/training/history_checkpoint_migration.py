@@ -89,7 +89,7 @@ def migrate_stack_mlp_actor_state_dict(
     for key, value in source_state.items():
         if key == first_weight_key:
             target = torch.zeros(
-                (tuple(value.shape)[0], config.target_actor_input_dim),
+                (next(iter(value.shape)), config.target_actor_input_dim),
                 dtype=value.dtype,
                 device=value.device,
             )
@@ -144,7 +144,7 @@ def migrate_adaptation_conditioned_actor_state_dict(
     for key, value in source_state.items():
         if key == first_weight_key:
             target = torch.zeros(
-                (tuple(value.shape)[0], config.target_actor_input_dim),
+                (next(iter(value.shape)), config.target_actor_input_dim),
                 dtype=value.dtype,
                 device=value.device,
             )

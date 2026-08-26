@@ -9,13 +9,7 @@ from h200_locomotion_lab.tools.genesis_sonic_planner_encoder_rollout_probe impor
 
 
 def test_parse_num_pred_frames_reads_runner_stdout() -> None:
-    output = "\n".join(
-        [
-            "SONIC_PLANNER_ORT_RUNNER_MODE onnxruntime_cpp",
-            "PLANNER_NUM_PRED_FRAMES 44",
-            "SONIC_PLANNER_ORT_RUNNER_OK",
-        ]
-    )
+    output = "SONIC_PLANNER_ORT_RUNNER_MODE onnxruntime_cpp\nPLANNER_NUM_PRED_FRAMES 44\nSONIC_PLANNER_ORT_RUNNER_OK"
 
     assert parse_num_pred_frames(output) == 44
 

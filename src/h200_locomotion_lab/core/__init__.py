@@ -1,0 +1,63 @@
+"""Dependency-neutral contracts shared by tasks, policies, and algorithms."""
+
+from h200_locomotion_lab.core.checkpoint import (
+    WholeBodyCheckpointMetadata,
+    make_checkpoint_payload,
+    manifest_hash,
+    validate_checkpoint_payload,
+)
+from h200_locomotion_lab.core.rl import (
+    AlgorithmSpec,
+    CompositionError,
+    ExperimentSpec,
+    LearningAlgorithm,
+    Policy,
+    PolicyOutput,
+    PolicySpec,
+    RuntimeSpec,
+    TaskSpec,
+    TaskStep,
+    TensorSpace,
+    TransitionBatch,
+    UpdateReport,
+    VectorTask,
+    logical_or,
+    validate_composition,
+)
+from h200_locomotion_lab.core.whole_body import (
+    WHOLE_BODY_ACTION_DIM,
+    WHOLE_BODY_ACTOR_OBS_DIM,
+    RolloutBatch,
+    WholeBodyPolicyOutput,
+    WholeBodyRolloutBatch,
+    WholeBodyStep,
+)
+
+__all__ = [
+    "WHOLE_BODY_ACTION_DIM",
+    "WHOLE_BODY_ACTOR_OBS_DIM",
+    "AlgorithmSpec",
+    "CompositionError",
+    "ExperimentSpec",
+    "LearningAlgorithm",
+    "Policy",
+    "PolicyOutput",
+    "PolicySpec",
+    "RolloutBatch",
+    "RuntimeSpec",
+    "TaskSpec",
+    "TaskStep",
+    "TensorSpace",
+    "TransitionBatch",
+    "UpdateReport",
+    "VectorTask",
+    "WholeBodyCheckpointMetadata",
+    "WholeBodyPolicyOutput",
+    "WholeBodyRolloutBatch",
+    "WholeBodyStep",
+    "logical_or",
+    "make_checkpoint_payload",
+    "manifest_hash",
+    "validate_checkpoint_payload",
+    "validate_composition",
+]

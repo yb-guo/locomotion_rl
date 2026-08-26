@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Iterable, Mapping
 from dataclasses import fields, is_dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 from xml.etree import ElementTree
 
 from h200_locomotion_lab.envs.vectorized_genesis_backend import VectorizedGenesisConfig
@@ -27,7 +28,7 @@ from h200_locomotion_lab.sonic.g1_planner_encoder import (
     SONIC_PLANNER_DEFAULT_HEIGHT,
     build_initial_planner_context,
 )
-
+from h200_locomotion_lab.tools.path_access import path_is_file
 
 CONTROL_FIELDS = (
     "default_angles_rad",
@@ -288,16 +289,17 @@ def parse_contact_friction_solver(
 ) -> dict[str, Any]:
     asset_path_text = str(asset_path)
     asset_fs_path = Path(asset_path_text)
+    asset_present = path_is_file(asset_fs_path)
     report: dict[str, Any] = {
         "asset_path": asset_path_text,
-        "asset_present": asset_fs_path.is_file(),
+        "asset_present": asset_present,
         "compiler": None,
         "option": None,
         "defaults": [],
         "geoms_with_contact_fields": [],
         "contact": None,
     }
-    if not asset_fs_path.is_file():
+    if not asset_present:
         missing.append({"path": "contact_friction_solver.asset_path", "reason": "asset_missing"})
         missing.append({"path": "contact_friction_solver.compiler", "reason": "asset_missing"})
         missing.append({"path": "contact_friction_solver.option", "reason": "asset_missing"})

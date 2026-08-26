@@ -4,30 +4,33 @@ from __future__ import annotations
 
 import argparse
 import csv
+import itertools
 import math
 import sys
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from h200_locomotion_lab.envs.genesis_adapter import GenesisG1SceneBackend, GenesisSceneConfig
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.sonic.g1_observation import (
     SONIC_DECODER_OBS_DIM,
     SONIC_TOKEN_DIM,
     SonicG1HistoryBuffer,
     sonic_g1_history_from_decoder_observation,
 )
+from h200_locomotion_lab.tools.genesis_action_replay_smoke import read_default_joint_positions
 from h200_locomotion_lab.tools.sonic_policy_decoder_forward import (
     SonicOnnxReferenceDecoder,
     read_obs_csv_rows,
     vector_range,
 )
-from h200_locomotion_lab.tools.genesis_action_replay_smoke import read_default_joint_positions
 from h200_locomotion_lab.tools.sonic_reference_replay_smoke import (
-    apply_sonic_g1_motor_config,
     _flatten_numeric,
     _read_contact_metrics,
+    apply_sonic_g1_motor_config,
 )
 
 
@@ -416,7 +419,7 @@ def horizontal_distance(start: RootPose, end: RootPose) -> float:
 
 
 def path_length_xy(poses: Sequence[RootPose]) -> float:
-    return sum(horizontal_distance(prev, curr) for prev, curr in zip(poses, poses[1:]))
+    return sum(horizontal_distance(prev, curr) for prev, curr in itertools.pairwise(poses))
 
 
 def summarize_root_motion(
@@ -447,7 +450,7 @@ def resolve_link_index(robot: Any, link_name: str) -> int | None:
         return None
     try:
         link = robot.get_link(link_name)
-    except Exception:
+    except RECOVERABLE_RUNTIME_ERRORS:
         return None
     for attr in ("idx_local", "idx", "link_idx", "id"):
         if not hasattr(link, attr):
@@ -486,11 +489,11 @@ def read_link_position(robot: Any, link_idx: int) -> tuple[float, float, float] 
     if not hasattr(robot, "get_links_pos"):
         return None
     try:
-        values = _flatten_numeric(robot.get_links_pos(links_idx_local=(link_idx,)))
-        if len(values) >= 3:
-            return (values[0], values[1], values[2])
-    except Exception:
-        pass
+        selected_values = _flatten_numeric(robot.get_links_pos(links_idx_local=(link_idx,)))
+    except RECOVERABLE_RUNTIME_ERRORS:
+        selected_values = []
+    if len(selected_values) >= 3:
+        return (selected_values[0], selected_values[1], selected_values[2])
     values = _flatten_numeric(robot.get_links_pos())
     start = link_idx * 3
     if len(values) < start + 3:
@@ -511,7 +514,7 @@ def read_link_contact_force(robot: Any, link_idx: int) -> float | None:
 
 def count_contact_switches(values: Sequence[bool | None]) -> int:
     cleaned = [value for value in values if value is not None]
-    return sum(1 for prev, curr in zip(cleaned, cleaned[1:]) if prev != curr)
+    return sum(1 for prev, curr in itertools.pairwise(cleaned) if prev != curr)
 
 
 def count_single_support_frames(

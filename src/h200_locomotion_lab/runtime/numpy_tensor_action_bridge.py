@@ -19,7 +19,7 @@ class NumpyTensorActionBridge:
     _np: Any
 
     @classmethod
-    def from_profile(cls, profile: CompiledRobotProfile) -> "NumpyTensorActionBridge":
+    def from_profile(cls, profile: CompiledRobotProfile) -> NumpyTensorActionBridge:
         try:
             import numpy as np
         except ImportError as exc:  # pragma: no cover - exercised only without numpy installed

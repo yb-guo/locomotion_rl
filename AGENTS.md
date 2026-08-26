@@ -1,6 +1,7 @@
 # Agent Instructions
 
-This repo is for H200-first humanoid locomotion RL research.
+This repo is for RTX 5060 Ti-first humanoid locomotion RL research. The
+historical H200 path is paused and must not be selected by default.
 
 ## Entry Point
 
@@ -15,7 +16,8 @@ Use the HeadPose-style workflow:
 
 ## Priorities
 
-- Prefer MuJoCo and Genesis for runnable experiments on H100/H200.
+- Prefer MuJoCo and MJLab for runnable experiments on the local RTX 5060 Ti.
+- Keep Genesis optional and VRAM-safe for the RTX workstation.
 - Keep Isaac Lab integrations isolated and optional.
 - Keep agent modules small enough to replace with upstream GEAR-SONIC or
   LocoFormer implementations later.
@@ -34,13 +36,13 @@ python -m pytest
 - GEAR-SONIC: verify official MuJoCo sim2sim, then inspect deployment I/O.
 - LocoFormer: implement the core policy decomposition first, then scale robots
   and domain randomization after the small loop works.
-- H200 execution: use CUDA training and headless simulation; use an RTX machine
-  only for Isaac Sim rendering, USD import/export, or sensor-heavy validation.
+- RTX execution: use CUDA training and headless MuJoCo/MJLab simulation. Do not
+  start H200 jobs unless an explicit profile is re-enabled.
 
 ## Task Discipline
 
 - Do not download checkpoints, robot assets, datasets, or upstream repos unless
   the user explicitly asks.
 - Record hardware assumptions and failure modes in the relevant task log.
-- If Isaac Lab fails on H200 due to Isaac Sim, RTX, Vulkan, or Kit startup, stop
-  that route and move the experiment to MuJoCo or Genesis.
+- If Isaac Lab fails due to Isaac Sim, RTX, Vulkan, or Kit startup, stop that
+  route and keep the experiment on MuJoCo/MJLab.

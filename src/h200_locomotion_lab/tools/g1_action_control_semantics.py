@@ -11,8 +11,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.tools import g1_curriculum_ppo_smoke as curriculum
-
 
 DEFAULT_OUTPUT_ROOT = Path("outputs/task017/action_control_semantics")
 DEFAULT_STAGE_NAMES = "standing"
@@ -62,7 +62,7 @@ def main() -> None:
             metrics["status"] = "ok"
         else:
             metrics["blocker"] = summary.get("blocker") or "one or more variants failed"
-    except Exception as exc:  # pragma: no cover - H200 failure path.
+    except RECOVERABLE_RUNTIME_ERRORS as exc:  # pragma: no cover - H200 failure path.
         metrics["blocker"] = f"{exc.__class__.__name__}:{exc}"
     print(json.dumps(metrics, sort_keys=True), flush=True)
     if metrics["status"] != "ok":
@@ -167,7 +167,7 @@ def run_ablation(args: argparse.Namespace) -> dict[str, Any]:
                 variant_args=variant_args,
                 log_dir=run_dir / "logs" / variant.name,
             )
-        except Exception as exc:  # pragma: no cover - H200 failure path.
+        except RECOVERABLE_RUNTIME_ERRORS as exc:  # pragma: no cover - H200 failure path.
             smoke_summary = {}
             status = "failed"
             blocker = f"{exc.__class__.__name__}:{exc}"

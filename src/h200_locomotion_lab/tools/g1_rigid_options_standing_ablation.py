@@ -7,18 +7,20 @@ import inspect
 import json
 import os
 import time
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from h200_locomotion_lab.envs.vectorized_genesis_backend import (
     GenesisRigidContactSolverConfig,
     VectorizedGenesisBackend,
     VectorizedGenesisConfig,
 )
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.robots import load_g1_27dof_nohand_profile
 from h200_locomotion_lab.tools import g1_zero_action_standing_causality as zero_action
-
+from h200_locomotion_lab.tools.path_access import path_exists
 
 DEFAULT_OUTPUT_ROOT = Path("outputs/task021/rigid_options_standing_ablation")
 DEFAULT_SCENARIOS = (
@@ -108,7 +110,7 @@ def main(argv: list[str] | None = None) -> None:
         summary = run_ablation(args)
         result.update(summary)
         result["status"] = summary["status"]
-    except Exception as exc:  # pragma: no cover - setup failure path.
+    except RECOVERABLE_RUNTIME_ERRORS as exc:  # pragma: no cover - setup failure path.
         result["status"] = "error"
         result["blocker"] = f"{exc.__class__.__name__}:{exc}"
         exit_code = 1
@@ -176,7 +178,7 @@ def run_ablation(args: argparse.Namespace) -> dict[str, Any]:
     for scenario in selected:
         try:
             scenario_results.append(run_scenario(args=args, torch=torch, run_dir=run_dir, scenario=scenario))
-        except Exception as exc:  # Continue so one bad solver setting does not hide later evidence.
+        except RECOVERABLE_RUNTIME_ERRORS as exc:  # Continue so one bad solver setting does not hide later evidence.
             scenario_dir = run_dir / scenario.name
             scenario_dir.mkdir(parents=True, exist_ok=True)
             error_result = scenario_error_result(scenario=scenario, scenario_dir=scenario_dir, exc=exc)
@@ -453,7 +455,7 @@ def resolve_run_dir(output_root: Path, run_id: str) -> Path:
     run_name = run_id.strip() or time.strftime("%Y%m%d-%H%M%S")
     run_dir = (root / run_name).resolve()
     project_prefix = zero_action.PROJECT_PREFIX.resolve()
-    if project_prefix.exists() and project_prefix not in (run_dir, *run_dir.parents):
+    if path_exists(project_prefix) and project_prefix not in (run_dir, *run_dir.parents):
         raise RuntimeError(f"output path must stay under {project_prefix}: {run_dir}")
     return run_dir
 

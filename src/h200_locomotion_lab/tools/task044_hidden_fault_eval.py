@@ -6,15 +6,16 @@ import argparse
 import json
 import sys
 import traceback
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.tools import task042_memory_ablation_eval as base_eval
 from h200_locomotion_lab.tools.task044_memory_required_triplet_summary import (
     HIDDEN_FAULT_CONTRACT,
 )
-
 
 TASK044_HIDDEN_FAULT_TASK_ID = (
     "Unitree-G1-Gripper-Flat-Task044-TrueTxlHiddenFaultTrain-Fast1p6"
@@ -149,7 +150,7 @@ def main() -> None:
     args = parse_args()
     try:
         summary = run_eval(args)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         summary = build_failure_summary(args, exc)
     write_json_summary(args.output_json, summary)
     print(json.dumps(summary, indent=2, sort_keys=True))

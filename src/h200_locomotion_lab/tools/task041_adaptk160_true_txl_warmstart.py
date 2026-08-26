@@ -11,6 +11,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.tools.task038_true_txl_runner_smoke_probe import (
     DEFAULT_EXPECTED_ACTION_DIM,
     _load_env_cfg,
@@ -61,13 +62,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     _install_wandb_stub()
     _install_wcwidth_stub()
 
+    import mjlab.tasks as _mjlab_tasks
+    import src.tasks as _project_tasks
+
+    del _mjlab_tasks, _project_tasks  # Imports register task packages by side effect.
     import torch
-    import mjlab.tasks  # noqa: F401
-    import src.tasks  # noqa: F401
     from mjlab.envs import ManagerBasedRlEnv
     from mjlab.rl import MjlabOnPolicyRunner, RslRlVecEnvWrapper
     from mjlab.tasks.registry import load_env_cfg, load_rl_cfg, load_runner_cls
     from mjlab.utils.torch import configure_torch_backends
+
     from h200_locomotion_lab.training.rsl_history_wrapper import (
         migrate_adaptk160_to_task041_true_txl_checkpoint,
     )
@@ -225,7 +229,7 @@ def main() -> None:
     args = parse_args()
     try:
         summary = run(args)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         summary = {
             "schema": "task041_adaptk160_true_txl_warmstart_v1",
             "task": getattr(args, "task", DEFAULT_TASK),

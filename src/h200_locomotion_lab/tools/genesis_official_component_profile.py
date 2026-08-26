@@ -11,9 +11,11 @@ import argparse
 import os
 import sys
 import time
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.tools.genesis_official_batched_api_probe import (
     ASSET_KINDS,
     ASSET_VARIANTS,
@@ -36,7 +38,6 @@ from h200_locomotion_lab.tools.genesis_official_batched_api_probe import (
     verify_single_visible_cuda_device,
     write_action_targets,
 )
-
 
 PROFILE_KEYS: tuple[str, ...] = (
     "status",
@@ -92,7 +93,7 @@ def main() -> None:
         metrics["status"] = "blocked"
         metrics["blocker"] = str(exc).replace("\n", "\\n")
         emit_ordered_metrics(metrics)
-    except Exception as exc:  # pragma: no cover - target-only failure path.
+    except RECOVERABLE_RUNTIME_ERRORS as exc:  # pragma: no cover - target-only failure path.
         metrics["status"] = "failed"
         metrics["blocker"] = f"{exc.__class__.__name__}: {exc}".replace("\n", "\\n")
         emit_ordered_metrics(metrics)

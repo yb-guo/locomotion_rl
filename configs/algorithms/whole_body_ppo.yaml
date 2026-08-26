@@ -1,0 +1,12 @@
+algorithm:
+  name: whole_body_masked_ppo
+  family: clipped_policy_gradient
+  interaction: on_policy
+  required_policy_capabilities: [sample, log_prob, value, active_action_mask]
+  rollout_steps: 128
+  epochs: 4
+  minibatch_size: 4096
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip: 0.2
+  entropy_coef: 0.01

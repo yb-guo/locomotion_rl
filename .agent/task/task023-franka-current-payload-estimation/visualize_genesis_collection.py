@@ -9,11 +9,10 @@ from __future__ import annotations
 import argparse
 import json
 import math
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Iterable, Sequence
 
 import numpy as np
-
 
 DEFAULT_ROOT = Path("outputs/task023/franka_current_force_estimation")
 FULL_RUNS = (
@@ -254,7 +253,7 @@ def estimate_mass_curve(
     estimates = []
     times = []
     t = trace["t"][hold_steps:]
-    for start in range(0, delta.shape[0] - window_steps + 1):
+    for start in range(delta.shape[0] - window_steps + 1):
         aw = a[start : start + window_steps]
         dw = delta[start : start + window_steps]
         estimates.append(float(np.sum(aw * dw) / (np.sum(aw * aw) + 1e-9)))

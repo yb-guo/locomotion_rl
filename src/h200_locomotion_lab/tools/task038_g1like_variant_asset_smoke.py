@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.robots.g1like_mjcf_patch import patch_g1like_mjcf_variant
 from h200_locomotion_lab.robots.g1like_morphology import (
     HELDOUT_CONDITIONS,
@@ -146,7 +147,7 @@ def _compile_mujoco_xml(path: Path) -> dict[str, Any]:
 
     try:
         model = mujoco.MjModel.from_xml_path(str(path))
-    except Exception as error:  # pragma: no cover - depends on optional MuJoCo.
+    except RECOVERABLE_RUNTIME_ERRORS as error:  # pragma: no cover - depends on optional MuJoCo.
         return {
             "compile_ok": False,
             "blocked": False,

@@ -6,8 +6,8 @@ import argparse
 import csv
 import math
 import time
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from h200_locomotion_lab.envs.genesis_adapter import GenesisG1Contract, GenesisG1Env
 from h200_locomotion_lab.sonic.g1_policy_bridge import (
@@ -16,14 +16,13 @@ from h200_locomotion_lab.sonic.g1_policy_bridge import (
     sonic_policy_action_to_mujoco_targets,
 )
 from h200_locomotion_lab.tools.sonic_reference_replay_smoke import (
-    apply_sonic_g1_motor_config,
     _flatten_numeric,
-    _read_floating_base_position,
     _is_finite,
     _read_contact_metrics,
+    _read_floating_base_position,
     _read_min_link_height,
+    apply_sonic_g1_motor_config,
 )
-
 
 ActionRows = list[tuple[float, ...]]
 

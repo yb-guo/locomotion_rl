@@ -1,0 +1,7 @@
+policy:
+  name: whole_body_masked_mlp
+  family: masked_gaussian_actor_critic
+  capabilities: [sample, log_prob, value, active_action_mask]
+  hidden_dim: 256
+  hidden_layers: 2
+  log_std_init: -1.0

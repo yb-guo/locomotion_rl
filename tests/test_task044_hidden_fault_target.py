@@ -1,9 +1,8 @@
 import importlib.util
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -811,20 +810,7 @@ def test_task044_register_patch_adds_import_helper_and_single_registration() -> 
 def test_task044_register_patch_adds_base_height_reward_function() -> None:
     module = _load_task044_script("task044_register_hidden_fault_stage.py")
     rewards_path = MemoryPath(
-        "\n".join(
-            [
-                "from __future__ import annotations",
-                "",
-                "from typing import TYPE_CHECKING",
-                "",
-                "import torch",
-                "",
-                "from mjlab.entity import Entity",
-                "from mjlab.managers.scene_entity_config import SceneEntityCfg",
-                "",
-                "_DEFAULT_ASSET_CFG = SceneEntityCfg(\"robot\")",
-            ]
-        )
+        'from __future__ import annotations\n\nfrom typing import TYPE_CHECKING\n\nimport torch\n\nfrom mjlab.entity import Entity\nfrom mjlab.managers.scene_entity_config import SceneEntityCfg\n\n_DEFAULT_ASSET_CFG = SceneEntityCfg("robot")'
         + "\n"
     )
 
@@ -849,23 +835,7 @@ def test_task044_register_patch_adds_base_height_reward_function() -> None:
 def test_task044_register_patch_adds_root_height_termination_function() -> None:
     module = _load_task044_script("task044_register_hidden_fault_stage.py")
     terminations_path = MemoryPath(
-        "\n".join(
-            [
-                "from __future__ import annotations",
-                "",
-                "from typing import TYPE_CHECKING",
-                "",
-                "import torch",
-                "",
-                "from mjlab.sensor import ContactSensor",
-                "",
-                "if TYPE_CHECKING:",
-                "  from mjlab.envs import ManagerBasedRlEnv",
-                "",
-                "def illegal_contact(env, sensor_name: str, force_threshold: float = 10.0):",
-                "  return torch.zeros(1, dtype=torch.bool)",
-            ]
-        )
+        "from __future__ import annotations\n\nfrom typing import TYPE_CHECKING\n\nimport torch\n\nfrom mjlab.sensor import ContactSensor\n\nif TYPE_CHECKING:\n  from mjlab.envs import ManagerBasedRlEnv\n\ndef illegal_contact(env, sensor_name: str, force_threshold: float = 10.0):\n  return torch.zeros(1, dtype=torch.bool)"
         + "\n"
     )
 
@@ -888,66 +858,7 @@ def test_task044_register_patch_adds_root_height_termination_function() -> None:
 def test_task044_dynamic_scheduler_patch_preserves_hidden_schedule_across_inner_resets() -> None:
     module = _load_task044_script("task044_patch_dynamic_training_scheduler.py")
     env_cfg_path = MemoryPath(
-        "\n".join(
-            [
-                "def _apply_task030_dynamic_training_failure(",
-                "  env,",
-                "  dynamic_dead_probability: float = 0.70,",
-                "  transient_window_s: float = 0.3,",
-                ") -> None:",
-                "  reset_mask = (env.episode_length_buf <= 1) | (",
-                "    env._task030_dynamic_training_case_id < 0",
-                "  )",
-                "  _task030_resample_dynamic_training_schedules(",
-                "      env,",
-                "      reset_env_ids,",
-                "      targets,",
-                "      clean_probability,",
-                "      persistent_probability,",
-                "      dynamic_single_probability,",
-                "      left_knee_probability,",
-                "      weak_scale_range,",
-                "      dead_scale_range,",
-                "      dynamic_dead_probability,",
-                "    )",
-                "  _task030_resample_dynamic_training_schedules(",
-                "      env,",
-                "      inactive_env_ids,",
-                "      targets,",
-                "      clean_probability,",
-                "      persistent_probability,",
-                "      dynamic_single_probability,",
-                "      left_knee_probability,",
-                "      weak_scale_range,",
-                "      dead_scale_range,",
-                "      dynamic_dead_probability,",
-                "    )",
-                "  return None",
-                "",
-                "def _task030_resample_dynamic_training_schedules(",
-                "  env,",
-                "  env_ids,",
-                "  targets,",
-                "  clean_probability: float,",
-                "  persistent_probability: float,",
-                "  dynamic_single_probability: float,",
-                "  left_knee_probability: float,",
-                "  weak_scale_range: tuple[float, float],",
-                "  dead_scale_range: tuple[float, float],",
-                "  dynamic_dead_probability: float,",
-                ") -> None:",
-                "  count = len(env_ids)",
-                "  if count:",
-                "    onset = 1.0 + 3.0 * torch.rand(count, device=env.device)",
-                "    duration = 0.6 + 1.4 * torch.rand(count, device=env.device)",
-                "",
-                "def _add_task030_dynamic_training_failure_stage():",
-                "  return {",
-                '      "dynamic_dead_probability": 0.70,',
-                '      "transient_window_s": 0.3,',
-                "  }",
-            ]
-        )
+        'def _apply_task030_dynamic_training_failure(\n  env,\n  dynamic_dead_probability: float = 0.70,\n  transient_window_s: float = 0.3,\n) -> None:\n  reset_mask = (env.episode_length_buf <= 1) | (\n    env._task030_dynamic_training_case_id < 0\n  )\n  _task030_resample_dynamic_training_schedules(\n      env,\n      reset_env_ids,\n      targets,\n      clean_probability,\n      persistent_probability,\n      dynamic_single_probability,\n      left_knee_probability,\n      weak_scale_range,\n      dead_scale_range,\n      dynamic_dead_probability,\n    )\n  _task030_resample_dynamic_training_schedules(\n      env,\n      inactive_env_ids,\n      targets,\n      clean_probability,\n      persistent_probability,\n      dynamic_single_probability,\n      left_knee_probability,\n      weak_scale_range,\n      dead_scale_range,\n      dynamic_dead_probability,\n    )\n  return None\n\ndef _task030_resample_dynamic_training_schedules(\n  env,\n  env_ids,\n  targets,\n  clean_probability: float,\n  persistent_probability: float,\n  dynamic_single_probability: float,\n  left_knee_probability: float,\n  weak_scale_range: tuple[float, float],\n  dead_scale_range: tuple[float, float],\n  dynamic_dead_probability: float,\n) -> None:\n  count = len(env_ids)\n  if count:\n    onset = 1.0 + 3.0 * torch.rand(count, device=env.device)\n    duration = 0.6 + 1.4 * torch.rand(count, device=env.device)\n\ndef _add_task030_dynamic_training_failure_stage():\n  return {\n      "dynamic_dead_probability": 0.70,\n      "transient_window_s": 0.3,\n  }'
         + "\n"
     )
 

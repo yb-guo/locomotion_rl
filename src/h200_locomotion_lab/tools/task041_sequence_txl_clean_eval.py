@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
-import traceback
 from pathlib import Path
 from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.tools import task039_true_txl_clean_eval
 from h200_locomotion_lab.tools.task038_true_txl_runner_smoke_probe import (
     DEFAULT_EXPECTED_ACTION_DIM,
@@ -20,7 +19,6 @@ from h200_locomotion_lab.tools.task040_sequence_txl_ppo_update_smoke import (
     _install_wandb_stub,
     _install_wcwidth_stub,
 )
-
 
 TASK042_MEMORY_ABLATION_MODES = (
     "none",
@@ -240,7 +238,7 @@ def main() -> None:
     args = parse_args()
     try:
         summary = run_eval(args)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         summary = build_failure_summary(args, exc)
     write_json_summary(args.output_json, summary)
     print(json.dumps(summary, indent=2, sort_keys=True))

@@ -9,15 +9,14 @@ slice of that path.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 from h200_locomotion_lab.sonic.g1_policy_bridge import (
     SONIC_ACTION_DIM,
     SONIC_G1_DEFAULT_ANGLES,
     SONIC_G1_POLICY_INDEX_TO_MUJOCO_INDEX,
 )
-
 
 SONIC_PLANNER_QPOS_DIM = 7 + SONIC_ACTION_DIM
 SONIC_PLANNER_CONTEXT_FRAMES = 4
@@ -157,7 +156,7 @@ def resample_planner_mujoco_qpos_to_50hz(
     pred_frames = min(pred_frames, len(frames))
 
     motion_seconds = pred_frames / 30.0
-    timesteps_50hz = int(math.floor(motion_seconds * 50.0))
+    timesteps_50hz = math.floor(motion_seconds * 50.0)
     if timesteps_50hz < 2:
         raise ValueError("planner output is too short to derive 50 Hz velocities")
 
@@ -167,7 +166,7 @@ def resample_planner_mujoco_qpos_to_50hz(
 
     for frame_50hz in range(timesteps_50hz):
         frame_30hz = (frame_50hz / 50.0) * 30.0
-        f0 = int(math.floor(frame_30hz))
+        f0 = math.floor(frame_30hz)
         f0 = min(f0, pred_frames - 1)
         f1 = min(f0 + 1, pred_frames - 1)
         alpha = frame_30hz - f0
@@ -310,7 +309,7 @@ def _sample_motion_at_time(
     tuple[float, ...],
 ]:
     frame_50hz = max(0.0, sample_time_s * 50.0)
-    f0 = _clamp_frame(int(math.floor(frame_50hz)), motion.timesteps)
+    f0 = _clamp_frame(math.floor(frame_50hz), motion.timesteps)
     f1 = _clamp_frame(f0 + 1, motion.timesteps)
     alpha = max(0.0, min(1.0, frame_50hz - f0))
     w0 = 1.0 - alpha
@@ -333,7 +332,7 @@ def _sample_mujoco_qpos_history_at_time(
     sample_time_s: float,
 ) -> tuple[float, ...]:
     frame_50hz = max(0.0, sample_time_s * 50.0)
-    f0 = _clamp_frame(int(math.floor(frame_50hz)), len(qpos_frames_50hz))
+    f0 = _clamp_frame(math.floor(frame_50hz), len(qpos_frames_50hz))
     f1 = _clamp_frame(f0 + 1, len(qpos_frames_50hz))
     alpha = max(0.0, min(1.0, frame_50hz - f0))
     w0 = 1.0 - alpha

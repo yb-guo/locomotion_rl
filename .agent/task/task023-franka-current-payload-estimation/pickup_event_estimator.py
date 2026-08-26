@@ -12,11 +12,11 @@ import argparse
 import html
 import json
 import math
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import numpy as np
-
 
 DEFAULT_ROOT = Path("outputs/task023/franka_current_force_estimation")
 GRAVITY_REACTION = np.array([0.0, 0.0, 9.81], dtype=float)
@@ -203,7 +203,6 @@ def estimate_pickup_transport(
     if scalar_int(trace["pickup_event_step"]) != scalar_int(baseline["pickup_event_step"]):
         return failed("baseline_pickup_step_mismatch"), empty_estimate(trace)
 
-    t = trace["t"]
     true_mass = trace["payload_mass_kg"]
     pickup_step = scalar_int(trace["pickup_event_step"])
     nominal_mass = float(trace["payload_mass_nominal_kg"])
@@ -239,7 +238,7 @@ def estimate_return_home_diff(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     t = trace["t"]
     dt = infer_dt(t)
-    tail_steps = max(1, int(round(args.home_tail_s / dt)))
+    tail_steps = max(1, round(args.home_tail_s / dt))
     phase = trace["phase"].astype(str)
     before_idx = np.flatnonzero(phase == "home_hold_before")
     after_idx = np.flatnonzero(phase == "home_hold_after")
@@ -347,11 +346,11 @@ def transport_metrics(
         pickup_step=pickup_step,
         target=nominal_mass,
         tolerance=tolerance,
-        sustain_steps=max(1, int(round(args.convergence_sustain_s / dt))),
+        sustain_steps=max(1, round(args.convergence_sustain_s / dt)),
     )
     post_eval_start = convergence_step if convergence_step is not None else min(
         mass_hat.shape[0] - 1,
-        pickup_step + int(round(1.0 / dt)),
+        pickup_step + round(1.0 / dt),
     )
     post_eval = (np.arange(mass_hat.shape[0]) >= post_eval_start) & finite
     post_error = mass_hat[post_eval] - nominal_mass
@@ -533,7 +532,7 @@ def polyline_segments(
     stroke_width: float,
 ) -> list[str]:
     max_points = 1400
-    stride = max(1, int(math.ceil(values.shape[0] / max_points)))
+    stride = max(1, math.ceil(values.shape[0] / max_points))
     out = []
     current: list[str] = []
     for index in range(0, values.shape[0], stride):

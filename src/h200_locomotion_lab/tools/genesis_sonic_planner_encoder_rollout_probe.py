@@ -8,8 +8,9 @@ import math
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from h200_locomotion_lab.envs.genesis_adapter import (
     GenesisCameraConfig,

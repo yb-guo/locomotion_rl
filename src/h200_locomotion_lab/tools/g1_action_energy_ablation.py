@@ -7,11 +7,12 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.tools import g1_ppo_smoke
-
 
 DEFAULT_OUTPUT_ROOT = Path("outputs/task020/action_energy_ablation")
 DEFAULT_ACTION_SCALE_MULTS = (0.10, 0.20, 0.25, 0.35)
@@ -41,7 +42,7 @@ def main() -> None:
         metrics["status"] = summary["status"]
         if summary["status"] != "passed":
             metrics["blocker"] = summary["blocker"]
-    except Exception as exc:  # pragma: no cover - H200 failure path.
+    except RECOVERABLE_RUNTIME_ERRORS as exc:  # pragma: no cover - H200 failure path.
         metrics["blocker"] = f"{exc.__class__.__name__}:{exc}"
     print(json.dumps(metrics, sort_keys=True), flush=True)
     if metrics["status"] != "passed":
@@ -243,7 +244,7 @@ def run_candidate(
         smoke_summary = runner(candidate_args)
         status = "completed"
         blocker = ""
-    except Exception as exc:  # pragma: no cover - H200 failure path.
+    except RECOVERABLE_RUNTIME_ERRORS as exc:  # pragma: no cover - H200 failure path.
         smoke_summary = {}
         status = "failed"
         blocker = f"{exc.__class__.__name__}:{exc}"
@@ -458,7 +459,7 @@ def choose_candidate(candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
     ]
     if not viable:
         return None
-    return sorted(viable, key=candidate_sort_key)[0]
+    return min(viable, key=candidate_sort_key)
 
 
 def candidate_failure_blocker(candidates: list[dict[str, Any]]) -> str:

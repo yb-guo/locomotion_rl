@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, replace
 import json
+import math
 import os
 import time
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from h200_locomotion_lab.envs.g1_velocity_tracking_env import G1VelocityTrackingConfig
 from h200_locomotion_lab.envs.vectorized_genesis_backend import (
@@ -17,11 +19,11 @@ from h200_locomotion_lab.envs.vectorized_genesis_backend import (
     as_rows,
     is_tensor_like,
 )
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.robots import (
     G1_27DOF_NOHAND_ACTUATOR_ORDER,
     load_g1_27dof_nohand_profile,
 )
-
 
 PROJECT_PREFIX = Path("/root/agent_workspace/project")
 DEFAULT_OUTPUT_ROOT = Path("outputs/task019/zero_action_standing_causality")
@@ -90,7 +92,7 @@ def main() -> None:
         summary = run_probe(args)
         result.update(summary)
         result["status"] = summary["status"]
-    except Exception as exc:  # pragma: no cover - H200 failure path.
+    except RECOVERABLE_RUNTIME_ERRORS as exc:  # pragma: no cover - H200 failure path.
         result["status"] = "error"
         result["blocker"] = f"{exc.__class__.__name__}:{exc}"
         exit_code = 1
@@ -658,7 +660,7 @@ def apply_gain_profile_to_backend(
     backend: VectorizedGenesisBackend,
     gains: DiagnosticGainProfile,
 ) -> None:
-    setattr(backend, "_diagnostic_gain_profile", gains)
+    backend._diagnostic_gain_profile = gains
     set_robot_dofs_kp(
         backend,
         scale_selected(gains.kp, float(backend.motor_kp_mult)),
@@ -876,9 +878,12 @@ def read_contact_metrics(backend: VectorizedGenesisBackend, *, torch: Any) -> di
     ):
         if not hasattr(robot, method_name):
             continue
+        value_available = True
         try:
             value = getattr(robot, method_name)()
-        except Exception:
+        except RECOVERABLE_RUNTIME_ERRORS:
+            value_available = False
+        if not value_available:
             continue
         if value is None:
             continue
@@ -1007,7 +1012,7 @@ def assert_metric_row_ok(row: dict[str, Any]) -> None:
     )
     for key in finite_keys:
         value = float(row[key])
-        if value != value or value in (float("inf"), float("-inf")):
+        if not math.isfinite(value):
             raise ValueError(f"{key} is not finite: {value}")
     if not row["tensor_device_ok"]:
         raise ValueError("tensor_device_ok is false")

@@ -12,6 +12,7 @@ import types
 from pathlib import Path
 from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.tools.task038_true_txl_ppo_update_smoke import (
     PreflightError,
     collect_post_learn_diagnostics,
@@ -29,7 +30,6 @@ from h200_locomotion_lab.tools.task038_true_txl_runner_smoke_probe import (
     _set_if_present,
     _total_action_dim,
 )
-
 
 DEFAULT_TASK = TRAIN_TRUE_TXL_RUNNER_SMOKE_TASK_ID
 DEFAULT_LOG_DIR = Path("outputs/task040/sequence_txl_ppo_update_smoke")
@@ -92,9 +92,11 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
     _install_wandb_stub()
     _install_wcwidth_stub()
 
+    import mjlab.tasks as _mjlab_tasks
+    import src.tasks as _project_tasks
+
+    del _mjlab_tasks, _project_tasks  # Imports register task packages by side effect.
     import torch
-    import mjlab.tasks  # noqa: F401
-    import src.tasks  # noqa: F401
     from mjlab.envs import ManagerBasedRlEnv
     from mjlab.rl import MjlabOnPolicyRunner, RslRlVecEnvWrapper
     from mjlab.tasks.registry import load_env_cfg, load_rl_cfg, load_runner_cls
@@ -413,7 +415,7 @@ def main() -> None:
         summary = run_probe(args)
     except PreflightError as exc:
         summary = build_preflight_failure_summary(args, exc)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         summary = build_failure_summary(args, exc)
     write_json_summary(args.output_json, summary)
     print(json.dumps(summary, indent=2, sort_keys=True))

@@ -6,7 +6,6 @@ from h200_locomotion_lab.tools.g1_genesis_alignment_bundle import (
     main,
 )
 
-
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "g1_genesis_alignment_bundle"
 MISSING_ASSET = FIXTURE_DIR / "does_not_exist.xml"
 MINIMAL_XML = FIXTURE_DIR / "minimal_no_contact.xml"

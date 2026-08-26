@@ -6,16 +6,20 @@ import argparse
 import json
 import math
 import os
-from pathlib import Path
 import time
-from typing import Any, Iterable, Sequence
+from collections.abc import Iterable, Sequence
+from pathlib import Path
+from typing import Any
 from xml.etree import ElementTree
 
-from h200_locomotion_lab.envs.vectorized_genesis_backend import VectorizedGenesisBackend
-from h200_locomotion_lab.envs.vectorized_genesis_backend import VectorizedGenesisConfig
+from h200_locomotion_lab.envs.vectorized_genesis_backend import (
+    VectorizedGenesisBackend,
+    VectorizedGenesisConfig,
+)
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.robots import load_g1_27dof_nohand_profile
 from h200_locomotion_lab.tools import g1_zero_action_standing_causality as zero_action
-
+from h200_locomotion_lab.tools.path_access import path_exists
 
 DEFAULT_OUTPUT_ROOT = Path("outputs/task021/ankle_foot_asset_contact_audit")
 DEFAULT_TARGET_BODIES = (
@@ -50,7 +54,7 @@ def main(argv: list[str] | None = None) -> None:
         summary = run_audit(args)
         result.update(summary)
         result["status"] = summary["status"]
-    except Exception as exc:  # pragma: no cover - setup failure path.
+    except RECOVERABLE_RUNTIME_ERRORS as exc:  # pragma: no cover - setup failure path.
         result["status"] = "error"
         result["blocker"] = f"{exc.__class__.__name__}:{exc}"
         exit_code = 1
@@ -333,7 +337,7 @@ def summarize_link_trace(
     link_indices: dict[str, int | None],
 ) -> dict[str, Any]:
     link_values: dict[str, dict[str, Any]] = {}
-    for name in link_indices:
+    for name, link_index in link_indices.items():
         samples = [
             row.get("links", {}).get(
                 name,
@@ -352,7 +356,7 @@ def summarize_link_trace(
             if sample.get("contact_force_max") is not None
         ]
         link_values[name] = {
-            "link_idx": link_indices[name],
+            "link_idx": link_index,
             "z_min": min(z_values) if z_values else None,
             "contact_force_max": max(force_values) if force_values else None,
             "max_contact_env_count": max(
@@ -408,12 +412,16 @@ def read_link_z_values(robot: Any, link_idx: int) -> list[float]:
     if not hasattr(robot, "get_links_pos"):
         return []
     try:
-        return z_values_from_any(robot.get_links_pos(links_idx_local=(link_idx,)), link_idx=link_idx)
-    except Exception:
-        pass
+        selected_values = z_values_from_any(
+            robot.get_links_pos(links_idx_local=(link_idx,)), link_idx=link_idx
+        )
+    except RECOVERABLE_RUNTIME_ERRORS:
+        selected_values = None
+    if selected_values is not None:
+        return selected_values
     try:
         return z_values_from_any(robot.get_links_pos(), link_idx=link_idx)
-    except Exception:
+    except RECOVERABLE_RUNTIME_ERRORS:
         return []
 
 
@@ -422,13 +430,15 @@ def read_link_contact_force_values(robot: Any, link_idx: int) -> list[float]:
         if not hasattr(robot, method_name):
             continue
         method = getattr(robot, method_name)
+        values_available = True
         try:
             values = method(links_idx_local=(link_idx,))
         except TypeError:
             values = method()
-        except Exception:
-            continue
-        return force_values_from_any(values, link_idx=link_idx)
+        except RECOVERABLE_RUNTIME_ERRORS:
+            values_available = False
+        if values_available:
+            return force_values_from_any(values, link_idx=link_idx)
     return []
 
 
@@ -542,7 +552,7 @@ def resolve_link_index(robot: Any, link_name: str) -> int | None:
         return None
     try:
         link = robot.get_link(link_name)
-    except Exception:
+    except RECOVERABLE_RUNTIME_ERRORS:
         return None
     for attr in ("idx_local", "idx", "link_idx", "id"):
         if not hasattr(link, attr):
@@ -606,7 +616,7 @@ def resolve_run_dir(output_root: Path, run_id: str) -> Path:
     run_name = run_id.strip() or time.strftime("%Y%m%d-%H%M%S")
     run_dir = (root / run_name).resolve()
     project_prefix = zero_action.PROJECT_PREFIX.resolve()
-    if project_prefix.exists() and project_prefix not in (run_dir, *run_dir.parents):
+    if path_exists(project_prefix) and project_prefix not in (run_dir, *run_dir.parents):
         raise RuntimeError(f"output path must stay under {project_prefix}: {run_dir}")
     return run_dir
 

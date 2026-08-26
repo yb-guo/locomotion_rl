@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Mapping, Sequence
 import json
 import sys
 import traceback
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.tools import task038_true_txl_ppo_update_smoke
 from h200_locomotion_lab.tools.task038_true_txl_runner_smoke_probe import (
     DEFAULT_EXPECTED_ACTION_DIM,
@@ -17,7 +18,6 @@ from h200_locomotion_lab.tools.task038_true_txl_runner_smoke_probe import (
     DEFAULT_EXPECTED_RUNNER_CLS,
     TRAIN_TRUE_TXL_RUNNER_SMOKE_TASK_ID,
 )
-
 
 DEFAULT_TASK = TRAIN_TRUE_TXL_RUNNER_SMOKE_TASK_ID
 DEFAULT_LOG_DIR = Path("outputs/task039/txl_update_memory_diagnostics")
@@ -441,7 +441,7 @@ def main() -> None:
     try:
         preflight_args(args)
         summary = run_probe(args)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         summary = build_failure_summary(args, exc)
     write_json_summary(args.output_json, summary)
     print(json.dumps(summary, indent=2, sort_keys=True))

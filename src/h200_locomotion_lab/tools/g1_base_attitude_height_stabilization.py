@@ -3,21 +3,22 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, replace
 import json
 import math
 import os
-from pathlib import Path
 import random
 import shlex
 import time
-from typing import Any, Sequence
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
+from pathlib import Path
+from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.robots import (
     G1_27DOF_NOHAND_ACTUATOR_ORDER,
     load_g1_27dof_nohand_profile,
 )
-
 
 TASK_NAME = "task023-base-attitude-height-stabilization"
 DEFAULT_OUTPUT_ROOT = Path("outputs/task023/base_attitude_height_stabilization")
@@ -138,7 +139,7 @@ def main(argv: list[str] | None = None) -> None:
             }
         else:
             result = run_probe(args)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         result["blocker"] = f"{exc.__class__.__name__}:{exc}"
         exit_code = 1
     print(json.dumps(result, sort_keys=True), flush=True)
@@ -443,7 +444,7 @@ def controller_joint_deltas(
     values = {joint_name: 0.0 for joint_name in G1_27DOF_NOHAND_ACTUATOR_ORDER}
     roll_delta = control.roll_delta * (-1.0 if roll_sign == "inverted" else 1.0)
     mirrored = "mirrored" in roll_allocation
-    use_hip = roll_allocation.startswith("hip_") or roll_allocation.startswith("hip_ankle")
+    use_hip = roll_allocation.startswith(("hip_", "hip_ankle"))
     use_ankle = "ankle" in roll_allocation
     right_sign = -1.0 if mirrored else 1.0
 
@@ -763,13 +764,13 @@ def run_genesis_probe(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def load_genesis_runtime() -> tuple[Any, Any, Any]:
-    from h200_locomotion_lab.envs.vectorized_genesis_backend import (  # noqa: PLC0415
+    from h200_locomotion_lab.envs.vectorized_genesis_backend import (
         VectorizedGenesisBackend,
         VectorizedGenesisConfig,
     )
 
     try:
-        import torch  # type: ignore[import-not-found]  # noqa: PLC0415
+        import torch  # type: ignore[import-not-found]
     except Exception as exc:  # pragma: no cover - H200 environment path.
         raise RuntimeError(f"torch import failed for Genesis runner: {exc}") from exc
     return VectorizedGenesisBackend, VectorizedGenesisConfig, torch
@@ -1223,7 +1224,7 @@ def resolve_link_index(robot: Any, link_name: str) -> int | None:
         return None
     try:
         link = robot.get_link(link_name)
-    except Exception:
+    except RECOVERABLE_RUNTIME_ERRORS:
         return None
     for attr in ("idx_local", "idx", "link_idx", "id"):
         if not hasattr(link, attr):
@@ -1248,19 +1249,17 @@ def read_link_contact_force(robot: Any, link_index: int) -> float | None:
         try:
             selected = method(links_idx_local=(link_index,))
             force = max_vector_norm(selected)
-            if force is not None:
-                return force
-        except TypeError:
-            pass
-        except Exception:
-            pass
+        except RECOVERABLE_RUNTIME_ERRORS:
+            force = None
+        if force is not None:
+            return force
         try:
             full = method()
             force = indexed_contact_force(full, link_index)
-            if force is not None:
-                return force
-        except Exception:
-            continue
+        except RECOVERABLE_RUNTIME_ERRORS:
+            force = None
+        if force is not None:
+            return force
     return None
 
 
@@ -1410,7 +1409,7 @@ def optional_call(target: Any, method_name: str) -> Any:
         return None
     try:
         return getattr(target, method_name)()
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         return {"unavailable": True, "reason": f"{exc.__class__.__name__}:{exc}"}
 
 

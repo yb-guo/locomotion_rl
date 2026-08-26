@@ -22,13 +22,8 @@ from h200_locomotion_lab.envs.vectorized_genesis_backend import (
     VectorizedGenesisBackend,
     VectorizedGenesisConfig,
 )
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.robots import load_g1_27dof_nohand_profile
-from h200_locomotion_lab.training.ppo_loop import (
-    PPOConfig,
-    build_actor_critic,
-    collect_rollout,
-    require_torch,
-)
 from h200_locomotion_lab.tools.g1_ppo_smoke import (
     COMMAND_MODES,
     DEFAULT_RESET_POSE,
@@ -44,7 +39,12 @@ from h200_locomotion_lab.tools.g1_standing_reset_pose_probe import (
     parse_float_list,
     parse_name_list,
 )
-
+from h200_locomotion_lab.training.ppo_loop import (
+    PPOConfig,
+    build_actor_critic,
+    collect_rollout,
+    require_torch,
+)
 
 DEFAULT_OUTPUT_ROOT = Path("outputs/task014/policy_action_safety_probe")
 DEFAULT_ACTION_SCALE_MULTS = "1.0,0.5,0.25"
@@ -64,7 +64,7 @@ def main() -> None:
     try:
         result.update(run_probe(args))
         result["status"] = "ok"
-    except Exception as exc:  # pragma: no cover - H200 failure path.
+    except RECOVERABLE_RUNTIME_ERRORS as exc:  # pragma: no cover - H200 failure path.
         result["blocker"] = f"{exc.__class__.__name__}:{exc}"
     print(json.dumps(result, sort_keys=True), flush=True)
     if result["status"] != "ok":

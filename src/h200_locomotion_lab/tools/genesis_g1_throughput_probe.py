@@ -10,16 +10,15 @@ import argparse
 import math
 import random
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Sequence
 
 from h200_locomotion_lab.envs.genesis_adapter import (
     GenesisG1Contract,
     GenesisG1SceneBackend,
     GenesisSceneConfig,
 )
-
 
 ACTION_PATTERNS = ("zero", "random", "sine")
 

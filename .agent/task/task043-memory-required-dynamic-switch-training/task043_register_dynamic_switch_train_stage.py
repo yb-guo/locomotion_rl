@@ -7,7 +7,6 @@ import argparse
 import re
 from pathlib import Path
 
-
 ROOT = Path("/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab")
 TASK_ID = "Unitree-G1-Gripper-Flat-Task043-TrainTrueTxlDynamicSwitchMemoryRequired-Fast1p6"
 RUNNER_NAME = "Task038TrueTxlMemoryK160Runner"

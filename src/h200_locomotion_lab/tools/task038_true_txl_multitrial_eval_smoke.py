@@ -10,6 +10,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.tools import task037_multitrial_eval_checkpoint
 from h200_locomotion_lab.tools.task038_true_txl_runner_smoke_probe import (
     DEFAULT_EXPECTED_ACTION_DIM,
@@ -19,7 +20,6 @@ from h200_locomotion_lab.tools.task038_true_txl_runner_smoke_probe import (
     TRAIN_TRUE_TXL_RUNNER_SMOKE_TASK_ID,
     _variant_label,
 )
-
 
 DEFAULT_TASK = TRAIN_TRUE_TXL_RUNNER_SMOKE_TASK_ID
 ALLOWED_TASKS = (
@@ -325,7 +325,7 @@ def main() -> None:
     try:
         preflight_args(args)
         summary = run_eval(args)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         summary = build_failure_summary(args, exc)
     write_json_summary(args.output_json, summary)
     print(json.dumps(summary, indent=2, sort_keys=True))

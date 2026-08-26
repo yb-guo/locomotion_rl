@@ -4,31 +4,33 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import time
 from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
-from h200_locomotion_lab.envs.g1_velocity_tracking_env import (
-    G1VelocityTrackingConfig,
-    G1VelocityTrackingVectorizedEnv,
-)
 from h200_locomotion_lab.envs.g1_reset_poses import (
     G1_STANDING_RESET_POSE_NAMES,
     build_g1_standing_reset_pose_candidates,
     leg_value_summary,
+)
+from h200_locomotion_lab.envs.g1_velocity_tracking_env import (
+    G1VelocityTrackingConfig,
+    G1VelocityTrackingVectorizedEnv,
 )
 from h200_locomotion_lab.envs.vectorized_genesis_backend import (
     ACTION_JOINT_GROUPS,
     VectorizedGenesisBackend,
     VectorizedGenesisConfig,
 )
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.robots import load_g1_27dof_nohand_profile
 from h200_locomotion_lab.tools import g1_ankle_roll_contact_patch as contact_patch
 from h200_locomotion_lab.training.ppo_loop import (
-    PPOConfig,
     REWARD_COMPONENT_NAMES,
+    PPOConfig,
     build_actor_critic,
     collect_rollout,
     compute_gae,
@@ -38,7 +40,6 @@ from h200_locomotion_lab.training.ppo_loop import (
     synchronize_device,
     tensor_device_ok,
 )
-
 
 PROJECT_PREFIX = Path("/root/agent_workspace/project")
 DEFAULT_OUTPUT_ROOT = Path("outputs/task014/minimal_ppo_smoke")
@@ -63,7 +64,7 @@ def main() -> None:
         summary = run_smoke(args)
         metrics.update(summary)
         metrics["status"] = "ok"
-    except Exception as exc:  # pragma: no cover - H200 failure path.
+    except RECOVERABLE_RUNTIME_ERRORS as exc:  # pragma: no cover - H200 failure path.
         metrics["blocker"] = f"{exc.__class__.__name__}:{exc}"
     print(json.dumps(metrics, sort_keys=True), flush=True)
     if metrics["status"] != "ok":
@@ -653,8 +654,7 @@ def assert_metric_row_ok(row: dict[str, Any]) -> None:
             raise ValueError(f"{key} is not finite: {value}")
     for key, value in row.items():
         if (
-            key.startswith("reward_component_")
-            or key.startswith("reward_contribution_")
+            key.startswith(("reward_component_", "reward_contribution_"))
         ) and not math_is_finite(float(value)):
             raise ValueError(f"{key} is not finite: {value}")
     if not row["tensor_device_ok"]:
@@ -836,7 +836,7 @@ def max_row_metric(rows: list[dict[str, Any]], key: str) -> float:
 
 
 def math_is_finite(value: float) -> bool:
-    return value == value and value not in (float("inf"), float("-inf"))
+    return math.isfinite(value)
 
 
 if __name__ == "__main__":

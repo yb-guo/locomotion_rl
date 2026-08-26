@@ -2,6 +2,7 @@ import sys
 
 import pytest
 
+from h200_locomotion_lab.core.rl import VectorTask
 from h200_locomotion_lab.envs.g1_velocity_tracking_env import (
     G1VelocityTrackingConfig,
     G1VelocityTrackingVectorizedEnv,
@@ -30,6 +31,10 @@ def test_g1_velocity_tracking_env_reset_returns_training_contract_shapes() -> No
     assert tensor_shape(env.commands) == (4, 3)
     assert env.commands == [[0.4, 0.0, 0.0]] * 4
     assert env.episode_lengths == [0, 0, 0, 0]
+    assert isinstance(env, VectorTask)
+    assert env.num_envs == 4
+    assert env.spec.observation("policy").flat_dim == 90
+    assert env.spec.action.flat_dim == 27
 
 
 def test_g1_velocity_tracking_env_step_returns_reward_done_and_components() -> None:
@@ -45,6 +50,7 @@ def test_g1_velocity_tracking_env_step_returns_reward_done_and_components() -> N
     assert tensor_shape(step.done) == (3,)
     assert all(value > 0.0 for value in step.reward)
     assert step.done == [False, False, False]
+    assert step.metrics is step.info
     assert set(step.info["components"]) == {
         "tracking_lin_vel",
         "tracking_yaw_rate",

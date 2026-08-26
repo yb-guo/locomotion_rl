@@ -10,6 +10,8 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
+
 
 class PreflightError(ValueError):
     def __init__(self, reasons: list[str]) -> None:
@@ -169,7 +171,7 @@ def main() -> None:
     args = parse_args()
     try:
         summary = build_summary(args)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         summary = build_failure_summary(args, exc)
     summary["command"] = list(sys.argv)
     write_json_summary(args.output_json, summary)

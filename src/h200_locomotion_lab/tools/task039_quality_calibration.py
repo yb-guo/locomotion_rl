@@ -9,6 +9,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.training.task039_quality_feedback import evaluate_quality_feedback
 
 
@@ -116,7 +117,7 @@ def main() -> None:
     args = parse_args()
     try:
         summary = run_calibration(args)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         summary = build_failure_summary(args, exc)
     summary["command"] = list(sys.argv)
     write_json_summary(args.output_json, summary)

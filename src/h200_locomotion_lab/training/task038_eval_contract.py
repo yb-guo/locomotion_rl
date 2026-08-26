@@ -7,8 +7,9 @@ claim gate to ``task038_claim_contract.evaluate_claim``.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 from h200_locomotion_lab.robots.g1like_morphology import (
     generate_g1like_morphology_manifest,
@@ -19,7 +20,6 @@ from h200_locomotion_lab.training.task038_claim_contract import (
     ClaimResult,
     evaluate_claim,
 )
-
 
 ATTEMPTED = "attempted"
 NOT_ATTEMPTED = "not_attempted"
@@ -38,7 +38,7 @@ class TrialMetrics:
     action_smoothness: float = 0.0
 
     @classmethod
-    def from_mapping(cls, data: Mapping[str, Any]) -> "TrialMetrics":
+    def from_mapping(cls, data: Mapping[str, Any]) -> TrialMetrics:
         return cls(
             trial_index=int(data["trial_index"]),
             passed=bool(data["passed"]),
@@ -77,7 +77,7 @@ class EvalPolicyRow:
     txl_debug: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_mapping(cls, data: Mapping[str, Any]) -> "EvalPolicyRow":
+    def from_mapping(cls, data: Mapping[str, Any]) -> EvalPolicyRow:
         status = str(data.get("status", ATTEMPTED))
         return cls(
             policy=str(data["policy"]),
@@ -152,7 +152,7 @@ class EvalSummary:
     git_ref: str | None = None
 
     @classmethod
-    def from_mapping(cls, data: Mapping[str, Any]) -> "EvalSummary":
+    def from_mapping(cls, data: Mapping[str, Any]) -> EvalSummary:
         return cls(
             summary_id=str(data["summary_id"]),
             morphology_manifest=dict(data["morphology_manifest"]),
@@ -550,11 +550,11 @@ def _tiny_txl_debug() -> dict[str, Any]:
 __all__ = [
     "ATTEMPTED",
     "CONTROL_REFERENCE",
+    "NOT_ATTEMPTED",
+    "PRIMARY_EVAL",
     "EvalContractResult",
     "EvalPolicyRow",
     "EvalSummary",
-    "NOT_ATTEMPTED",
-    "PRIMARY_EVAL",
     "TrialMetrics",
     "build_tiny_comparable_fixture",
     "evaluate_full_claim_from_summary",

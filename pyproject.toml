@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "h200-locomotion-lab"
 version = "0.1.0"
-description = "H200-first humanoid locomotion RL scaffold for GEAR-SONIC and LocoFormer-style experiments."
+description = "RTX 5060 Ti-first humanoid locomotion RL scaffold for GEAR-SONIC and LocoFormer-style experiments."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -27,6 +27,8 @@ genesis = [
 ]
 mujoco = [
   "mujoco>=3.2",
+  "numpy>=1.26",
+  "scipy>=1.11",
 ]
 
 [tool.setuptools.packages.find]

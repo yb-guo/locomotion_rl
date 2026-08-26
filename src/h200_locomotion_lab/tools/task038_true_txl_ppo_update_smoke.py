@@ -11,6 +11,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.tools.task038_true_txl_runner_smoke_probe import (
     DEFAULT_EXPECTED_ACTION_DIM,
     DEFAULT_EXPECTED_ACTOR_MODEL_CLASS,
@@ -31,7 +32,6 @@ from h200_locomotion_lab.tools.task038_true_txl_runner_smoke_probe import (
     _total_action_dim,
     _txl_debug_snapshot,
 )
-
 
 DEFAULT_TASK = TRAIN_TRUE_TXL_RUNNER_SMOKE_TASK_ID
 DEFAULT_LOG_DIR = Path("outputs/task038/true_txl_ppo_update_smoke")
@@ -83,9 +83,11 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
     os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
     os.environ.setdefault("WANDB_DISABLED", "true")
 
+    import mjlab.tasks as _mjlab_tasks
+    import src.tasks as _project_tasks
+
+    del _mjlab_tasks, _project_tasks  # Imports register task packages by side effect.
     import torch
-    import mjlab.tasks  # noqa: F401
-    import src.tasks  # noqa: F401
     from mjlab.envs import ManagerBasedRlEnv
     from mjlab.rl import MjlabOnPolicyRunner, RslRlVecEnvWrapper
     from mjlab.tasks.registry import load_env_cfg, load_rl_cfg, load_runner_cls
@@ -206,19 +208,19 @@ def collect_post_learn_diagnostics(
     try:
         actor_model = _actor_model(runner)
         diagnostics["actor_model_class"] = type(actor_model).__name__ if actor_model else None
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         diagnostics["actor_model_error"] = repr(exc)
 
     if actor_model is not None:
         try:
             diagnostics["txl_debug"] = _txl_debug_snapshot(actor_model)
-        except Exception as exc:
+        except RECOVERABLE_RUNTIME_ERRORS as exc:
             diagnostics["txl_debug_error"] = repr(exc)
 
     policy = None
     try:
         policy, diagnostics["policy_error"] = _get_policy(runner, device)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         diagnostics["policy_error"] = repr(exc)
 
     obs = None
@@ -228,7 +230,7 @@ def collect_post_learn_diagnostics(
             obs_summary = _obs_summary(torch, obs)
             diagnostics["obs"] = obs_summary
             diagnostics["obs_all_finite"] = _obs_all_finite(obs_summary)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         diagnostics["obs_error"] = repr(exc)
 
     if policy is not None and obs is not None:
@@ -237,7 +239,7 @@ def collect_post_learn_diagnostics(
                 policy_action = policy(obs)
             diagnostics["policy_action_shape"] = _shape(policy_action)
             diagnostics["policy_action_finite"] = _finite(torch, policy_action)
-        except Exception as exc:
+        except RECOVERABLE_RUNTIME_ERRORS as exc:
             diagnostics["policy_error"] = repr(exc)
 
     return diagnostics
@@ -373,7 +375,7 @@ def _get_observations(env: Any) -> Any | None:
         return getter()
     try:
         return _first(env.reset())
-    except Exception:
+    except RECOVERABLE_RUNTIME_ERRORS:
         return None
 
 
@@ -384,7 +386,7 @@ def main() -> None:
         summary = run_probe(args)
     except PreflightError as exc:
         summary = build_preflight_failure_summary(args, exc)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         summary = build_failure_summary(args, exc)
     write_json_summary(args.output_json, summary)
     print(json.dumps(summary, indent=2, sort_keys=True))

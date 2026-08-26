@@ -13,8 +13,9 @@ import math
 import platform
 import sys
 import time
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from genesis_franka_effort_api_smoke import (
     SmokeBlocked,
@@ -22,7 +23,6 @@ from genesis_franka_effort_api_smoke import (
     add_plane,
     apply_basic_pd,
     build_scene,
-    describe_tensor,
     flatten_numeric,
     import_genesis,
     import_numpy,
@@ -37,12 +37,21 @@ from genesis_franka_effort_api_smoke import (
     to_python,
 )
 
-
 Q0 = (0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785)
 AMP = (0.20, 0.15, 0.20, 0.12, 0.15, 0.12, 0.20)
 PHASE = (0.0, 0.7, 1.4, 2.1, 2.8, 3.5, 4.2)
 DEFAULT_OUTPUT_ROOT = Path("outputs/task023/franka_current_force_estimation")
 DEFAULT_ASSET = "xml/franka_emika_panda/panda_nohand.xml"
+RECOVERABLE_API_ERRORS = (
+    ArithmeticError,
+    AttributeError,
+    ImportError,
+    LookupError,
+    OSError,
+    RuntimeError,
+    TypeError,
+    ValueError,
+)
 
 
 def main() -> None:
@@ -56,7 +65,7 @@ def main() -> None:
     except SmokeBlocked as exc:
         report["status"] = "blocked"
         report["blocker"] = str(exc)
-    except Exception as exc:  # pragma: no cover - target-only simulator failures.
+    except RECOVERABLE_API_ERRORS as exc:  # pragma: no cover - target-only simulator failures.
         report["status"] = "failed"
         report["blocker"] = f"{exc.__class__.__name__}: {exc}"
     finally:
@@ -166,8 +175,8 @@ def run_trace(args: argparse.Namespace) -> dict[str, Any]:
     if payload is not None and attach_report["status"] != "ok":
         raise SmokeBlocked(f"payload_attach_failed:{attach_report['blocker']}")
 
-    hold_steps = int(round(args.hold_s / args.sim_dt))
-    sweep_steps = int(round(args.sweep_s / args.sim_dt))
+    hold_steps = round(args.hold_s / args.sim_dt)
+    sweep_steps = round(args.sweep_s / args.sim_dt)
     total_steps = hold_steps + sweep_steps
     if total_steps <= 0:
         raise SmokeBlocked("total_steps_must_be_positive")
@@ -345,10 +354,10 @@ def set_arm_state(franka: Any, np: Any, arm_dofs: Sequence[int], q: Sequence[flo
         except TypeError:
             try:
                 franka.set_dofs_velocity(zeros, arm_dofs)
-            except Exception:
-                pass
-        except Exception:
-            pass
+            except RECOVERABLE_API_ERRORS:
+                return
+        except RECOVERABLE_API_ERRORS:
+            return
 
 
 def apply_force_limit_scale(
@@ -377,9 +386,9 @@ def apply_force_limit_scale(
         try:
             franka.set_dofs_force_range(lower, upper, arm_dofs)
             report["applied"] = True
-        except Exception as exc:
+        except RECOVERABLE_API_ERRORS as exc:
             report["blocker"] = str(exc)
-    except Exception as exc:
+    except RECOVERABLE_API_ERRORS as exc:
         report["blocker"] = str(exc)
     return report
 
@@ -405,11 +414,11 @@ def attach_payload_if_needed(
         return {"status": "blocked", "blocker": "rigid_solver_missing"}
     if not hasattr(rigid, "add_weld_constraint"):
         return {"status": "blocked", "blocker": "add_weld_constraint_missing"}
-    payload_ids = np.array([int(getattr(payload_link, "idx"))], dtype=gs.np_int)
-    tool_ids = np.array([int(getattr(tool_link, "idx"))], dtype=gs.np_int)
+    payload_ids = np.array([int(payload_link.idx)], dtype=gs.np_int)
+    tool_ids = np.array([int(tool_link.idx)], dtype=gs.np_int)
     try:
         rigid.add_weld_constraint(payload_ids, tool_ids)
-    except Exception as exc:
+    except RECOVERABLE_API_ERRORS as exc:
         return {"status": "blocked", "blocker": f"add_weld_constraint_failed:{exc}"}
     return {
         "status": "ok",
@@ -425,7 +434,7 @@ def read_link_pos(franka: Any, link: Any) -> list[float]:
     if hasattr(link, "get_pos"):
         return flatten_xyz(link.get_pos())
     if hasattr(franka, "get_links_pos"):
-        idx = int(getattr(link, "idx"))
+        idx = int(link.idx)
         try:
             return flatten_xyz(franka.get_links_pos(links_idx_local=[idx]))
         except TypeError:

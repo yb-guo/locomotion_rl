@@ -2,6 +2,8 @@ from pathlib import Path
 
 import pytest
 
+from h200_locomotion_lab.envs.genesis_adapter import GenesisG1Contract
+from h200_locomotion_lab.sonic.g1_policy_bridge import sonic_policy_action_to_mujoco_targets
 from h200_locomotion_lab.tools.genesis_action_replay_smoke import (
     action_range,
     build_action_fixture,
@@ -13,8 +15,6 @@ from h200_locomotion_lab.tools.genesis_action_replay_smoke import (
     read_action_csv,
     read_default_joint_positions,
 )
-from h200_locomotion_lab.envs.genesis_adapter import GenesisG1Contract
-from h200_locomotion_lab.sonic.g1_policy_bridge import sonic_policy_action_to_mujoco_targets
 from h200_locomotion_lab.tools.sonic_reference_replay_smoke import (
     _horizontal_distance,
     _read_contact_metrics,

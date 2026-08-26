@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from h200_locomotion_lab.training.history_buffer import (
     HistoryBufferConfig,
@@ -31,7 +32,6 @@ from h200_locomotion_lab.training.multitrial_wrapper import (
     TRIAL_INDEX_KEY,
     Task037MultiTrialVecEnvWrapper,
 )
-
 
 TASK042_MEMORY_ABLATION_MODES = (
     "none",
@@ -447,6 +447,7 @@ class Task038TrueTxlMemoryModel(_base_mlp_model()):
                     ),
                 }
             )
+        memory_ablation_mode = getattr(self, "_task042_memory_ablation_mode", "none")
         return {
             "num_layers": self.num_layers,
             "memory_len": self.memory_len,
@@ -479,17 +480,21 @@ class Task038TrueTxlMemoryModel(_base_mlp_model()):
             "sequence_update_reset_events": int(
                 getattr(self, "_sequence_update_reset_events", 0)
             ),
-            "task042_memory_ablation_mode": self._task042_memory_ablation_mode,
-            "memory_residual_enabled": self._task042_memory_ablation_mode
+            "task042_memory_ablation_mode": memory_ablation_mode,
+            "memory_residual_enabled": memory_ablation_mode
             not in {"zero_txl_residual", "zero_memory_latent"},
-            "memory_latent_enabled": self._task042_memory_ablation_mode != "zero_memory_latent",
-            "stateful_memory_enabled": self._task042_memory_ablation_mode != "stateless_txl_memory",
-            "base_obs_passthrough_scale": self.base_obs_passthrough_scale,
-            "adaptation_warmstart_scale": self.adaptation_warmstart_scale,
-            "txl_residual_output_norm_last": self._last_txl_residual_output_norm,
-            "txl_residual_raw_norm_last": self._last_txl_residual_raw_norm,
-            "adaptation_output_norm_last": self._last_adaptation_output_norm,
-            "policy_memory_latent_norm_last": self._last_policy_memory_latent_norm,
+            "memory_latent_enabled": memory_ablation_mode != "zero_memory_latent",
+            "stateful_memory_enabled": memory_ablation_mode != "stateless_txl_memory",
+            "base_obs_passthrough_scale": getattr(self, "base_obs_passthrough_scale", 1.0),
+            "adaptation_warmstart_scale": getattr(self, "adaptation_warmstart_scale", 1.0),
+            "txl_residual_output_norm_last": getattr(
+                self, "_last_txl_residual_output_norm", None
+            ),
+            "txl_residual_raw_norm_last": getattr(self, "_last_txl_residual_raw_norm", None),
+            "adaptation_output_norm_last": getattr(self, "_last_adaptation_output_norm", None),
+            "policy_memory_latent_norm_last": getattr(
+                self, "_last_policy_memory_latent_norm", None
+            ),
         }
 
     def task042_set_memory_ablation_mode(self, mode: str) -> None:
@@ -2037,7 +2042,7 @@ class Task040SequenceAwareTrueTxlPPO(_base_ppo()):
     ) -> Any | None:
         if self.task044_fault_aux_head is None:
             return None
-        if self.task044_fault_aux_obs_key not in observations.keys():
+        if self.task044_fault_aux_obs_key not in observations:
             return None
         latent_fn = getattr(self.actor, "task044_memory_latents_from_last_sequence", None)
         if not callable(latent_fn):
@@ -2072,14 +2077,14 @@ class Task040SequenceAwareTrueTxlPPO(_base_ppo()):
         torch = _require_torch()
         if self.task044_fault_aux_max_trial_step >= 0:
             key = Task044FaultLabelVecEnvWrapper.trial_step_group
-            if key not in observations.keys():
+            if key not in observations:
                 return torch.zeros_like(valid, dtype=torch.bool, device=device)
             trial_steps = observations[key][:, env_start:env_stop]
             trial_steps = trial_steps.reshape(-1).to(device=device, dtype=torch.long)
             valid = valid & (trial_steps <= self.task044_fault_aux_max_trial_step)
         if self.task044_fault_aux_min_trial_index > 0:
             key = Task044FaultLabelVecEnvWrapper.trial_index_group
-            if key not in observations.keys():
+            if key not in observations:
                 return torch.zeros_like(valid, dtype=torch.bool, device=device)
             trial_indices = observations[key][:, env_start:env_stop]
             trial_indices = trial_indices.reshape(-1).to(device=device, dtype=torch.long)

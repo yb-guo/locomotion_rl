@@ -13,10 +13,12 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 
 ASSET_KINDS = ("franka", "go2", "g1")
 ASSET_VARIANTS = ("default", "performance_mode", "convexify", "decimate")
@@ -103,7 +105,7 @@ def main() -> None:
         metrics["status"] = "blocked"
         metrics["blocker"] = normalize_blocker(str(exc))
         emit_metrics(metrics)
-    except Exception as exc:  # pragma: no cover - exercised on target-only failures.
+    except RECOVERABLE_RUNTIME_ERRORS as exc:  # pragma: no cover - exercised on target-only failures.
         metrics["status"] = "failed"
         metrics["blocker"] = normalize_blocker(f"{exc.__class__.__name__}: {exc}")
         emit_metrics(metrics)
@@ -328,7 +330,7 @@ def verify_single_visible_cuda_device(
         )
     try:
         import torch  # type: ignore[import-not-found]
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         return CudaIsolationResult(False, f"torch_import_failed:{exc}")
     if not torch.cuda.is_available():
         return CudaIsolationResult(False, "torch_cuda_unavailable")
@@ -342,7 +344,7 @@ def verify_single_visible_cuda_device(
                 False,
                 f"torch_probe_device_expected_{logical_cuda_device}_got_{probe.device}",
             )
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         return CudaIsolationResult(False, f"torch_cuda_probe_failed:{exc}")
     return CudaIsolationResult(True, "", torch)
 
@@ -417,7 +419,7 @@ def add_plane(gs: Any, scene: Any) -> None:
     try:
         plane = morphs.Plane()
         call_method("scene.add_entity", scene.add_entity, ({"morph": plane},), positional=(plane,))
-    except Exception:
+    except RECOVERABLE_RUNTIME_ERRORS:
         return
 
 
@@ -555,7 +557,7 @@ def read_state(robot: Any, dof_indices: tuple[int, ...]) -> StateRead:
 def read_optional(reader: Callable[[], Any]) -> Any | None:
     try:
         return reader()
-    except Exception:
+    except RECOVERABLE_RUNTIME_ERRORS:
         return None
 
 
@@ -563,7 +565,7 @@ def read_qpos(robot: Any) -> Any:
     if hasattr(robot, "get_qpos"):
         return robot.get_qpos()
     if hasattr(robot, "qpos"):
-        return getattr(robot, "qpos")
+        return robot.qpos
     raise AttributeError("qpos unavailable")
 
 
@@ -872,7 +874,7 @@ def call_selected_root_qpos_setter(
             return True, ""
         except TypeError as exc:
             last_error = str(exc)
-        except Exception as exc:
+        except RECOVERABLE_RUNTIME_ERRORS as exc:
             return False, f"robot.set_qpos_failed:{exc}"
     for kwargs in candidates:
         try:
@@ -880,7 +882,7 @@ def call_selected_root_qpos_setter(
             return True, ""
         except TypeError as exc:
             last_error = str(exc)
-        except Exception as exc:
+        except RECOVERABLE_RUNTIME_ERRORS as exc:
             return False, f"robot.set_qpos_failed:{exc}"
     return False, f"robot.set_qpos_selected_envs_unsupported:{last_error}"
 
@@ -904,7 +906,7 @@ def call_selected_root_setter(
             return True, ""
         except TypeError as exc:
             last_error = str(exc)
-        except Exception as exc:
+        except RECOVERABLE_RUNTIME_ERRORS as exc:
             return False, f"{label}_failed:{exc}"
     for kwargs in candidates:
         try:
@@ -912,7 +914,7 @@ def call_selected_root_setter(
             return True, ""
         except TypeError as exc:
             last_error = str(exc)
-        except Exception as exc:
+        except RECOVERABLE_RUNTIME_ERRORS as exc:
             return False, f"{label}_failed:{exc}"
     return False, f"{label}_selected_envs_unsupported:{last_error}"
 
@@ -956,7 +958,7 @@ def call_selected_dof_reset(
             return True, ""
         except TypeError as exc:
             last_error = str(exc)
-        except Exception as exc:
+        except RECOVERABLE_RUNTIME_ERRORS as exc:
             return False, f"robot.set_dofs_position_failed:{exc}"
     return False, f"robot.set_dofs_position_selected_envs_unsupported:{last_error}"
 
@@ -999,7 +1001,7 @@ def classify_selected_reset_change(
         return SelectedResetResult(False, False, "row_count_mismatch", ())
     if len(before_rows) < 2:
         return SelectedResetResult(False, False, "not_applicable_n_envs_lt_2", ())
-    targets = set(int(index) for index in target_env_ids)
+    targets = {int(index) for index in target_env_ids}
     changed_envs = tuple(
         index
         for index, (before_row, after_row) in enumerate(zip(before_rows, after_rows))
@@ -1075,10 +1077,13 @@ def to_python_data(value: Any) -> Any:
 
 def first_env_row(value: Any) -> Any:
     if hasattr(value, "__getitem__"):
+        first_available = True
         try:
-            return value[0]
-        except Exception:
-            pass
+            first = value[0]
+        except RECOVERABLE_RUNTIME_ERRORS:
+            first_available = False
+        if first_available:
+            return first
     rows = as_rows(value)
     return rows[0] if rows else value
 
@@ -1155,7 +1160,7 @@ def gpu_snapshot() -> str:
             text=True,
             timeout=10,
         )
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         return normalize_blocker(f"nvidia_smi_unavailable:{exc}")
     output = (result.stdout or result.stderr).strip()
     if not output:
@@ -1193,7 +1198,7 @@ def call_method(
             raise
         try:
             return method(*positional)
-        except Exception as positional_exc:
+        except RECOVERABLE_RUNTIME_ERRORS as positional_exc:
             raise BlockedProbe(f"{label}_unsupported:{keyword_exc}; positional:{positional_exc}")
 
 

@@ -18,7 +18,7 @@ from h200_locomotion_lab.envs.vectorized_genesis_backend import (
     is_tensor_like,
     tensor_shape,
 )
-
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 
 METRIC_KEYS = (
     "status",
@@ -87,7 +87,7 @@ def main() -> None:
     try:
         metrics.update(run_smoke(args))
         metrics["status"] = "ok"
-    except Exception as exc:  # pragma: no cover - target-only failure path.
+    except RECOVERABLE_RUNTIME_ERRORS as exc:  # pragma: no cover - target-only failure path.
         metrics["status"] = "failed"
         metrics["blocker"] = f"{exc.__class__.__name__}:{exc}"
     emit_metrics(metrics)
@@ -116,7 +116,7 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
     )
     build_time_s = elapsed_since(started)
 
-    observation = env.reset()
+    env.reset()
     action = make_action(env, value=0.0)
 
     warmup_started = time.perf_counter()

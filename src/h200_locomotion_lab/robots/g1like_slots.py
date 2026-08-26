@@ -5,7 +5,6 @@ from dataclasses import dataclass
 
 from h200_locomotion_lab.robots.g1_27dof_nohand import G1_27DOF_NOHAND_ACTUATOR_ORDER
 
-
 G1LIKE_ACTION_SLOT_NAMES = (
     "left_hip_pitch",
     "left_hip_roll",
@@ -78,6 +77,9 @@ class G1LikeSlotSchema:
             raise G1LikeSlotError(f"unknown G1-like slot: {slot_name}") from error
 
 
+_DEFAULT_SLOT_SCHEMA = G1LikeSlotSchema()
+
+
 @dataclass(frozen=True, slots=True)
 class G1LikeSlotMapping:
     """Mapping from fixed G1-like slots to a robot actuator order."""
@@ -140,7 +142,7 @@ def semantic_slot_name(joint_name: str) -> str:
 def build_g1like_slot_mapping(
     robot_joint_order: Sequence[str],
     *,
-    schema: G1LikeSlotSchema = G1LikeSlotSchema(),
+    schema: G1LikeSlotSchema = _DEFAULT_SLOT_SCHEMA,
 ) -> G1LikeSlotMapping:
     """Build a selector/mask from a robot actuator order into fixed G1-like slots."""
 

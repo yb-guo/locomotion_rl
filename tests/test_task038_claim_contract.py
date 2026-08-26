@@ -1,6 +1,5 @@
 from h200_locomotion_lab.training.task038_claim_contract import ClaimGate, evaluate_claim
 
-
 TINY_GATE = ClaimGate(
     required_seen_variants=1,
     required_heldout_variants=1,

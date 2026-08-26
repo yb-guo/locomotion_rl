@@ -8,11 +8,13 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-from h200_locomotion_lab.tools import task041_sequence_txl_clean_eval
-from h200_locomotion_lab.tools import task037_multitrial_eval_checkpoint
-from h200_locomotion_lab.tools import task039_true_txl_clean_eval
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
+from h200_locomotion_lab.tools import (
+    task037_multitrial_eval_checkpoint,
+    task039_true_txl_clean_eval,
+    task041_sequence_txl_clean_eval,
+)
 from h200_locomotion_lab.training.task039_quality_feedback import evaluate_quality_feedback
-
 
 TASK042_TRUE_TXL_DYNAMIC_TASK_ID = (
     "Unitree-G1-Gripper-Flat-Task042-TrainTrueTxlDynamicMotorFailure-Fast1p6"
@@ -202,7 +204,7 @@ def main() -> None:
     args = parse_args()
     try:
         summary = run_eval(args)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         summary = build_failure_summary(args, exc)
     write_json_summary(args.output_json, summary)
     print(json.dumps(summary, indent=2, sort_keys=True))

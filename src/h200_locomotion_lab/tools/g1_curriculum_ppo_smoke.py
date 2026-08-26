@@ -4,26 +4,28 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from h200_locomotion_lab.envs.g1_velocity_tracking_env import (
-    G1VelocityTrackingConfig,
-    G1VelocityTrackingVectorizedEnv,
-)
 from h200_locomotion_lab.envs.g1_reset_poses import (
     G1_STANDING_RESET_POSE_NAMES,
     build_g1_standing_reset_pose_candidates,
     leg_value_summary,
+)
+from h200_locomotion_lab.envs.g1_velocity_tracking_env import (
+    G1VelocityTrackingConfig,
+    G1VelocityTrackingVectorizedEnv,
 )
 from h200_locomotion_lab.envs.vectorized_genesis_backend import (
     ACTION_JOINT_GROUPS,
     VectorizedGenesisBackend,
     VectorizedGenesisConfig,
 )
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.robots import load_g1_27dof_nohand_profile
 from h200_locomotion_lab.training.ppo_loop import (
     PPOConfig,
@@ -36,7 +38,6 @@ from h200_locomotion_lab.training.ppo_loop import (
     synchronize_device,
     tensor_device_ok,
 )
-
 
 PROJECT_PREFIX = Path("/root/agent_workspace/project")
 DEFAULT_OUTPUT_ROOT = Path("outputs/task015/g1_curriculum_ppo")
@@ -106,7 +107,7 @@ def main() -> None:
             metrics["status"] = "ok"
         else:
             metrics["blocker"] = "one or more seeds failed pass criteria"
-    except Exception as exc:  # pragma: no cover - H200 failure path.
+    except RECOVERABLE_RUNTIME_ERRORS as exc:  # pragma: no cover - H200 failure path.
         metrics["blocker"] = f"{exc.__class__.__name__}:{exc}"
     print(json.dumps(metrics, sort_keys=True), flush=True)
     if metrics["status"] != "ok":
@@ -547,7 +548,7 @@ def run_stage(
             final_metrics = row
             updates_completed += 1
             global_update += 1
-        except Exception as exc:
+        except RECOVERABLE_RUNTIME_ERRORS as exc:
             blocker = f"{exc.__class__.__name__}:{exc}"
             break
 
@@ -922,7 +923,7 @@ def non_negative_float(value: str) -> float:
 
 
 def math_is_finite(value: float) -> bool:
-    return value == value and value not in (float("inf"), float("-inf"))
+    return math.isfinite(value)
 
 
 if __name__ == "__main__":

@@ -1,20 +1,24 @@
-# H200 Strategy
+# Hardware Strategy (RTX 5060 Ti Primary)
 
-H100/H200 are CUDA training accelerators. They are not RTX GPUs.
+The active development target is the local RTX 5060 Ti (16 GB). H100/H200
+remain documented only as optional historical/scale-out targets and are
+disabled by default.
 
-## Default Split
+## Active Default Split
 
 | Runtime | Role |
 | --- | --- |
 | MuJoCo | Official GEAR-SONIC sim2sim and fast sanity checks. |
-| Genesis | H200-friendly RL training and scalable headless experiments. |
+| MuJoCo / MJLab | Primary headless RL training and simulator development on RTX 5060 Ti. |
 | PyTorch | Policy, PPO, transformer, offline analysis. |
-| Isaac Lab headless | Optional smoke test only. |
-| Isaac Sim GUI / RTX sensors | Use an RTX workstation or cloud node, not H200. |
+| Genesis | Optional backend when its local CUDA install is available. |
+| Isaac Lab headless | Optional smoke test only on the RTX workstation. |
+| H200 | Disabled; no default training, simulator, or deployment job. |
 
 ## Stop Rule
 
-If an H200 Isaac Lab run fails in any of these areas, stop debugging it as the main path:
+If an optional accelerator run fails in any of these areas, stop debugging it as
+the main path:
 
 - Isaac Sim startup.
 - Omniverse Kit startup.
@@ -22,15 +26,18 @@ If an H200 Isaac Lab run fails in any of these areas, stop debugging it as the m
 - Vulkan device selection.
 - `carb.graphics`.
 
-Move the experiment to Genesis or MuJoCo.
+Keep the experiment on the RTX 5060 Ti MuJoCo/MJLab path.
 
 ## Smoke Test Order
 
 1. Python package import and agent inventory.
 2. Official SONIC MuJoCo sim2sim.
-3. Genesis import and empty scene smoke.
-4. Genesis G1 reset/step smoke.
-5. Optional SONIC Isaac Lab headless training smoke.
-6. Small PPO baseline.
-7. Transformer policy ablation.
+3. RTX 5060 Ti CUDA/MJLab smoke.
+4. Small PPO baseline.
+5. Transformer policy ablation.
 
+## H200 Pause
+
+The H200 profile is retained for reproducibility but is not an active runtime
+target. Re-enabling it requires an explicit project decision and a new
+hardware/throughput review.

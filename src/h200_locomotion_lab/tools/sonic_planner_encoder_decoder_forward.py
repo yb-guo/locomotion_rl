@@ -5,19 +5,19 @@ from __future__ import annotations
 import argparse
 import csv
 import math
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from h200_locomotion_lab.sonic.g1_observation import (
     SONIC_DECODER_OBS_DIM,
-    SONIC_TOKEN_DIM,
     SONIC_HISTORY_FRAMES,
+    SONIC_TOKEN_DIM,
     SonicG1HistoryFrame,
     build_sonic_g1_decoder_observation,
     mujoco_motor_state_to_sonic_body_state,
 )
 from h200_locomotion_lab.sonic.g1_planner_encoder import (
-    SONIC_ENCODER_OBS_DIM,
     SONIC_PLANNER_QPOS_DIM,
     build_g1_encoder_observation_from_planner_motion,
     build_planner_inputs,

@@ -14,8 +14,9 @@ import math
 import platform
 import sys
 import time
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from genesis_franka_effort_api_smoke import (
     SmokeBlocked,
@@ -46,7 +47,6 @@ from genesis_franka_payload_trace import (
     set_arm_state,
 )
 
-
 Q_HOME_A = (0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785)
 Q_HOME_VARIANTS = {
     "home_a": Q_HOME_A,
@@ -57,6 +57,16 @@ Q_PICK_OFFSET = (0.18, -0.10, 0.14, 0.08, -0.12, 0.06, 0.10)
 Q_CARRY_OFFSET = (-0.16, 0.12, -0.12, -0.06, 0.10, -0.06, -0.08)
 DEFAULT_OUTPUT_ROOT = Path("outputs/task023/franka_current_force_estimation")
 DEFAULT_ASSET = "xml/franka_emika_panda/panda_nohand.xml"
+RECOVERABLE_TRACE_ERRORS = (
+    ArithmeticError,
+    AttributeError,
+    ImportError,
+    LookupError,
+    OSError,
+    RuntimeError,
+    TypeError,
+    ValueError,
+)
 PHASE_TO_ID = {
     "home_hold_before": 0,
     "move_to_pick_unloaded": 1,
@@ -79,7 +89,7 @@ def main() -> None:
     except SmokeBlocked as exc:
         report["status"] = "blocked"
         report["blocker"] = str(exc)
-    except Exception as exc:  # pragma: no cover - target-only simulator failures.
+    except RECOVERABLE_TRACE_ERRORS as exc:  # pragma: no cover - target-only simulator failures.
         report["status"] = "failed"
         report["blocker"] = f"{exc.__class__.__name__}: {exc}"
     finally:
@@ -337,7 +347,7 @@ def build_phases(
         raise SmokeBlocked(f"unknown_scenario:{scenario}")
     phases: list[dict[str, Any]] = []
     for name, duration_s, start_q, end_q in specs:
-        steps = int(round(duration_s / sim_dt))
+        steps = round(duration_s / sim_dt)
         if steps <= 0:
             raise SmokeBlocked(f"phase_has_no_steps:{name}")
         phases.append(

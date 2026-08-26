@@ -7,10 +7,10 @@ multi-trial smoke tools, then returns diagnostic quality feedback.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import math
-from typing import Any, Mapping
-
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import Any
 
 REQUIRED_FINAL_TRIAL_METRICS = (
     ("completion_ratio",),
@@ -279,11 +279,11 @@ def _has_trial0_metrics(checked: Mapping[str, float]) -> bool:
 
 def _claim_field_reasons(summary: Mapping[str, Any]) -> list[str]:
     reasons: list[str] = []
-    for field in NO_OVERCLAIM_FIELDS:
-        if field not in summary:
-            reasons.append(f"claim_flag_missing:{field}")
-        elif summary[field] is not False:
-            reasons.append(f"claim_flag_not_false:{field}")
+    for claim_field in NO_OVERCLAIM_FIELDS:
+        if claim_field not in summary:
+            reasons.append(f"claim_flag_missing:{claim_field}")
+        elif summary[claim_field] is not False:
+            reasons.append(f"claim_flag_not_false:{claim_field}")
     return reasons
 
 

@@ -12,14 +12,13 @@ from h200_locomotion_lab.robots.g1like_mjcf_patch import (
     patch_g1like_mjcf_string,
     patch_g1like_mjcf_variant,
 )
-from h200_locomotion_lab.tools import task038_g1like_variant_asset_smoke as asset_smoke
 from h200_locomotion_lab.robots.g1like_morphology import (
     G1LIKE_SLOT_SCHEMA_ID,
     generate_g1like_morphology_manifest,
     joint_order_hash,
     slot_schema_hash,
 )
-
+from h200_locomotion_lab.tools import task038_g1like_variant_asset_smoke as asset_smoke
 
 MINIMAL_MJCF = """\
 <mujoco model="tiny_g1like">

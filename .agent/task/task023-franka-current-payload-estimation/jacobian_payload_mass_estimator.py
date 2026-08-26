@@ -14,11 +14,11 @@ from __future__ import annotations
 import argparse
 import json
 import math
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import numpy as np
-
 
 DEFAULT_ROOT = Path("outputs/task023/franka_current_force_estimation")
 DEFAULT_RUNS = (
@@ -163,7 +163,7 @@ def estimate_mass_windows(
     gravity_reaction = np.array([0.0, 0.0, gravity], dtype=float)
     regressor = np.einsum("tij,i->tj", jacobian, gravity_reaction)
     estimates = []
-    for start in range(0, delta_tau.shape[0] - window_steps + 1):
+    for start in range(delta_tau.shape[0] - window_steps + 1):
         a = regressor[start : start + window_steps]
         y = delta_tau[start : start + window_steps]
         denominator = float(np.sum(a * a))

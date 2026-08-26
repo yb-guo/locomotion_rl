@@ -14,7 +14,6 @@ from h200_locomotion_lab.robots.spec import (
     RobotProfileMetadata,
 )
 
-
 EXPECTED_G1_29DOF_ACTION_DIM = 29
 DEFAULT_UNITREE_G1_29DOF_SONIC_PROFILE = (
     Path(__file__).resolve().parents[3] / "configs" / "robots" / "unitree_g1_29dof_sonic.yaml"

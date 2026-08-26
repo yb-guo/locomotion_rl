@@ -1,0 +1,22 @@
+algorithm:
+  name: ppo
+  family: clipped_policy_gradient
+  interaction: on_policy
+  required_policy_capabilities:
+    - sample
+    - log_prob
+    - value
+  parameters:
+    rollout_steps: 24
+    learning_epochs: 5
+    mini_batches: 4
+    learning_rate: 0.001
+    learning_rate_schedule: adaptive
+    gamma: 0.99
+    gae_lambda: 0.95
+    clip_ratio: 0.2
+    value_loss_coefficient: 1.0
+    entropy_coefficient: 0.01
+    desired_kl: 0.01
+    max_gradient_norm: 1.0
+    optimizer: adam

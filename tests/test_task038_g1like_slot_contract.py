@@ -4,17 +4,16 @@ import pytest
 
 from h200_locomotion_lab.robots.g1_27dof_nohand import G1_27DOF_NOHAND_ACTUATOR_ORDER
 from h200_locomotion_lab.robots.g1like_slots import (
-    G1LIKE_ACTION_DIM,
-    G1LIKE_ACTION_SLOT_NAMES,
-    G1LIKE_MISSING_FROM_27DOF_NOHAND,
     G1_27DOF_NOHAND_SLOT_MAPPING,
     G1_29DOF_COMMAND_MUJOCO_ACTUATOR_ORDER,
     G1_29DOF_COMMAND_MUJOCO_SLOT_MAPPING,
+    G1LIKE_ACTION_DIM,
+    G1LIKE_ACTION_SLOT_NAMES,
+    G1LIKE_MISSING_FROM_27DOF_NOHAND,
     G1LikeSlotError,
     G1LikeSlotSchema,
     build_g1like_slot_mapping,
 )
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROFILE_29DOF_PATH = REPO_ROOT / "configs/robots/unitree_g1_29dof_sonic.yaml"

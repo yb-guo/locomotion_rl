@@ -1,0 +1,14 @@
+task:
+  name: procedural_whole_body_velocity
+  schema_version: whole_body_v1_45
+  action_dim: 45
+  actor_observation_dim: 193
+  control_hz: 50
+  trial_seconds: 10
+  context_trials: 3
+  families: [biped, quadruped]
+  train_topologies_per_family: 32
+  validation_topologies_per_family: 8
+  heldout_topologies_per_family: 8
+  wheels: masked_reserved_slots
+  named_robots: evaluation_only
