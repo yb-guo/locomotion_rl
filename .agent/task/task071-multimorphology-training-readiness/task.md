@@ -1,6 +1,6 @@
 # Task071 — Task070 v2 多形态训练就绪门
 
-状态：**active / r0_physical_passed_r1_environment_blocked**。
+状态：**active / r0_physical_passed_r1_dynamic_failed**。
 
 进入条件：Task070 v2 的最终输入 artifact、manifest/descriptor SHA 和 case registry 已冻结；
 Task070 的用户视觉验收为前置 gate。2026-08-26 用户已通过 append-only overlay 接受 attempt010，
@@ -103,7 +103,14 @@ smoke。不得 claim all 18 train-ready、会站/会走、LocoFormer reproductio
 
 ## Log
 
-- 2026-08-26：按用户要求继续执行下一 gate。仅修改 motor-DoF-preserving v2 sampler：COM 现在按
+- 2026-08-26：locked/offline `mujoco==3.12.0` CPython 3.11 import 已从 shared UV cache 成功；消费并
+  校验 fresh arena artifact `artifacts/r1_g1_go2_fresh_arena.json`（exact G1 biped + Go2 quadruped，
+  `stance_steps=1000`、`response_steps=32`、source SHA）。dynamic run 已完成但 stance `0/2`，因此
+  R1 admission=false，next gate=false，未启动 R2/PPO。旧 Task070 arena 仅保留为 historical evidence，
+  不作为 fresh R1。fresh XML 可绑定当前重编译输出，但与冻结 Task070 descriptor lineage 不匹配，故不是
+  validated frozen Task070 R1 run。此次仅更新 probe/log evidence，未改 source code、controller 或 stance 参数。
+
+- 历史记录（当时状态，2026-08-26）：按用户要求继续执行下一 gate。仅修改 motor-DoF-preserving v2 sampler：COM 现在按
   `base COM × global_scale × link_scale` 缩放；G1/Go2 只在完整 audited companion motor config、
   exact family/group slot coverage 且非 candidate 时，按 shared motor-family effort/bandwidth latent
   与 shared transmission-group efficiency latent 组合采样 strength/KP/KD，并采样全局 `0–40 ms`
@@ -121,30 +128,36 @@ smoke。不得 claim all 18 train-ready、会站/会走、LocoFormer reproductio
   offline probe exit1。因此按 gate 停止，没有使用旧版/项目 `.venv` 绕过 lock，没有 no-update
   rollout 或 PPO update，Task071 未 passed。
 
-- 2026-08-26：用户视觉 gate 已满足；R0 输入冻结。G1/Go2 v2 physical probe static integrity
+- 历史记录（当时状态，2026-08-26）：用户视觉 gate 已满足；R0 输入冻结。G1/Go2 v2 physical probe static integrity
   `2/2`，training physics admission `0/2`。两者的 geometry/mass/friction 都有确定性随机变化，
   但 metadata 要求的 motor strength、KP、KD、delay 均未随机化；G1 的非零 COM 还没有随随机
-  link geometry 一致缩放。fresh dynamic rerun=`blocked_environment`（locked MuJoCo 3.12 wheel
+  link geometry 一致缩放。历史记录中的 fresh dynamic rerun=`blocked_environment`（locked MuJoCo 3.12 wheel
   不在共享 cache；精确 locked/offline CPython 3.14 probe exit1；此前在线下载两次卡住后
   exit130 的 transcript 未保留、仅作历史背景），Task070 旧 generic stance 仅 `0/2`。按
   fail-closed 停止，没有 PPO/长训练；不得标记 passed。
 
-- 2026-08-26：由 Task070 当前结论建立；未开始训练或 artifact 生成。已知基线为 18/18
+- 历史记录（当时状态，2026-08-26）：由 Task070 当前结论建立；未开始训练或 artifact 生成。已知基线为 18/18
   compile/reset/paired actuator response、generic stance 0/18、无 gait、8 candidate humanoids
   `policy_adapter_compatible=false`。
 - 待执行：R0–R6 逐阶段记录命令、硬件、SHA、denominator、失败原因和是否允许进入下一 gate。
 
 ## Review
 
-状态：**R0 physical probe independently reviewed；Task071 not passed**。
+状态：**R0 physical probe independently reviewed；R1 dynamic failed stance 0/2；Task071 not passed**。
 
-- 2026-08-26：独立只读 reviewer 首轮指出动态阻断命令不可复现、static gate 未逐项核对 compiler
+- 2026-08-26：fresh R1 arena artifact 已由 probe 做 exact denominator、metadata、response/stance
+  duration、source path/SHA 校验；locked/offline dependency available，dynamic completed，stance
+  `0/2`，但 frozen Task070 lineage mismatch。R1 admission=false，未进入 R2/PPO。旧 blocked-environment
+  记录仅为历史背景，不代表当前状态。补强 canonical-audit manifest SHA link 后，最终独立只读 reviewer
+  报告无 P0/P1/P2。
+
+- 历史记录（当时状态，2026-08-26）：独立只读 reviewer 首轮指出动态阻断命令不可复现、static gate 未逐项核对 compiler
   输出两个 P2。补入 exact locked/offline 命令、returncode/output/SHA，以及 compiled
   mass/friction、resolved motor config、effort/KP/KD、geometry hash 断言后复核；无剩余
   P0/P1/P2。结论仍为 static `2/2`、training physics `0/2`、R1
-  `blocked_environment`，不得进入训练。
+  历史记录中的 `blocked_environment`，不得进入训练。
 
-- 2026-08-26：本轮独立只读 reviewer 首轮发现 v2 sampled strength 同时进入 compiled actuator
+- 历史记录（当时状态，2026-08-26）：本轮独立只读 reviewer 首轮发现 v2 sampled strength 同时进入 compiled actuator
   force range 与 runtime position target、以及 probe 未验证 runtime delay step 两个 P1。修复为
   v2 nominal strength 只归 compiler、`MotorProcess` identity baseline 只保留 fault ownership，并由
   runtime helper 验证 50 Hz delay 量化；同时把 admission 命名收窄为

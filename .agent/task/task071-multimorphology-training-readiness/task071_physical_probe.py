@@ -1,8 +1,7 @@
 """Task071 G1/Go2 fail-closed physical-attribute probe.
 
-This probe intentionally avoids importing MuJoCo. It audits the frozen Task070
-v2 compiler inputs and outputs, then records why a dynamic Task071 rerun is not
-admitted in the current locked environment.
+This probe audits the frozen Task070 v2 compiler inputs and outputs, then
+consumes the locked/offline fresh dynamic arena evidence for R1.
 """
 
 from __future__ import annotations
@@ -23,7 +22,13 @@ ROOT = Path(__file__).resolve().parents[3]
 TASK070 = ROOT / ".agent/task/task070-archetype-constrained-standable-morphology"
 TASK071 = ROOT / ".agent/task/task071-multimorphology-training-readiness"
 OUT = TASK071 / "artifacts"
-ARENA = TASK070 / "artifacts/arena_task070_v2_attempt010/flat_arena_smoke.json"
+HISTORICAL_ARENA = TASK070 / "artifacts/arena_task070_v2_attempt010/flat_arena_smoke.json"
+FRESH_ARENA = TASK071 / "artifacts/r1_g1_go2_fresh_arena.json"
+CANONICAL_ROOT_AUDIT = TASK070 / "artifacts/preview_task070_v2_descriptor_driven_attempt010/canonical_root_frame_audit.json"
+FROZEN_LINEAGE = {
+    "unitree_g1": {"manifest": "fcb581ac1feb5454bebf7251098548f10648f9f478160adfee0fa764b3405967", "descriptor": "6464ad8af464956ca8c722a95fddd94b7183c0cdd153134b0cbda12f6199662e", "structural_descriptor": "6663fc23b3179a3411bf366c7d7f8233ff0526331c91e752634dd5a08a78f246"},
+    "unitree_go2": {"manifest": "a7afd7b32706c27d276c1b71dc527d05ac3c3fede16edde32b6152633169f398", "descriptor": "795fd0549643cf96ca83385d0c67ba7fb68485b074c16f610a4c197179e82bac", "structural_descriptor": "54478c5cce9dda3fea9fd72d2ab8c56c6fa97a543829e5a2748e387614ed8273"},
+}
 PROBE_COMMAND = (
     "UV_CACHE_DIR=/home/admin1/workspace/store/cache/uv "
     "uv run --isolated --locked --python 3.11 python "
@@ -48,7 +53,7 @@ TASK070_EVIDENCE = {
         "sha256": "0251b4b8e3cbcdf7984676a659669a8860c6d13664f846c8ff06c307451c141a",
     },
     "arena_smoke": {
-        "path": ARENA,
+        "path": HISTORICAL_ARENA,
         "sha256": "8a8d281d9ede3d32713ceb92c96976f8eacab864d35d6feba1c31fb2db52436d",
     },
 }
@@ -107,8 +112,7 @@ def _runtime() -> dict[str, object]:
             "RTX 5060 Ti-first project; this R0 probe is CPU/static and did not use GPU"
         ),
         "robot_asset_or_dataset_downloads_performed": False,
-        "locked_dependency_download_attempted": True,
-        "locked_dependency_download_completed": False,
+        "locked_dependency_available_from_shared_cache": True,
         "training_performed": False,
     }
 
@@ -698,18 +702,141 @@ def _registry() -> dict[str, object]:
 
 
 def _reset_stance_matrix() -> dict[str, object]:
-    arena = json.loads(ARENA.read_text(encoding="utf-8"))
+    expected_fresh_sha256 = (
+        "26bb20e1c82cfb848077c0f7ade9237902015b17e7314c57da2e17014906cbe1"
+    )
+    if not FRESH_ARENA.is_file():
+        raise ValueError(f"missing fresh R1 arena artifact: {FRESH_ARENA}")
+    fresh_sha256 = _sha256_path(FRESH_ARENA)
+    if fresh_sha256 != expected_fresh_sha256:
+        raise ValueError("fresh R1 arena artifact SHA256 mismatch")
+    arena = json.loads(FRESH_ARENA.read_text(encoding="utf-8"))
+    if (
+        arena.get("task") != "task070-archetype-constrained-standable-morphology"
+        or arena.get("stance_steps") != 1000
+        or not math.isclose(arena.get("timestep_seconds"), 0.002, rel_tol=0.0, abs_tol=1e-12)
+        or arena.get("summary")
+        != {
+            "accounting_exact": 2,
+            "all_actuators_responsive": 2,
+            "case_count": 2,
+            "compiled": 2,
+            "operational_actuator_smoke_passed": 2,
+            "reset_pose_passed": 2,
+            "stance_hold_passed": 0,
+        }
+        or arena.get("user_visual_acceptance") is not False
+        or arena.get("walking_claimed") is not False
+    ):
+        raise ValueError("fresh R1 arena artifact metadata is invalid")
     offline_probe = _offline_mujoco_probe()
     expected = {
         ("unitree_g1", "biped"),
         ("unitree_go2", "quadruped"),
     }
     records = []
-    for record in arena["records"]:
+    seen = set()
+    frozen_matches = []
+    canonical_audit = json.loads(CANONICAL_ROOT_AUDIT.read_text(encoding="utf-8"))
+    if _sha256_path(CANONICAL_ROOT_AUDIT) != TASK070_EVIDENCE["canonical_root_audit"]["sha256"]:
+        raise ValueError("canonical root audit SHA256 mismatch")
+    for record in arena.get("records", []):
         identity = (record.get("reference_id"), record.get("family"))
-        if identity not in expected:
+        if identity not in expected or identity in seen:
             continue
+        if record.get("actuator_response", {}).get("response_steps_per_actuator") != 32:
+            raise ValueError("fresh R1 arena response_steps must equal 32")
+        if record.get("stance_hold", {}).get("steps") != 1000:
+            raise ValueError("fresh R1 arena stance_steps must equal 1000")
+        if not math.isclose(
+            record.get("stance_hold", {}).get("duration_seconds"),
+            2.0,
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        ):
+            raise ValueError("fresh R1 arena stance duration must equal 2.0 seconds")
+        stance_timestep = record.get("stance_hold", {}).get("timestep_seconds")
+        if not math.isclose(stance_timestep, 0.002, rel_tol=0.0, abs_tol=1e-12):
+            raise ValueError("fresh R1 stance timestep must equal 0.002 seconds")
+        if not math.isclose(
+            record["stance_hold"]["duration_seconds"],
+            record["stance_hold"]["steps"] * stance_timestep,
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        ) or record["stance_hold"].get("finite") is not True:
+            raise ValueError(f"fresh R1 stance timing/finite check failed: {identity[0]}")
+        from h200_locomotion_lab.robots.archetype_morphology import (
+            MotorDofPreservingArchetypePreviewGenerator,
+        )
+        from h200_locomotion_lab.robots.procedural_morphology import (
+            compile_mjcf,
+            morphology_blueprint_hash,
+        )
+
+        generator = MotorDofPreservingArchetypePreviewGenerator(
+            reference_id=identity[0]
+        )
+        blueprint = generator.generate(identity[1], 0)
+        physical = generator.sample_physical_params(blueprint, 70000000)
+        compiled_xml = compile_mjcf(blueprint, physical)
+        expected_xml_path = (
+            TASK071
+            / "artifacts/models"
+            / f"{identity[0]}_{identity[1]}.xml"
+        )
+        actual_xml_path = ROOT / record.get("xml_path", "")
+        if actual_xml_path != expected_xml_path or not actual_xml_path.is_file():
+            raise ValueError(f"fresh R1 XML path is not the exact expected path: {identity[0]}")
+        if _sha256_bytes(compiled_xml.encode()) != record.get("xml_sha256"):
+            raise ValueError(f"fresh R1 XML does not match regenerated source: {identity[0]}")
+        if _sha256_path(actual_xml_path) != record.get("xml_sha256"):
+            raise ValueError(f"fresh R1 XML file SHA mismatch: {identity[0]}")
+        frozen = FROZEN_LINEAGE[identity[0]]
+        audit = next(
+            item for item in canonical_audit["records"]
+            if item.get("reference_id") == identity[0] and item.get("family") == identity[1]
+        )
+        descriptor_path = ROOT / audit["paths"]["descriptor"]
+        manifest_path = ROOT / audit["paths"]["manifest"]
+        descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if (
+            _sha256_path(descriptor_path) != frozen["descriptor"]
+            or _sha256_path(manifest_path) != frozen["manifest"]
+            or _sha256_path(manifest_path) != audit["sha256"]["manifest"]
+        ):
+            raise ValueError(f"frozen lineage raw SHA mismatch: {identity[0]}")
+        if not (
+            descriptor["reference_id"] == manifest["source_reference_id"] == identity[0]
+            and descriptor["source_motor_count"] == manifest["actuator_count"] == EXPECTED_CASES[identity[0]]["motor_count"]
+            and manifest["descriptor_sha256"] == audit["sha256"]["descriptor"]
+            and descriptor["descriptor_sha256"] == manifest["structural_descriptor_sha256"] == frozen["structural_descriptor"]
+            and manifest["structural_descriptor_sha256"] == frozen["structural_descriptor"]
+            and manifest["family"] == identity[1]
+        ):
+            raise ValueError(f"frozen lineage manifest/descriptor mismatch: {identity[0]}")
+        frozen_match = (
+            blueprint.profile_version == manifest["profile_version"]
+            and blueprint.contract_hash == manifest["contract_hash"]
+            and morphology_blueprint_hash(blueprint) == manifest["blueprint_hash"]
+            and blueprint.profile_metadata["structural_descriptor_sha256"] == frozen["structural_descriptor"]
+            and blueprint.profile_metadata["source_sha256"] == descriptor["source_sha256"]
+        )
+        frozen_matches.append(frozen_match)
+        expected_motor_count = EXPECTED_CASES[identity[0]]["motor_count"]
         response = record.get("actuator_response") or {}
+        if not all(
+            (
+                record.get("compiled") is True,
+                record.get("accounting_exact") is True,
+                record.get("reset_pose_passed") is True,
+                record.get("operational_actuator_smoke_passed") is True,
+                response.get("actuator_count") == expected_motor_count,
+                response.get("all_actuators_responsive") is True,
+            )
+        ):
+            raise ValueError(f"fresh R1 record failed integrity checks: {identity[0]}")
+        seen.add(identity)
         stance = record.get("stance_hold") or {}
         records.append(
             {
@@ -727,42 +854,49 @@ def _reset_stance_matrix() -> dict[str, object]:
                 "stance_duration_seconds": stance.get("duration_seconds"),
                 "support_gate_passed": stance.get("support_gate_passed"),
                 "finite": stance.get("finite"),
+                "profile_version": blueprint.profile_version,
+                "contract_hash": blueprint.contract_hash,
+                "structural_descriptor_sha256": blueprint.profile_metadata[
+                    "structural_descriptor_sha256"
+                ],
+                "source_sha256": blueprint.profile_metadata["source_sha256"],
+                "frozen_task070_input_match": frozen_match,
+                "frozen_task070_expected_structural_descriptor_sha256": frozen["structural_descriptor"],
             }
         )
     identities = {(record["reference_id"], record["family"]) for record in records}
     if identities != expected or len(records) != 2:
         raise ValueError("Task070 arena evidence does not contain exact G1/Go2 denominator")
+    if len(arena.get("records", [])) != 2:
+        raise ValueError("fresh R1 arena must contain exactly two records")
     stance_passed = sum(bool(record["stance_hold_passed"]) for record in records)
     dependency_available = bool(offline_probe["dependency_available"])
-    dynamic_status = (
-        "not_run_dependency_available"
-        if dependency_available
-        else "blocked_environment"
-    )
-    dynamic_failure_reason = (
-        "the locked MuJoCo dependency is available, but no fresh dynamic rerun was executed"
-        if dependency_available
-        else (
-            "the exact locked/offline dependency probe failed because the "
-            "mujoco==3.12.0 CPython 3.11 wheel is absent from the shared cache"
-        )
-    )
+    dynamic_status = "completed_failed_stance"
+    dynamic_failure_reason = f"fresh dynamic stance hold failed: {stance_passed}/2"
     return {
         "artifact": "task071_r1_reset_stance_matrix",
         "runtime": _runtime(),
         "denominator": 2,
         "source": {
-            "path": _relative(ARENA),
-            "sha256": _sha256_path(ARENA),
-            "classification": "Task070 prior evidence only",
+            "path": _relative(FRESH_ARENA),
+            "sha256": fresh_sha256,
+            "expected_sha256": expected_fresh_sha256,
+            "classification": "Task071 fresh dynamic R1 evidence",
         },
-        "previous_compile_accounting_reset_actuator_stance": records,
-        "previous_stance_passed": stance_passed,
-        "previous_stance_denominator": 2,
+        "fresh_compile_accounting_reset_actuator_stance": records,
+        "fresh_stance_passed": stance_passed,
+        "fresh_stance_denominator": 2,
+        "frozen_task070_input_match_all": all(frozen_matches),
+        "historical_task070_prior_evidence": {
+            "path": _relative(HISTORICAL_ARENA),
+            "sha256": _sha256_path(HISTORICAL_ARENA),
+            "classification": "historical evidence; not reused as fresh R1",
+        },
         "fresh_dynamic_rerun": {
             "status": dynamic_status,
             "decisive_offline_dependency_probe": offline_probe,
             "failure_reason": dynamic_failure_reason,
+            "dependency_available": dependency_available,
             "reused_task070_result_as_task071_rerun": False,
             "historical_online_attempts": {
                 "count": 4,
@@ -779,10 +913,11 @@ def _reset_stance_matrix() -> dict[str, object]:
                 "used_as_reproducible_gate_evidence": False,
             },
         },
-        "task071_r1_admission_passed": False,
+        "task071_r1_admission_passed": dependency_available and all(frozen_matches) and stance_passed == 2,
         "failure_reasons": [
             f"fresh_dynamic_rerun_{dynamic_status}",
-            f"prior_generic_stance_passed_{stance_passed}_of_2",
+            f"fresh_stance_passed_{stance_passed}_of_2",
+            *([] if all(frozen_matches) else ["frozen_task070_input_mismatch"]),
         ],
         "ppo_or_long_training_started": False,
     }
@@ -813,12 +948,16 @@ def main() -> int:
     }
     _write("r0_physical_attribute_probe.json", probe)
     _write("r0_training_case_registry.json", _registry())
-    _write("r1_reset_stance_matrix.json", _reset_stance_matrix())
+    r1 = _reset_stance_matrix()
+    _write("r1_reset_stance_matrix.json", r1)
     print(
         "Task071 R0: "
         f"static={probe['static_integrity_passed_count']}/2, "
         f"physical_stack={probe['r0_physical_stack_admission_passed_count']}/2, "
-        "fresh_dynamic=blocked_environment"
+        f"dependency_available={r1['fresh_dynamic_rerun']['dependency_available']}, "
+        f"fresh_dynamic={r1['fresh_dynamic_rerun']['status']}, "
+        f"stance={r1['fresh_stance_passed']}/{r1['fresh_stance_denominator']}, "
+        "r1_admission=False, next_gate=False, ppo=False"
     )
     return 0
 
