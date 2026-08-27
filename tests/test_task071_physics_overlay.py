@@ -146,19 +146,74 @@ def test_bound_r1_uses_frozen_manifests_and_exact_timing():
     assert result["summary"]["frozen_lineage_match"] == 2
     assert result["summary"]["reset_pose_passed"] == 2
     assert result["summary"]["all_actuators_responsive"] == 2
+    assert result["summary"]["stance_hold_passed"] == 2
+    assert result["task071_r1_admission_passed"] is True
     assert result["response_steps_per_actuator"] == 32
     assert result["stance_steps"] == 1000
     assert result["timestep_seconds"] == 0.002
     assert result["stance_duration_seconds"] == 2.0
+    assert result["runtime"]["command"] == OVERLAY.COMMAND
+    assert result["runtime"]["git_head"] == OVERLAY._git_head()
+    assert result["runtime"]["mujoco_version"] == OVERLAY.EXPECTED_MUJOCO_VERSION
+    runtime_source = result["runtime"]["source"]
+    assert runtime_source["physics_overlay_sha256"] == OVERLAY.sha256_path(MODULE)
+    assert runtime_source["stance_helper_sha256"] == OVERLAY.sha256_path(
+        OVERLAY.ROOT / runtime_source["stance_helper_path"]
+    )
+    assert runtime_source["stance_contract_sha256"] == OVERLAY.sha256_path(
+        OVERLAY.ROOT / runtime_source["stance_contract_path"]
+    )
     for record in result["records"]:
         assert record["frozen_task070_input_match"] is True
         assert record["actuator_response"]["response_steps_per_actuator"] == 32
         assert record["stance_hold"]["steps"] == 1000
         assert record["stance_hold"]["timestep_seconds"] == 0.002
         assert record["stance_hold"]["duration_seconds"] == 2.0
-    assert result["task071_r1_admission_passed"] is (
-        result["summary"]["stance_hold_passed"] == 2
-    )
+        assert record["stance_hold_passed"] is True
+        assert (
+            record["stance_hold"]["controller"]
+            == "explicit_inverse_static_position_target_hold"
+        )
+        profile = record["stance_profile"]
+        profile_payload = {key: value for key, value in profile.items() if key != "sha256"}
+        assert profile["version"] == OVERLAY.STANCE_PROFILE_VERSION
+        assert profile["sha256"] == OVERLAY._payload_sha256(profile_payload)
+        assert profile["base_frozen_blueprint_hash"] == record["frozen_blueprint_hash"]
+        assert profile["frozen_morphology_changed"] is False
+        assert profile["joint_order_axis_range_changed"] is False
+        assert profile["physics_overlay_changed"] is False
+        feedforward = record["inverse_static_feedforward"]
+        assert feedforward["control_target_count"] == record["model_dimensions"]["nu"]
+        assert len(feedforward["actuators"]) == record["model_dimensions"]["nu"]
+        assert feedforward["stance_profile_sha256"] == profile["sha256"]
+        assert feedforward["root_joint_free"] is True
+        assert feedforward["external_wrench_applied"] is False
+        assert feedforward["hidden_support_added"] is False
+        assert feedforward["equality_support_constraint_count"] == 0
+        assert feedforward["position_targets_clamped"] is False
+        assert feedforward["max_effort_fraction"] < 0.98
+        stance_solution = record["stance_solution"]
+        assert stance_solution["manifest"]["model_xml_sha256"] == record["bound_xml_sha256"]
+        assert stance_solution["sha256"] == OVERLAY._payload_sha256(
+            stance_solution["manifest"]
+        )
+
+
+@pytest.mark.skipif(not LOCAL_INPUTS, reason="Task071 ignored frozen/official inputs unavailable")
+def test_overlay_and_r1_no_write_mode_has_no_filesystem_side_effects(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    local_out = OVERLAY.ROOT / f".pytest-task071-no-write-{tmp_path.name}"
+    monkeypatch.setattr(OVERLAY, "OUT", local_out)
+    monkeypatch.setattr(OVERLAY, "OVERLAY_PATH", local_out / "overlay.json")
+    monkeypatch.setattr(OVERLAY, "BOUND_R1_PATH", local_out / "r1.json")
+
+    overlay = OVERLAY.generate_overlay(write_artifact=False)
+    result = OVERLAY.run_bound_r1(overlay, write_artifact=False)
+
+    assert result["task071_r1_admission_passed"] is True
+    assert not local_out.exists()
 
 
 @pytest.mark.skipif(not LOCAL_INPUTS, reason="Task071 ignored frozen/official inputs unavailable")
@@ -174,3 +229,41 @@ def test_bound_r1_rejects_tampered_overlay_binding(field, value):
     overlay["records"][0][field] = value
     with pytest.raises(ValueError, match="caller-supplied R1 overlay"):
         OVERLAY.run_bound_r1(overlay)
+
+
+def test_stance_profile_rejects_unknown_slot():
+    class J:
+        semantic_slot = "known"
+        joint_range = (-1.0, 1.0)
+
+    class B:
+        joints = (J(),)
+
+    with pytest.raises(ValueError):
+        OVERLAY._validate_stance_profile(
+            B(),
+            {
+                "penetration": 0.001,
+                "pose_source": "test",
+                "overrides": {"unknown": 0.0},
+            },
+        )
+
+
+def test_stance_profile_rejects_out_of_range_target():
+    class J:
+        semantic_slot = "known"
+        joint_range = (-1.0, 1.0)
+
+    class B:
+        joints = (J(),)
+
+    with pytest.raises(ValueError):
+        OVERLAY._validate_stance_profile(
+            B(),
+            {
+                "penetration": 0.001,
+                "pose_source": "test",
+                "overrides": {"known": 2.0},
+            },
+        )

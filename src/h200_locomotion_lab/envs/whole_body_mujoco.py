@@ -7,8 +7,10 @@ shard internals later without changing the 45D/193D rollout contract.
 
 from __future__ import annotations
 
+import hashlib
 import math
 import random
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -86,6 +88,136 @@ def _motor_process_baselines(
     return strength, latency, ema
 
 
+def _validate_precompiled_model(
+    mujoco: Any,
+    np: Any,
+    model: Any,
+    blueprint: MorphologyBlueprint,
+    physical: PhysicalParams | None,
+    joint_ids: tuple[int, ...],
+    actuator_ids: tuple[int, ...],
+    canonical_root_site_id: int,
+) -> None:
+    """Reject precompiled XML that does not implement the bound blueprint."""
+    if model.nu != len(blueprint.actuators) or model.njnt != len(blueprint.joints) + 1:
+        raise ValueError("model_xml joint or actuator accounting does not match blueprint")
+    if int(model.jnt_type[0]) != int(mujoco.mjtJoint.mjJNT_FREE):
+        raise ValueError("model_xml must have one free root joint")
+
+    global_scale = physical.global_scale if physical else 1.0
+    limit_scales = physical.joint_limit_scales if physical else {}
+    nominal_offsets = physical.nominal_offsets if physical else {}
+    kp_scales = physical.kp_scales if physical else {}
+    kd_scales = physical.kd_scales if physical else {}
+    joints_by_slot = {joint.semantic_slot: joint for joint in blueprint.joints}
+    wheels_by_joint = {wheel.joint_name: wheel for wheel in blueprint.wheel_specs}
+    joint_ids_by_slot = {
+        joint.semantic_slot: joint_id for joint, joint_id in zip(blueprint.joints, joint_ids)
+    }
+    for joint, joint_id in zip(blueprint.joints, joint_ids):
+        if int(model.jnt_type[joint_id]) != int(mujoco.mjtJoint.mjJNT_HINGE):
+            raise ValueError(f"model_xml joint type mismatch: {joint.name}")
+        if not np.allclose(model.jnt_axis[joint_id], joint.axis, rtol=0.0, atol=1e-12):
+            raise ValueError(f"model_xml joint axis mismatch: {joint.name}")
+        if joint.name not in wheels_by_joint:
+            scale = limit_scales.get(joint.semantic_slot, 1.0)
+            offset = nominal_offsets.get(joint.semantic_slot, 0.0)
+            expected_range = np.asarray(
+                (
+                    joint.joint_range[0] * scale + offset,
+                    joint.joint_range[1] * scale + offset,
+                )
+            )
+            if not bool(model.jnt_limited[joint_id]) or not np.allclose(
+                model.jnt_range[joint_id], expected_range, rtol=0.0, atol=1e-8
+            ):
+                raise ValueError(f"model_xml joint range mismatch: {joint.name}")
+
+    for actuator, actuator_id in zip(blueprint.actuators, actuator_ids):
+        joint = joints_by_slot[actuator.semantic_slot]
+        expected_joint_id = joint_ids_by_slot[actuator.semantic_slot]
+        if (
+            int(model.actuator_trntype[actuator_id]) != int(mujoco.mjtTrn.mjTRN_JOINT)
+            or int(model.actuator_trnid[actuator_id, 0]) != expected_joint_id
+        ):
+            raise ValueError(f"model_xml actuator transmission mismatch: {actuator.name}")
+        if not np.allclose(
+            model.actuator_gear[actuator_id],
+            (1.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            rtol=0.0,
+            atol=1e-12,
+        ):
+            raise ValueError(f"model_xml actuator gear mismatch: {actuator.name}")
+        if joint.name in wheels_by_joint:
+            continue
+        expected_kp = actuator.kp * kp_scales.get(actuator.semantic_slot, 1.0)
+        expected_kd = actuator.kd * kd_scales.get(actuator.semantic_slot, 1.0)
+        expected_ctrlrange = model.jnt_range[expected_joint_id]
+        position_semantics = bool(
+            int(model.actuator_gaintype[actuator_id]) == int(mujoco.mjtGain.mjGAIN_FIXED)
+            and int(model.actuator_biastype[actuator_id]) == int(mujoco.mjtBias.mjBIAS_AFFINE)
+            and bool(model.actuator_ctrllimited[actuator_id])
+            and bool(model.actuator_forcelimited[actuator_id])
+            and math.isclose(
+                float(model.actuator_gainprm[actuator_id, 0]),
+                expected_kp,
+                rel_tol=1e-5,
+                abs_tol=1e-8,
+            )
+            and math.isclose(
+                float(model.actuator_biasprm[actuator_id, 1]),
+                -expected_kp,
+                rel_tol=1e-5,
+                abs_tol=1e-8,
+            )
+            and math.isclose(
+                float(model.actuator_biasprm[actuator_id, 2]),
+                -expected_kd,
+                rel_tol=1e-5,
+                abs_tol=1e-8,
+            )
+            and np.allclose(
+                model.actuator_ctrlrange[actuator_id],
+                expected_ctrlrange,
+                rtol=0.0,
+                atol=1e-8,
+            )
+            and np.isfinite(model.actuator_forcerange[actuator_id]).all()
+            and float(model.actuator_forcerange[actuator_id, 0]) < 0.0
+            and float(model.actuator_forcerange[actuator_id, 1]) > 0.0
+        )
+        if not position_semantics:
+            raise ValueError(f"model_xml position actuator semantics mismatch: {actuator.name}")
+
+    canonical = blueprint.profile_metadata.get("canonical_root_frame")
+    if not isinstance(canonical, Mapping):
+        raise TypeError("model_xml blueprint is missing canonical root metadata")
+    expected_body_id = int(
+        mujoco.mj_name2id(
+            model,
+            mujoco.mjtObj.mjOBJ_BODY,
+            str(canonical["site_body_link"]),
+        )
+    )
+    transform = canonical["anchor_body_from_canonical"]
+    expected_position = np.asarray(canonical["origin"], dtype=float) * global_scale
+    expected_quaternion = np.asarray(transform["quaternion_wxyz"], dtype=float)
+    if (
+        expected_body_id < 0
+        or int(model.site_bodyid[canonical_root_site_id]) != expected_body_id
+        or not np.allclose(
+            model.site_pos[canonical_root_site_id], expected_position, rtol=0.0, atol=1e-8
+        )
+        or not np.allclose(
+            model.site_quat[canonical_root_site_id],
+            expected_quaternion,
+            rtol=0.0,
+            atol=1e-10,
+        )
+    ):
+        raise ValueError("model_xml canonical root frame mismatch")
+
+
 class WholeBodyMuJoCoShard:
     """A fixed-topology shard implementing ``WholeBodyShard``."""
 
@@ -97,6 +229,9 @@ class WholeBodyMuJoCoShard:
         num_envs: int = 1,
         config: WholeBodyMuJoCoShardConfig | None = None,
         motor_config: MotorProcessConfig | None = None,
+        model_xml: str | None = None,
+        model_xml_sha256: str | None = None,
+        stance_solution: StanceSolution | None = None,
     ) -> None:
         if num_envs <= 0:
             raise ValueError("num_envs must be positive")
@@ -117,45 +252,93 @@ class WholeBodyMuJoCoShard:
                 trial_seconds=self.config.trial_seconds,
             )
         )
-        self.xml = compile_mjcf(blueprint, physical)
+        if model_xml is None and model_xml_sha256 is not None:
+            raise ValueError("model_xml SHA bindings require model_xml")
+        if (
+            model_xml is None
+            and stance_solution is not None
+            and stance_solution.model_xml_sha256 is not None
+        ):
+            raise ValueError("XML-bound stance solution requires model_xml")
+        if model_xml is not None:
+            actual_xml_sha256 = hashlib.sha256(model_xml.encode("utf-8")).hexdigest()
+            if model_xml_sha256 != actual_xml_sha256:
+                raise ValueError("model_xml SHA mismatch")
+            if stance_solution is None:
+                raise ValueError("precompiled model requires an XML-bound stance solution")
+        else:
+            actual_xml_sha256 = None
+        self.xml = compile_mjcf(blueprint, physical) if model_xml is None else model_xml
+        self.model_xml_sha256 = actual_xml_sha256
         self.model = mujoco.MjModel.from_xml_string(self.xml)
+        if (
+            model_xml is not None
+            and abs(float(self.model.opt.timestep) - 1.0 / self.config.physics_hz) > 1e-12
+        ):
+            raise ValueError("model_xml timestep does not match physics_hz")
         self.data = tuple(mujoco.MjData(self.model) for _ in range(num_envs))
         self.embodiment = BoundEmbodiment.from_blueprint(blueprint, physical=physical)
-        self._joint_qpos = tuple(
-            int(self.model.jnt_qposadr[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, joint.name)])
+        joint_ids = tuple(
+            int(mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, joint.name))
             for joint in blueprint.joints
         )
-        self._joint_dof = tuple(
-            int(self.model.jnt_dofadr[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, joint.name)])
-            for joint in blueprint.joints
-        )
-        self._actuator_ids = tuple(
-            int(mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, actuator.name))
+        actuator_ids = tuple(
+            int(
+                mujoco.mj_name2id(
+                    self.model,
+                    mujoco.mjtObj.mjOBJ_ACTUATOR,
+                    actuator.name,
+                )
+            )
             for actuator in blueprint.actuators
         )
-        if any(index < 0 for index in (*self._joint_qpos, *self._joint_dof, *self._actuator_ids)):
+        if any(index < 0 for index in (*joint_ids, *actuator_ids)):
             raise ValueError("compiled model is missing a generated joint or actuator")
+        self._joint_qpos = tuple(
+            int(self.model.jnt_qposadr[joint_id]) for joint_id in joint_ids
+        )
+        self._joint_dof = tuple(
+            int(self.model.jnt_dofadr[joint_id]) for joint_id in joint_ids
+        )
+        self._actuator_ids = actuator_ids
         self._canonical_root_site_id = int(
             mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, CANONICAL_ROOT_SITE_NAME)
         )
         self._canonical_root_site_id = (
             self._canonical_root_site_id if self._canonical_root_site_id >= 0 else None
         )
+        if model_xml is not None and self._canonical_root_site_id is None:
+            raise ValueError("model_xml is missing the canonical root site")
+        if model_xml is not None:
+            _validate_precompiled_model(
+                mujoco,
+                np,
+                self.model,
+                blueprint,
+                physical,
+                joint_ids,
+                actuator_ids,
+                self._canonical_root_site_id,
+            )
         self._canonical_stance_height: float | None = None
         self._foot_geoms = {
             f"{link.name}_footpad" for link in blueprint.links if link.foot
         }
-        self.stance_solution: StanceSolution = solve_static_stance(
-            self.model,
-            self.data[0],
+        self.stance_solution: StanceSolution = (
+            solve_static_stance(self.model, self.data[0], blueprint, physical)
+            if stance_solution is None
+            else stance_solution
+        )
+        self.stance_solution.validate_for(
             blueprint,
             physical,
+            expected_model_xml_sha256=actual_xml_sha256,
         )
-        self.stance_solution.validate_for(blueprint, physical)
         self._commands = np.zeros((num_envs, 3), dtype=np.float64)
         self._last_action = np.zeros((num_envs, 45), dtype=np.float64)
         self._trial_step = np.zeros(num_envs, dtype=np.int64)
         self._trial_index = np.zeros(num_envs, dtype=np.int64)
+        self._context_index = np.zeros(num_envs, dtype=np.int64)
         self._rngs = tuple(random.Random(self.config.seed + 1009 * index) for index in range(num_envs))
         baseline_strength, baseline_latency, baseline_ema = _motor_process_baselines(
             blueprint, physical, self.config.control_hz
@@ -192,7 +375,6 @@ class WholeBodyMuJoCoShard:
         action_array = action_array.clip(-1.0, 1.0)
         action_array *= self.np.asarray(self.embodiment.action_mask, dtype=self.np.float64)
         previous_action = self._last_action.copy()
-        pre_observation = self._batch_observation(trial_start=False)
         rewards = self.np.zeros(self.num_envs, dtype=self.np.float64)
         trial_done = self.np.zeros(self.num_envs, dtype=bool)
         context_done = self.np.zeros(self.num_envs, dtype=bool)
@@ -225,14 +407,14 @@ class WholeBodyMuJoCoShard:
                 self._trial_index[env_id] + 1 >= self.config.context_trials
             )
         self._last_action = action_array
-        # Keep the pre-reset observation for every vector element; consumers
-        # can select it with ``trial_done`` and mux shards without losing
-        # partial-done rows.
-        final_observation = pre_observation
+        # Preserve the post-action, pre-reset state for bootstrapping.  The
+        # regular observation below is allowed to contain a fresh reset row.
+        final_observation = self._batch_observation(trial_start=False)
         for env_id in range(self.num_envs):
             if trial_done[env_id]:
                 if context_done[env_id]:
                     self._trial_index[env_id] = 0
+                    self._context_index[env_id] += 1
                     self._reset_env(env_id, context=True)
                 else:
                     self._trial_index[env_id] += 1
@@ -277,7 +459,9 @@ class WholeBodyMuJoCoShard:
         self._commands[env_id] = self._sample_command(self._rngs[env_id])
         self._trial_step[env_id] = 0
         if context:
-            self._motor[env_id].reset_context(self.config.seed + env_id + int(self._trial_index[env_id]) * 7919)
+            self._motor[env_id].reset_context(
+                self.config.seed + env_id + int(self._context_index[env_id]) * 7919
+            )
         else:
             self._motor[env_id].reset_trial()
         self._last_action[env_id] = 0.0

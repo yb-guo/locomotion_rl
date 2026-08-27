@@ -121,6 +121,16 @@ def test_stance_solution_is_bound_to_exact_physical_instance() -> None:
     solution.validate_for(blueprint, first)
     assert solution.cache_key == stance_cache_key(first_key)
     assert solution.manifest()["actuator_ctrl_eq"]
+    legacy_positional = StanceSolution(
+        first_key,
+        0.9,
+        dict(solution.joint_qpos),
+        dict(solution.actuator_ctrl),
+        (0.1, -0.2),
+        (1.0, 0.0, 0.0, 0.0),
+    )
+    assert legacy_positional.root_xy == (0.1, -0.2)
+    assert legacy_positional.model_xml_sha256 is None
     with pytest.raises(ValueError, match="different morphology/physical instance"):
         solution.validate_for(blueprint, second)
 

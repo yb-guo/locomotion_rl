@@ -6,7 +6,7 @@ import hashlib
 import json
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any
 
@@ -77,12 +77,23 @@ class StanceSolution:
     root_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
     solver_contract_version: str = STANCE_SOLUTION_CONTRACT_VERSION
     solver_contract_hash: str = STANCE_SOLUTION_CONTRACT_HASH
+    model_xml_sha256: str | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         if self.solver_contract_version != STANCE_SOLUTION_CONTRACT_VERSION:
             raise ValueError("stance solver contract version does not match the runtime")
         if self.solver_contract_hash != STANCE_SOLUTION_CONTRACT_HASH:
             raise ValueError("stance solver contract hash does not match the runtime")
+        if self.model_xml_sha256 is not None:
+            try:
+                valid_model_sha = (
+                    len(self.model_xml_sha256) == 64
+                    and int(self.model_xml_sha256, 16) >= 0
+                )
+            except ValueError:
+                valid_model_sha = False
+            if not valid_model_sha:
+                raise ValueError("stance model_xml_sha256 must be a full SHA-256")
         if not math.isfinite(self.base_height) or self.base_height <= 0.0:
             raise ValueError("stance base_height must be finite and positive")
         root_xy = tuple(float(value) for value in self.root_xy)
@@ -112,12 +123,19 @@ class StanceSolution:
         self,
         blueprint: MorphologyBlueprint,
         physical: PhysicalParams | None = None,
+        *,
+        expected_model_xml_sha256: str | None = None,
     ) -> None:
         """Reject reuse across topology or continuous-physics realizations."""
 
         expected = morphology_instance_key(blueprint, physical)
         if self.instance_key != expected:
             raise ValueError("stance solution belongs to a different morphology/physical instance")
+        if (
+            expected_model_xml_sha256 is not None
+            and self.model_xml_sha256 != expected_model_xml_sha256
+        ):
+            raise ValueError("stance solution belongs to a different model XML")
         expected_slots = set(blueprint.active_slots)
         actual_slots = set(self.joint_qpos)
         if actual_slots != expected_slots:
@@ -152,7 +170,7 @@ class StanceSolution:
         )
 
     def manifest(self) -> dict[str, object]:
-        return {
+        manifest: dict[str, object] = {
             "instance_key": self.instance_key.manifest(),
             "base_height": self.base_height,
             "root_pose_eq": list(self.root_pose),
@@ -162,6 +180,9 @@ class StanceSolution:
             "solver_contract_version": self.solver_contract_version,
             "solver_contract_hash": self.solver_contract_hash,
         }
+        if self.model_xml_sha256 is not None:
+            manifest["model_xml_sha256"] = self.model_xml_sha256
+        return manifest
 
     @property
     def solution_hash(self) -> str:

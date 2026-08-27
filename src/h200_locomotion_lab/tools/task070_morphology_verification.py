@@ -243,6 +243,7 @@ def _set_stance_pose(
     *,
     root_z: float,
     mujoco: Any,
+    joint_nominal_overrides: Mapping[str, float] | None = None,
 ) -> None:
     mujoco.mj_resetData(model, data)
     data.qpos[0:3] = (0.0, 0.0, root_z)
@@ -252,9 +253,15 @@ def _set_stance_pose(
     data.ctrl[:] = 0.0
     for item in addresses:
         joint = item["joint"]
-        data.qpos[item["qpos_address"]] = 0.0 if joint.semantic_slot.endswith("_wheel") else joint.nominal
+        nominal = (joint_nominal_overrides or {}).get(
+            joint.semantic_slot,
+            joint.nominal,
+        )
+        data.qpos[item["qpos_address"]] = (
+            0.0 if joint.semantic_slot.endswith("_wheel") else nominal
+        )
         if not joint.semantic_slot.endswith("_wheel"):
-            data.ctrl[item["actuator_id"]] = joint.nominal
+            data.ctrl[item["actuator_id"]] = nominal
     mujoco.mj_forward(model, data)
 
 
@@ -263,17 +270,41 @@ def _prepare_stance_pose(
     blueprint: Any,
     physical: PhysicalParams,
     mujoco: Any,
+    *,
+    target_floor_penetration_m: float | None = None,
+    joint_nominal_overrides: Mapping[str, float] | None = None,
 ) -> tuple[Any, dict[str, Any], tuple[int, ...], list[dict[str, Any]]]:
     data = mujoco.MjData(model)
     terminal_ids = _terminal_geom_ids(model, blueprint, mujoco)
     addresses = _actuator_and_joint_addresses(model, blueprint, mujoco)
-    _set_stance_pose(model, data, blueprint, addresses, root_z=0.0, mujoco=mujoco)
+    _set_stance_pose(
+        model,
+        data,
+        blueprint,
+        addresses,
+        root_z=0.0,
+        mujoco=mujoco,
+        joint_nominal_overrides=joint_nominal_overrides,
+    )
     origin = _terminal_floor_distances(model, data, terminal_ids, mujoco)
+    target_penetration = (
+        STANCE_TARGET_FLOOR_PENETRATION_M
+        if target_floor_penetration_m is None
+        else float(target_floor_penetration_m)
+    )
     root_z = max(
         0.001,
-        -min(float(item["lower_z"]) for item in origin) - STANCE_TARGET_FLOOR_PENETRATION_M,
+        -min(float(item["lower_z"]) for item in origin) - target_penetration,
     )
-    _set_stance_pose(model, data, blueprint, addresses, root_z=root_z, mujoco=mujoco)
+    _set_stance_pose(
+        model,
+        data,
+        blueprint,
+        addresses,
+        root_z=root_z,
+        mujoco=mujoco,
+        joint_nominal_overrides=joint_nominal_overrides,
+    )
     reset_distances = _terminal_floor_distances(model, data, terminal_ids, mujoco)
     floor_contacts, self_contacts = _contact_records(model, data, mujoco, step=0)
     nonterminal_floor_contacts = _nonterminal_floor_contacts(floor_contacts, terminal_ids)
@@ -281,7 +312,7 @@ def _prepare_stance_pose(
         "root_z": root_z,
         "nominal_root_z": blueprint.nominal_height * physical.global_scale,
         "root_z_source": "all_support_terminal_lower_z_with_fixed_contact_penetration",
-        "target_floor_penetration_m": STANCE_TARGET_FLOOR_PENETRATION_M,
+        "target_floor_penetration_m": target_penetration,
         "origin_terminal_floor_distance": origin,
         "terminal_floor_distance": reset_distances,
         "initial_floor_contact_count": len(floor_contacts),
@@ -479,6 +510,7 @@ def _apply_stance_control(
     addresses: list[dict[str, Any]],
     *,
     wheel_velocity_hold: bool,
+    explicit_targets: Mapping[int, float] | None = None,
 ) -> None:
     gain = STANCE_THRESHOLDS["wheel_velocity_hold_gain"]
     _, pitch, _ = _roll_pitch_yaw(data.qpos[3:7])
@@ -499,6 +531,8 @@ def _apply_stance_control(
                 )
             else:
                 value = -gain * float(data.qvel[int(item["dof_address"])])
+        elif explicit_targets is not None and actuator_id in explicit_targets:
+            value = explicit_targets[actuator_id]
         else:
             value = joint.nominal
             if biped_attitude_hold and joint.axis_name == "pitch":
@@ -661,12 +695,17 @@ def _stance_rollout(
     wheel_velocity_hold: bool,
     disturbance: bool,
     mujoco: Any,
+    target_floor_penetration_m: float | None = None,
+    joint_nominal_overrides: Mapping[str, float] | None = None,
+    explicit_targets: Mapping[int, float] | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     data, reset_pose, terminal_ids, addresses = _prepare_stance_pose(
         model,
         blueprint,
         physical,
         mujoco,
+        target_floor_penetration_m=target_floor_penetration_m,
+        joint_nominal_overrides=joint_nominal_overrides,
     )
     wheel_ids = _wheel_geom_ids(model, blueprint, mujoco)
     if disturbance:
@@ -707,6 +746,7 @@ def _stance_rollout(
                 blueprint,
                 addresses,
                 wheel_velocity_hold=wheel_velocity_hold,
+                explicit_targets=explicit_targets,
             )
             mujoco.mj_step(model, data)
             roll, pitch, _ = _roll_pitch_yaw(data.qpos[3:7])
@@ -857,12 +897,16 @@ def _stance_rollout(
         "timestep_seconds": STANCE_THRESHOLDS["timestep_seconds"],
         "duration_seconds": steps * STANCE_THRESHOLDS["timestep_seconds"],
         "controller": (
-            "biped_base_attitude_hold_plus_wheeled_biped_active_wheel_balance"
-            if wheel_velocity_hold and blueprint.family == "wheeled_biped"
+            "explicit_inverse_static_position_target_hold"
+            if explicit_targets is not None
             else (
-                "biped_base_attitude_hold_or_quadruped_position_feedforward_plus_wheel_zero_velocity_hold"
-                if wheel_velocity_hold
-                else "zero_control_diagnostic"
+                "biped_base_attitude_hold_plus_wheeled_biped_active_wheel_balance"
+                if wheel_velocity_hold and blueprint.family == "wheeled_biped"
+                else (
+                    "biped_base_attitude_hold_or_quadruped_position_feedforward_plus_wheel_zero_velocity_hold"
+                    if wheel_velocity_hold
+                    else "zero_control_diagnostic"
+                )
             )
         ),
         "disturbance": disturbance,

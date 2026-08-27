@@ -12,7 +12,9 @@ import hashlib
 import json
 import math
 import os
+import platform
 import subprocess
+import tempfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,6 +49,12 @@ OVERLAY_VERSION = "official_sim_physics_overlay_v1"
 EXPECTED_MUJOCO_VERSION = "3.12.0"
 EXPECTED_REPO_COMMIT = "4134cb5dc7ff1ba7f484deda48b5274b58694519"
 EXPECTED_REPO_ORIGIN = "https://github.com/unitreerobotics/unitree_mujoco.git"
+COMMAND = (
+    "UV_CACHE_DIR=/home/admin1/workspace/store/cache/uv "
+    "uv run --isolated --locked --offline --python 3.11 --extra mujoco "
+    "python .agent/task/task071-multimorphology-training-readiness/"
+    "task071_physics_overlay.py"
+)
 
 CASE_SPECS: dict[str, dict[str, Any]] = {
     "unitree_g1": {
@@ -110,6 +118,189 @@ CASE_SPECS: dict[str, dict[str, Any]] = {
         "dimensions": {"nq": 19, "nv": 18, "nu": 12},
     },
 }
+STANCE_PROFILE_VERSION = "task071_instance_bound_inverse_static_position_hold_v1"
+STANCE_PROFILES: dict[str, dict[str, Any]] = {
+    "unitree_g1": {
+        "penetration": 0.000618,
+        "pose_source": "contact_height_equalization_and_inverse_static_search",
+        "overrides": {
+            "limb0_hip_pitch": -0.15,
+            "limb0_knee_pitch": 0.35,
+            "limb0_ankle_pitch": -0.20,
+            "limb1_hip_pitch": -0.197755,
+            "limb1_knee_pitch": 0.44551,
+            "limb1_ankle_pitch": -0.247755,
+        },
+    },
+    "unitree_go2": {
+        "penetration": 0.0006902719354629518,
+        "pose_source": "official_home_keyframe_neighborhood_and_inverse_static_validation",
+        "overrides": {
+            f"limb{i}_{part}": value
+            for i in range(4)
+            for part, value in (("hip_pitch", 0.95), ("knee_pitch", -1.70))
+        },
+    },
+}
+
+
+def _payload_sha256(payload: dict[str, Any]) -> str:
+    encoded = json.dumps(
+        payload,
+        allow_nan=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _json_artifact_bytes(payload: dict[str, Any]) -> bytes:
+    return (json.dumps(payload, allow_nan=False, indent=2, sort_keys=True) + "\n").encode()
+
+
+def json_artifact_sha256(payload: dict[str, Any]) -> str:
+    return hashlib.sha256(_json_artifact_bytes(payload)).hexdigest()
+
+
+def _text_sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _atomic_write(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def write_json_artifact(path: Path, payload: dict[str, Any]) -> None:
+    _atomic_write(path, _json_artifact_bytes(payload))
+
+
+def _git_head() -> str:
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def _validate_stance_profile(
+    blueprint: Any,
+    profile: dict[str, Any],
+) -> dict[str, Any]:
+    if set(profile) != {"penetration", "pose_source", "overrides"}:
+        raise ValueError("stance profile fields are invalid")
+    penetration = float(profile["penetration"])
+    if not math.isfinite(penetration) or not 0.0 < penetration <= 0.006:
+        raise ValueError("stance profile penetration out of range")
+    slots = {joint.semantic_slot: joint for joint in blueprint.joints}
+    overrides = profile.get("overrides", {})
+    if set(overrides) - set(slots) or not overrides:
+        raise ValueError("stance profile contains unknown or missing slots")
+    normalized: dict[str, float] = {}
+    for slot, value in overrides.items():
+        target = float(value)
+        if not math.isfinite(target) or not (
+            slots[slot].joint_range[0] <= target <= slots[slot].joint_range[1]
+        ):
+            raise ValueError(f"stance profile target out of range: {slot}")
+        normalized[slot] = target
+    return {
+        "joint_nominal_overrides": normalized,
+        "pose_source": str(profile["pose_source"]),
+        "target_floor_penetration_m": penetration,
+    }
+
+
+def _inverse_static_position_targets(
+    model: Any,
+    data: Any,
+    addresses: list[dict[str, Any]],
+    mujoco: Any,
+) -> tuple[dict[int, float], dict[str, Any]]:
+    root_joint_free = bool(
+        model.njnt
+        and int(model.jnt_type[0]) == int(mujoco.mjtJoint.mjJNT_FREE)
+    )
+    if not root_joint_free:
+        raise ValueError("inverse-static stance requires a free root")
+    data.qvel[:] = 0.0
+    data.qacc[:] = 0.0
+    mujoco.mj_inverse(model, data)
+    root_residual = [float(value) for value in data.qfrc_inverse[:6]]
+    if not all(math.isfinite(value) for value in root_residual):
+        raise ValueError("inverse-static free-root residual is non-finite")
+    targets: dict[int, float] = {}
+    evidence: list[dict[str, Any]] = []
+    for item in addresses:
+        aid, did = int(item["actuator_id"]), int(item["dof_address"])
+        gain = float(model.actuator_gainprm[aid, 0])
+        torque = float(data.qfrc_inverse[did])
+        if not math.isfinite(gain) or gain <= 0.0 or not math.isfinite(torque):
+            raise ValueError("invalid inverse-static actuator gain/torque")
+        qpos = float(data.qpos[int(item["qpos_address"])])
+        target = qpos + torque / gain
+        low, high = (float(x) for x in model.actuator_ctrlrange[aid])
+        flow, fhigh = (float(x) for x in model.actuator_forcerange[aid])
+        if (
+            not math.isfinite(target)
+            or not low <= target <= high
+            or not flow < torque < fhigh
+        ):
+            raise ValueError(
+                f"inverse-static target outside actuator limits: {item['joint'].name}"
+            )
+        effort_fraction = abs(torque) / max(abs(flow), abs(fhigh), 1e-12)
+        targets[aid] = target
+        evidence.append(
+            {
+                "actuator_name": str(model.actuator(aid).name),
+                "joint_name": item["joint"].name,
+                "semantic_slot": item["joint"].semantic_slot,
+                "qpos_rad": qpos,
+                "kp": gain,
+                "required_torque_nm": torque,
+                "position_target_rad": target,
+                "ctrlrange_rad": [low, high],
+                "forcerange_nm": [flow, fhigh],
+                "effort_fraction": effort_fraction,
+            }
+        )
+    if len(targets) != model.nu:
+        raise ValueError("inverse-static target count does not match actuator count")
+    no_external_wrench = bool(
+        not data.xfrc_applied.any() and not data.qfrc_applied.any()
+    )
+    if not no_external_wrench:
+        raise ValueError("inverse-static stance cannot use an external wrench")
+    return targets, {
+        "solver": "mujoco_mj_inverse_with_zero_qvel_qacc",
+        "actuators": evidence,
+        "control_target_count": len(targets),
+        "max_effort_fraction": max(row["effort_fraction"] for row in evidence),
+        "free_root_inverse_residual": root_residual,
+        "root_joint_free": root_joint_free,
+        "gravity_m_s2": [float(value) for value in model.opt.gravity],
+        "external_wrench_applied": False,
+        "equality_support_constraint_count": int(model.neq),
+        "position_targets_clamped": False,
+        "qvel_zero": True,
+        "qacc_zero": True,
+    }
 
 
 @dataclass(frozen=True)
@@ -711,7 +902,12 @@ def _terminal_friction(
     return result
 
 
-def _bind_case(case: FrozenCase, mujoco: Any) -> tuple[dict[str, Any], str]:
+def _bind_case(
+    case: FrozenCase,
+    mujoco: Any,
+    *,
+    write_artifact: bool,
+) -> tuple[dict[str, Any], str]:
     source_path = SOURCE / case.spec["source_xml"]
     if sha256_path(source_path) != case.spec["source_xml_sha256"]:
         raise ValueError(f"official source XML SHA mismatch: {case.reference_id}")
@@ -870,8 +1066,9 @@ def _bind_case(case: FrozenCase, mujoco: Any) -> tuple[dict[str, Any], str]:
             f"{OVERLAY_VERSION}.xml"
         )
     )
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(xml, encoding="utf-8")
+    output_sha256 = _text_sha256(xml)
+    if write_artifact:
+        _atomic_write(output, xml.encode("utf-8"))
     frozen_after = {
         "descriptor": sha256_path(case.descriptor_path),
         "manifest": sha256_path(case.manifest_path),
@@ -935,7 +1132,7 @@ def _bind_case(case: FrozenCase, mujoco: Any) -> tuple[dict[str, Any], str]:
         },
         "compile_evidence": compile_evidence,
         "output_xml": str(output.relative_to(ROOT)),
-        "output_xml_sha256": sha256_path(output),
+        "output_xml_sha256": output_sha256,
         "claim_boundary": {
             "real_system_identified": False,
             "nominal_sim_prior_only": True,
@@ -946,14 +1143,19 @@ def _bind_case(case: FrozenCase, mujoco: Any) -> tuple[dict[str, Any], str]:
     return record, xml
 
 
-def generate_overlay() -> dict[str, Any]:
+def _generate_overlay_bundle(
+    *,
+    write_artifact: bool,
+) -> tuple[dict[str, Any], dict[str, str]]:
     mujoco = _require_mujoco()
     repo = validate_official_repo()
     records = []
+    bound_xml: dict[str, str] = {}
     for reference_id in CASE_SPECS:
         case = load_frozen_case(reference_id)
-        record, _ = _bind_case(case, mujoco)
+        record, xml = _bind_case(case, mujoco, write_artifact=write_artifact)
         records.append(record)
+        bound_xml[reference_id] = xml
     payload = {
         "artifact": OVERLAY_VERSION,
         "overlay_version": OVERLAY_VERSION,
@@ -981,18 +1183,26 @@ def generate_overlay() -> dict[str, Any]:
             "ppo_or_long_training_started": False,
         },
     }
-    OVERLAY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OVERLAY_PATH.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    if write_artifact:
+        write_json_artifact(OVERLAY_PATH, payload)
+    return payload, bound_xml
+
+
+def generate_overlay(*, write_artifact: bool = True) -> dict[str, Any]:
+    payload, _ = _generate_overlay_bundle(write_artifact=write_artifact)
     return payload
 
 
-def _validate_overlay_for_r1(overlay: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    persisted = json.loads(OVERLAY_PATH.read_text(encoding="utf-8"))
-    if overlay != persisted:
-        raise ValueError("R1 overlay payload does not match regenerated artifact")
+def _validate_overlay_for_r1(
+    overlay: dict[str, Any],
+    *,
+    bound_xml: dict[str, str],
+    require_persisted: bool,
+) -> dict[str, dict[str, Any]]:
+    if require_persisted:
+        persisted = json.loads(OVERLAY_PATH.read_text(encoding="utf-8"))
+        if overlay != persisted:
+            raise ValueError("R1 overlay payload does not match regenerated artifact")
     if not (
         overlay.get("artifact") == overlay.get("overlay_version") == OVERLAY_VERSION
         and overlay.get("official_repo") == validate_official_repo()
@@ -1024,8 +1234,14 @@ def _validate_overlay_for_r1(overlay: dict[str, Any]) -> dict[str, dict[str, Any
             record.get("family") == spec["family"]
             and record.get("mapping_counts") == expected_counts
             and record.get("output_xml") == str(expected_output.relative_to(ROOT))
-            and expected_output.is_file()
-            and record.get("output_xml_sha256") == sha256_path(expected_output)
+            and (
+                not require_persisted
+                or (
+                    expected_output.is_file()
+                    and record.get("output_xml_sha256") == sha256_path(expected_output)
+                )
+            )
+            and record.get("output_xml_sha256") == _text_sha256(bound_xml[reference_id])
             and frozen.get("descriptor_sha256") == spec["descriptor_sha256"]
             and frozen.get("manifest_sha256") == spec["manifest_sha256"]
             and frozen.get("xml_sha256") == spec["frozen_xml_sha256"]
@@ -1052,27 +1268,36 @@ def _validate_overlay_for_r1(overlay: dict[str, Any]) -> dict[str, dict[str, Any
     return records
 
 
-def run_bound_r1(overlay: dict[str, Any] | None = None) -> dict[str, Any]:
+def run_bound_r1(
+    overlay: dict[str, Any] | None = None,
+    *,
+    write_artifact: bool = True,
+) -> dict[str, Any]:
     mujoco = _require_mujoco()
-    regenerated = generate_overlay()
+    regenerated, bound_xml = _generate_overlay_bundle(write_artifact=write_artifact)
     if overlay is not None and overlay != regenerated:
         raise ValueError("caller-supplied R1 overlay differs from regenerated binding")
     overlay = regenerated
-    from h200_locomotion_lab.tools.task070_morphology_verification import (
-        _arena_actuator_response,
-        _prepare_stance_pose,
-        _stance_rollout,
-    )
+    from h200_locomotion_lab.robots import whole_body_stance as stance_contract
+    from h200_locomotion_lab.robots.procedural_morphology import morphology_instance_key
+    from h200_locomotion_lab.tools import task070_morphology_verification as verification
 
-    overlay_by_case = _validate_overlay_for_r1(overlay)
+    overlay_by_case = _validate_overlay_for_r1(
+        overlay,
+        bound_xml=bound_xml,
+        require_persisted=write_artifact,
+    )
+    overlay_artifact_sha256 = json_artifact_sha256(overlay)
+    if write_artifact and sha256_path(OVERLAY_PATH) != overlay_artifact_sha256:
+        raise ValueError("persisted overlay artifact SHA mismatch")
     records: list[dict[str, Any]] = []
     for reference_id in CASE_SPECS:
         case = load_frozen_case(reference_id)
         overlay_record = overlay_by_case[reference_id]
         xml_path = ROOT / overlay_record["output_xml"]
-        if sha256_path(xml_path) != overlay_record["output_xml_sha256"]:
+        xml = bound_xml[reference_id]
+        if _text_sha256(xml) != overlay_record["output_xml_sha256"]:
             raise ValueError(f"bound XML SHA mismatch: {reference_id}")
-        xml = xml_path.read_text(encoding="utf-8")
         model = mujoco.MjModel.from_xml_string(xml)
         if not math.isclose(
             float(model.opt.timestep),
@@ -1081,20 +1306,75 @@ def run_bound_r1(overlay: dict[str, Any] | None = None) -> dict[str, Any]:
             abs_tol=1e-12,
         ):
             raise ValueError(f"bound R1 timestep mismatch: {reference_id}")
-        _, reset, _, _ = _prepare_stance_pose(
+        profile = _validate_stance_profile(
+            case.blueprint,
+            STANCE_PROFILES[reference_id],
+        )
+        overrides = profile["joint_nominal_overrides"]
+        penetration = profile["target_floor_penetration_m"]
+        profile_manifest = {
+            "version": STANCE_PROFILE_VERSION,
+            "reference_id": reference_id,
+            "pose_source": profile["pose_source"],
+            "target_floor_penetration_m": penetration,
+            "joint_nominal_overrides": overrides,
+            "base_frozen_blueprint_hash": case.spec["blueprint_hash"],
+            "frozen_morphology_changed": False,
+            "joint_order_axis_range_changed": False,
+            "physics_overlay_changed": False,
+        }
+        profile_manifest["sha256"] = _payload_sha256(profile_manifest)
+        _, reset, _, _ = verification._prepare_stance_pose(
             model,
             case.blueprint,
             case.physical,
             mujoco,
+            target_floor_penetration_m=penetration,
+            joint_nominal_overrides=overrides,
         )
-        response = _arena_actuator_response(
+        profile_data, _, _, profile_addresses = verification._prepare_stance_pose(
+            model,
+            case.blueprint,
+            case.physical,
+            mujoco,
+            target_floor_penetration_m=penetration,
+            joint_nominal_overrides=overrides,
+        )
+        explicit_targets, feedforward = _inverse_static_position_targets(
+            model,
+            profile_data,
+            profile_addresses,
+            mujoco,
+        )
+        feedforward["stance_profile_sha256"] = profile_manifest["sha256"]
+        feedforward["bound_xml_sha256"] = overlay_record["output_xml_sha256"]
+        feedforward["hidden_support_added"] = False
+        stance_solution = stance_contract.StanceSolution(
+            instance_key=morphology_instance_key(case.blueprint, case.physical),
+            base_height=float(reset["root_z"]),
+            joint_qpos={
+                joint.semantic_slot: float(overrides.get(joint.semantic_slot, joint.nominal))
+                for joint in case.blueprint.joints
+            },
+            actuator_ctrl={
+                str(row["semantic_slot"]): float(row["position_target_rad"])
+                for row in feedforward["actuators"]
+            },
+            model_xml_sha256=overlay_record["output_xml_sha256"],
+        )
+        stance_solution.validate_for(
+            case.blueprint,
+            case.physical,
+            expected_model_xml_sha256=overlay_record["output_xml_sha256"],
+        )
+        response = verification._arena_actuator_response(
             mujoco.MjModel.from_xml_string(xml),
             case.blueprint,
             case.physical,
             response_steps=32,
             mujoco=mujoco,
         )
-        _, stance = _stance_rollout(
+        _, stance = verification._stance_rollout(
             mujoco.MjModel.from_xml_string(xml),
             case.blueprint,
             case.physical,
@@ -1102,6 +1382,9 @@ def run_bound_r1(overlay: dict[str, Any] | None = None) -> dict[str, Any]:
             wheel_velocity_hold=True,
             disturbance=False,
             mujoco=mujoco,
+            target_floor_penetration_m=penetration,
+            joint_nominal_overrides=overrides,
+            explicit_targets=explicit_targets,
         )
         dimensions = {
             "nq": int(model.nq),
@@ -1118,9 +1401,9 @@ def run_bound_r1(overlay: dict[str, Any] | None = None) -> dict[str, Any]:
             ],
             "frozen_blueprint_hash": case.spec["blueprint_hash"],
             "frozen_physical_hash": case.spec["physical_hash"],
-            "overlay_artifact_sha256": sha256_path(OVERLAY_PATH),
+            "overlay_artifact_sha256": overlay_artifact_sha256,
             "bound_xml_path": str(xml_path.relative_to(ROOT)),
-            "bound_xml_sha256": sha256_path(xml_path),
+            "bound_xml_sha256": _text_sha256(xml),
             "compiled": True,
             "model_dimensions": dimensions,
             "accounting_exact": accounting_exact,
@@ -1129,6 +1412,12 @@ def run_bound_r1(overlay: dict[str, Any] | None = None) -> dict[str, Any]:
             "actuator_response": response,
             "all_actuators_responsive": bool(response["all_actuators_responsive"]),
             "stance_hold": stance,
+            "stance_profile": profile_manifest,
+            "inverse_static_feedforward": feedforward,
+            "stance_solution": {
+                "manifest": stance_solution.manifest(),
+                "sha256": stance_solution.solution_hash,
+            },
             "stance_hold_passed": bool(stance.get("passed", False)),
             "operational_actuator_smoke_passed": bool(
                 accounting_exact
@@ -1142,9 +1431,28 @@ def run_bound_r1(overlay: dict[str, Any] | None = None) -> dict[str, Any]:
     payload = {
         "artifact": "task071_bound_official_sim_physics_r1_v1",
         "task": "task071-multimorphology-training-readiness",
+        "runtime": {
+            "command": COMMAND,
+            "git_head": _git_head(),
+            "python": platform.python_version(),
+            "platform": platform.platform(),
+            "mujoco_version": mujoco.__version__,
+            "source": {
+                "physics_overlay_path": str(Path(__file__).relative_to(ROOT)),
+                "physics_overlay_sha256": sha256_path(Path(__file__)),
+                "stance_helper_path": str(
+                    Path(verification.__file__).relative_to(ROOT)
+                ),
+                "stance_helper_sha256": sha256_path(Path(verification.__file__)),
+                "stance_contract_path": str(
+                    Path(stance_contract.__file__).relative_to(ROOT)
+                ),
+                "stance_contract_sha256": sha256_path(Path(stance_contract.__file__)),
+            },
+        },
         "overlay_version": OVERLAY_VERSION,
         "overlay_artifact_path": str(OVERLAY_PATH.relative_to(ROOT)),
-        "overlay_artifact_sha256": sha256_path(OVERLAY_PATH),
+        "overlay_artifact_sha256": overlay_artifact_sha256,
         "mujoco_version": mujoco.__version__,
         "denominator": 2,
         "response_steps_per_actuator": 32,
@@ -1185,10 +1493,8 @@ def run_bound_r1(overlay: dict[str, Any] | None = None) -> dict[str, Any]:
             "ppo_or_long_training_started": False,
         },
     }
-    BOUND_R1_PATH.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    if write_artifact:
+        write_json_artifact(BOUND_R1_PATH, payload)
     return payload
 
 
