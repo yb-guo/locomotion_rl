@@ -1,20 +1,21 @@
 # Task071 — Task070 v2 多形态训练就绪门
 
-状态：**active / r0_physical_passed_r1_dynamic_failed**。
+状态：**active / G1+Go2 representative R0–R3 passed / Tier A 2/5 / Task071 not passed**。
 
 进入条件：Task070 v2 的最终输入 artifact、manifest/descriptor SHA 和 case registry 已冻结；
 Task070 的用户视觉验收为前置 gate。2026-08-26 用户已通过 append-only overlay 接受 attempt010，
-因此本任务可执行 R0/R1 gate；在具体物理属性与 fresh dynamic gate 未通过前，不得把任何 case
-加入训练采样池或启动 PPO smoke。
+因此本任务可执行 R0–R3 gate。当前只有 G1+Go2 通过 representative bounded smoke；其余 Tier A、
+Tier B、Tier C 仍不得由这两个 case 的结果暗示为 train-ready。
 
 ## 目标与边界
 
 把 Task070 v2 attempt010 的匿名 primitive-link morphology、`canonical_root`/state 和
 actuation contract 接入 RTX 5060 Ti-first 的 WholeBody/MuJoCo 训练路径，建立逐实例、分层、
 fail-closed 的 train-readiness gate。当前基线是：18/18 compile/reset/paired actuator response，
-`canonical_root` 已接入 WholeBody；但 generic stance 为 0/18、没有 gait，8 个 candidate humanoid
+`canonical_root` 已接入 WholeBody；Task070 generic stance 仍为 0/18、没有 gait，8 个 candidate humanoid
 的 `policy_adapter_compatible=false`，candidate transmission/motor evidence 仍 fail-closed。因此
-本任务不得把现状描述为“全部 18 个可训练”。
+本任务不得把现状描述为“全部 18 个可训练”。Task071 后续已为 G1+Go2 增加独立、instance-bound
+stance，不能反向改写 Task070 generic 结果，也不能替代 Tier A 其余 3 个 case 的 gate。
 
 本任务不改变 Task070 的视觉验收；`user_visual_acceptance` 仍由 Task070 管理，不由本任务代签。
 除用户逐次显式授权并固定 commit 的官方 simulator asset intake 外，不下载数据集、checkpoint、
@@ -103,6 +104,51 @@ smoke。不得 claim all 18 train-ready、会站/会走、LocoFormer reproductio
 
 ## Log
 
+- 2026-08-27：用 versioned `task071_instance_bound_inverse_static_position_hold_v1` stance profile
+  完成 G1+Go2 fresh R1，取代下方历史 `0/2` 结果。profile 只覆盖逐实例 leg nominal pose 与固定
+  contact penetration；在 free root、原重力、无 equality/hidden support/external wrench 下，使用
+  MuJoCo `mj_inverse(qvel=0,qacc=0)` 计算 position target feedforward。没有改冻结 morphology、
+  joint order/axis/range 或 physics overlay。compile/accounting/lineage/reset/paired actuator response/
+  stance 均 `2/2`，每 actuator response `32` steps，stance 为 `1000 × 0.002 s = 2.0 s`。G1
+  max roll/pitch `0.04197 rad`、qvel norm `0.13934`、height drift `0.000478 m`、minimum terminal
+  load `171.67 N`、max effort fraction `0.12199`；Go2 分别为 `0.03558 rad`、`0.12871`、
+  `0.001826 m`、`26.09 N`、`0.10689`。R1 admission=true。Task070 helper 默认参数已按旧精确
+  metrics 回归，generic stance 结果不变。
+- 2026-08-27：R2 让 `WholeBodyMuJoCoShard` 显式消费 exact bound XML 与上述 instance-bound
+  `StanceSolution`；预编译入口现在要求 expected XML SHA，且同一 SHA 是 `StanceSolution` manifest/
+  solution hash 的不可分离字段；跨 XML 复用 stance 会失败。入口并对 timestep、joint/
+  actuator accounting、free root、position transmission type/gear/ctrlrange/KP/KD、joint type/axis/range
+  和 canonical site parent/local transform fail-closed，mass/COM/contact 等其余物理字段由 exact XML
+  SHA 绑定。缺 joint 不再以 `mj_name2id=-1` 误索引最后一个 joint。G1+Go2 对
+  `whole_body_v1_45` 的 `45 action / 193 observation`、active mask `29/12`、inactive position/
+  velocity/previous-action 零值、inactive action control 隔离、stance-centered action scaling、finite
+  observation/reward/metrics、旋转 root 的 observation/reward/fall canonical reader、canonical-height
+  fall/reset、2-step trial/2-trial context 均为 `2/2`。fall probe 现在实际降低 canonical root 后调用
+  `step()`，断言 fall/trial_done、stance/control/counter reset；fault context probe 以 seed
+  `7100→15019` 验证事件改变，并由第二个同 seed shard 精确复现。同时修正 terminal observation 为
+  post-action/pre-reset state，并让新 context 使用递增 context seed。R2 admission=true，未在 R2 启动 PPO。
+- 2026-08-27：在 RTX 5060 Ti 上完成 representative R3。每个 case 使用 exact R1 XML/stance、
+  nominal fault disabled、`4 env × 8 control steps = 32 env steps`；先做 no-update rollout，参数 L1
+  delta 精确 `0`、inactive action 精确 `0`、finite tensor 与 2 trial/1 context reset 通过、fall `0`；
+  再用同一真实 batch 做 `1 epoch × 1 minibatch` 的一次 clipped-PPO update。G1/Go2 parameter L1
+  delta 分别约 `7.54/4.85`，gradient/loss/advantages/returns/更新后参数均 finite；通过 wrapper 对
+  optimizer 的真实 `step()` 调用计数，两 case 都精确为 `1`，峰值 allocated VRAM 最大约
+  `65.61 MiB`。没有 checkpoint、长训练或 walking/quality claim。representative R3 admission
+  `2/2`；Task071 仍为 Tier A `2/5`，不得标记 passed。
+
+- 2026-08-27：收紧最终 R1–R3 证据链。R1 artifact 记录 exact command、Python/MuJoCo/platform、git
+  HEAD、overlay probe 与 Task070 stance helper source SHA；R2 验证并继承这些 SHA，R3 再绑定完整 R2
+  payload/R1/overlay。overlay/model/R1/R2/R3 发布改为同目录 atomic replace，
+  `write_artifact=false` 不再写 overlay、model 或 R1 文件。新增 actuator type/gear/ctrlrange、joint axis/range、canonical frame、
+  mass/contact 与 XML/stance SHA 的正负回归。运行代码 commit 为
+  `f7ba641b74b956ca765b804b12a5fd0124a49e32`；最终 artifact SHA256：overlay
+  `dc954b9229df4ddd1d7a2b7556e1b2efa53ac680b066256d8ab12cfbe8b199c7`，R1
+  `3614ed08e17d01effd64c564bdbc0e7c3c78d106ce06cbc27bbebb26ad38b6bf`，R2
+  `1194cafa6ce80d4256a5113c20a7377620c068eeeebe69c0a6134ae9240d9571`，R3
+  `ca7c048b116460a97324143aacfc8de3404856297b7816e16b7632944c0e7044`。targeted Task071
+  `22 passed`；加入 WholeBody contract 后为 `39 passed / 1 failed`，唯一失败仍是既有 legacy-v2
+  random biped seed0 strict static-stance solver，不由 G1/Go2 instance-bound route 掩盖。
+
 - 2026-08-27：完成 versioned `official_sim_physics_overlay_v1` 正式绑定。工具只消费冻结
   attempt010 descriptor/manifest/XML，不调用当前 generator；逐 body 使用官方 Unitree commit
   `4134cb5dc7ff1ba7f484deda48b5274b58694519` 的 nominal mass、local COM、inertial quaternion、
@@ -115,7 +161,8 @@ smoke。不得 claim all 18 train-ready、会站/会走、LocoFormer reproductio
   `nq/nv/nu=36/35/29`、Go2 `19/18/12`，finite `2/2`。证据
   `artifacts/official_sim_physics_overlay_v1.json` SHA256
   `dc954b9229df4ddd1d7a2b7556e1b2efa53ac680b066256d8ab12cfbe8b199c7`。
-- 2026-08-27：使用同一冻结 blueprint/physical manifest 直接加载 bound XML，完成 fresh R1：
+- 历史记录（已被上方 instance-bound stance R1 取代，2026-08-27）：使用同一冻结
+  blueprint/physical manifest 直接加载 bound XML，完成当时的 fresh R1：
   compile/accounting/lineage/reset/paired actuator response 均 `2/2`，response 每 actuator `32`
   steps；stance `1000 × 0.002 s` 仍为 `0/2`，故 R1 admission=false、next gate=false，未进入
   R2/PPO。G1 主要表现为翻倒（max roll/pitch `3.13 rad`、base height drift `1.66 m`）；Go2
@@ -177,18 +224,32 @@ smoke。不得 claim all 18 train-ready、会站/会走、LocoFormer reproductio
 - 历史记录（当时状态，2026-08-26）：由 Task070 当前结论建立；未开始训练或 artifact 生成。已知基线为 18/18
   compile/reset/paired actuator response、generic stance 0/18、无 gait、8 candidate humanoids
   `policy_adapter_compatible=false`。
-- 待执行：R0–R6 逐阶段记录命令、硬件、SHA、denominator、失败原因和是否允许进入下一 gate。
+- 待执行：Tier A 的 PM01/Spot/Lite3 R1–R3、Tier B R4、Tier C R5 与最终 R6 readiness matrix；逐阶段
+  继续记录命令、硬件、SHA、denominator、失败原因和是否允许进入下一 gate。
 
 ## Review
 
-- 2026-08-27：overlay fail-closed mapping 与 bound R1 targeted regression `6 passed`（含篡改
+- 2026-08-27：最终高风险只读复审无 P0/P1/P2/P3 findings。首轮提出的 precompiled XML/stance
+  可分离 SHA、R1 source identity、未实际 step 的 fall reset、未验证的 context reseed、自报 optimizer
+  update count 与 no-write 落盘问题均已以运行时 contract 和负例闭环；末轮 positional API 兼容问题
+  也通过单字段 keyword-only 与 legacy positional regression 修复。Task071+WholeBody extended 为
+  `34 passed`，targeted Ruff 与 `git diff --check` 通过。Task070 exact test 在挂载冻结 artifacts 后为
+  `38 passed / 1 failed`，唯一失败是冻结 visual status 仍为 false 的既有断言；未修改或代签 Task070
+  visual artifact。representative 结论仍严格限制为 G1+Go2 Tier A `2/5`，Task071 not passed。
+
+- 2026-08-27：最新 targeted R1/R2/R3 回归已执行；G1+Go2 representative gate 通过，但 generic
+  procedural biped `solve_static_stance` 的既有 seed-0 test 仍可能因 strict equilibrium 失败，这与
+  Task070 generic `0/18` 风险一致，不由本次 instance-bound 解法掩盖。Tier A 的 PM01/Spot/Lite3、
+  Tier B wheel、Tier C variable-DoF 仍未完成 R1–R5，Task071 not passed。
+
+- 历史复审记录（后续已由 instance-bound R1 取代，2026-08-27）：overlay fail-closed mapping 与 bound R1 targeted regression `6 passed`（含篡改
   bound XML path/SHA 的两个负例），targeted Ruff 通过。R1 每次从冻结输入重建并校验 persisted
   overlay，caller 自报路径/SHA 不能进入动力学证据。fresh bound evidence 证明 lineage `2/2`，
   因此旧 lineage mismatch 不再是当前 G1/Go2 阻断；当前决定性阻断为 stance `0/2`。未执行
   rollout/PPO，不得声称 train-ready。最终只读复审无 P0/P1/P2/P3 findings；残余风险为 ignored
   官方资产与 MuJoCo 3.12 环境依赖，以及尚未通过的 stance gate。
 
-状态：**R0 physical probe independently reviewed；R1 dynamic failed stance 0/2；Task071 not passed**。
+状态：**G1+Go2 representative R0–R3 passed；Tier A 2/5；Task071 not passed**。
 
 - 2026-08-27：官方资产 intake readback 确认 5/5 repo pin/origin/clean、8/8 MuJoCo compile 与 exact
   actuator count、禁用后缀 0 命中；artifact 明确 vendor mesh 只留在 ignored `.external`、不复制进
