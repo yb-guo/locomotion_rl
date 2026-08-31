@@ -1,6 +1,6 @@
 # Task072 — Bound G1/Go2 nominal locomotion proof
 
-状态：**in_progress / not_passed**。
+状态：**ready_for_authorized_pilot / not_trained / not_passed**。
 
 ## 目标与边界
 
@@ -14,11 +14,10 @@ Task073 在 003c G1 walking gate 与 004 freeze 完成前保持 blocked。本任
 noise 或 terrain randomization，也不使用 command curriculum。Task048 checkpoint 与本地课程资料
 只能作为设计/预算参考，不得作为 Task072 初始化权重或 pass evidence。
 
-003b/003c 是在旧 Task071-bound v1 失败证据之外新增的 versioned G1 walking lane：003b 只替换
-terminal-contact profile，003c 使用被绑定的 MJLab training contract，必须把 G1 实际训练到 walking
-gate。它们不得修改或补判原始
-exact-bound/custom-PPO claim；上述 fixed-command/no-curriculum 约束继续适用于原 Task072 route，003c
-训练按 MJLab contract 执行并以固定 `vx=0.5` eval 判定。
+003b/003c/003d/003e/003f/003g 是旧 v3/v4 MJLab lineage 的历史路线。003g 已完成 single-ground
+training/eval，但后验确认 training contract 仍继承 `Unitree-G1-Flat` 的随机 command、DR/curriculum、
+parent reward 和对称 action scale；因此 003g 只作为 failed evidence，不能作为可继续训练的父合同。
+当前唯一活动路线是 003h MJLab contract-closure repair；fixed-command/no-DR/no-curriculum 约束没有例外。
 
 ### R1 diagnosis and reopen
 
@@ -79,6 +78,10 @@ untrained/zero baselines 直接比较，并无条件写 `paired_baselines_verifi
    - 依次运行 v3 capacity smoke、4096x24 one-update smoke、4096x24x650 proof training 和固定命令
      checkpoint eval；
    - walking numeric gate 未通过不得生成伪 passing video、不得 freeze、不得调 reward 或参数搜索。
+3h. `003h-g1-mjlab-contract-closure-repair.md`
+   - 建立新的 MJLab fixed-command/action/reward/train-eval/runtime/provenance 合同；
+   - 状态只能为 `ready_for_authorized_pilot / not_trained / not_passed`，禁止复用 003g checkpoint；
+   - 本 subtask 只实现 CPU/negative gates，不启动 GPU capacity、one-update、pilot 或 proof training。
 4. `004-freeze-g1-passing-lineage.md`
    - 只有 G1 全 gate 通过后，冻结实现 commit、配置、descriptor、asset、checkpoint 与 verifier
      SHA；
@@ -206,11 +209,10 @@ pointer 和整份 action contract raw/payload SHA。每个 manifest/report 都�
 
 原始路线为 `001 -> 002 -> 003 -> 004 -> 005`；其失败证据保持不变。当前有效链路严格为
 `003b v1 geometry pass -> 003c rejected runtime binding mismatch -> 003d rejected double-ground ->
-003e rejected contaminated training -> 003f single-ground runtime repair -> separately authorized v3
-walking run / 003g single-ground walking proof -> 004 freeze -> Task073 asset migration -> Task074
-18-case training`。
-003f no-update verifier 未通过不得运行新的 capacity smoke；新的 v3 walking run 未通过不得 freeze 或
-启动 Task073。
+003e rejected contaminated training -> 003f single-ground runtime repair -> 003g failed training evidence ->
+003h contract-closure repair -> separately authorized capacity/pilot -> 004 freeze -> Task073 asset migration ->
+Task074 18-case training`。
+003h repair source 未提交、CPU gates 未通过或新 authorized pilot 未通过，不得 freeze 或启动 Task073。
 004 必须绑定新的 contact/stance/asset lineage，不能
 复用旧 `official_sim_physics_overlay_v1` stance 或把旧失败 artifact 补判通过。任何阶段失败都保留完整失败 artifact，并停止向
 后续 gate 晋级；不得用缩短 horizon、改 command、启用 curriculum 或引入随机化来掩盖 nominal
@@ -508,10 +510,14 @@ baseline、progression、SHA 或任一指标失败，均视为该 case 未通过
   `model_100/200/400/649` all failed walking gate; final `model_649` zero-fall `1.0` but mean vx
   `0.0064487740`, +x `0.1289754808`, planar error `0.4939913750`, left single support `0`。No video
   generated; 004 freeze remains blocked.
+- 2026-08-31：003h contract-closure repair implemented. Active MJLab training now consumes a single
+  fixed-command/no-DR canonical config, signed headroom action contract, v3 reward lineage and frame-local
+  external pin; historical E3/003g drift remains rejected. CPU scoped pytest
+  `tests/test_task072_locomotion_proof.py tests/test_whole_body_extended.py` passed `75 passed`.
 
 ## Review
 
-状态：**not_passed**。
+状态：**ready_for_authorized_pilot / not_trained / not_passed**。
 
 Task072 只有在 exact-bound G1 和 Go2 都在同一冻结 source commit/config contract 上满足全部数值、
 视频、baseline、checkpoint 与 verifier gate 后才能标记 passed。Task071 的 one-update PPO smoke、旧
@@ -530,7 +536,9 @@ gate 已通过，R5 2.048M 也已执行，但 exact-init binding 和原 optimize
 局部 repair 后验发现 double-ground，故其 incomplete no-update pass 已撤销；003e 虽用
 `4096 x 24 x 650` 跑满 `63,897,600` transitions，但同样受 double-ground 污染，已 rejected，不能再称为
 正确 v2 binding 下的 walking failure。003f single-ground runtime no-update verifier 已通过，但未启动新的
-v3 capacity/training/eval/video。G1/Go2 full proof 仍未通过，Task072 继续保持 **not_passed**。
+v3 capacity/training/eval/video。003g single-ground training/eval 已失败，且因 training contract 分叉不得
+继承；003h 已修复合同闭合与 CPU fail-closed gates。G1/Go2 full proof 仍未通过，Task072 继续保持
+**not_passed**，仅为 **ready_for_authorized_pilot**。
 
 ## R2 single-variable recovery route
 

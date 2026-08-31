@@ -40,6 +40,20 @@ def sample_masked_tanh_gaussian(
     )
 
 
+def sample_masked_tanh_gaussian_with_raw(
+    mean: Any, log_std: Any, active_mask: Any, *, deterministic: bool = False,
+    tanh_eps: float = 1e-6,
+) -> tuple[Any, Any, Any, Any]:
+    """Sample once and retain the pre-tanh sample for likelihood replay."""
+    torch = _require_torch()
+    normal = torch.distributions.Normal(mean, log_std.exp())
+    raw = mean if deterministic else normal.rsample()
+    action = torch.tanh(raw)
+    clipped = action.clamp(-1.0 + tanh_eps, 1.0 - tanh_eps)
+    per_dim = normal.log_prob(raw) - torch.log(1.0 - clipped.square() + tanh_eps)
+    return action * _mask_like(active_mask, action), raw, masked_log_prob(per_dim, active_mask), masked_entropy(normal.entropy(), active_mask)
+
+
 def masked_tanh_gaussian_log_prob(
     action: Any,
     mean: Any,
@@ -53,6 +67,22 @@ def masked_tanh_gaussian_log_prob(
     raw = 0.5 * (torch.log1p(clipped) - torch.log1p(-clipped))
     normal = torch.distributions.Normal(mean, log_std.exp())
     per_dim = normal.log_prob(raw) - torch.log(1.0 - clipped.square() + tanh_eps)
+    return masked_log_prob(per_dim, active_mask)
+
+
+def masked_raw_gaussian_log_prob(
+    raw: Any,
+    mean: Any,
+    log_std: Any,
+    active_mask: Any,
+    *,
+    tanh_eps: float = 1e-6,
+) -> Any:
+    """Evaluate the tanh-Gaussian likelihood at the retained raw sample."""
+    torch = _require_torch()
+    normal = torch.distributions.Normal(mean, log_std.exp())
+    action = torch.tanh(raw).clamp(-1.0 + tanh_eps, 1.0 - tanh_eps)
+    per_dim = normal.log_prob(raw) - torch.log(1.0 - action.square() + tanh_eps)
     return masked_log_prob(per_dim, active_mask)
 
 

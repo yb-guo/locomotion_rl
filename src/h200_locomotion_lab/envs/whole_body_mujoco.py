@@ -32,6 +32,11 @@ from h200_locomotion_lab.tasks.whole_body_contract import (
 )
 
 
+def phase_from_trial_step(trial_step: Any, control_hz: float, period_s: float) -> Any:
+    """Return the shared per-trial gait phase used by reward and observation."""
+    return ((trial_step / control_hz) % period_s) / period_s
+
+
 @dataclass(frozen=True, slots=True)
 class WholeBodyMuJoCoShardConfig:
     control_hz: float = 50.0
@@ -39,6 +44,15 @@ class WholeBodyMuJoCoShardConfig:
     trial_seconds: float = 10.0
     context_trials: int = 3
     action_scale: float = 0.65
+    action_amplitude_by_slot: Mapping[str, float] | None = None
+    action_residual_bounds_by_slot: Mapping[str, tuple[float, float]] | None = None
+    observation_joint_reference_by_slot: Mapping[str, float] | None = None
+    observation_joint_velocity_scale: float = 1.0
+    observation_base_angular_velocity_scale: float = 1.0
+    observation_phase: bool = False
+    phase_period_s: float = 0.8
+    logical_foot_groups: Mapping[str, tuple[str, ...]] | None = None
+    logical_foot_reference_sites: Mapping[str, str] | None = None
     command_vx_range: tuple[float, float] = (0.2, 0.8)
     command_vy_range: tuple[float, float] = (-0.2, 0.2)
     command_yaw_range: tuple[float, float] = (-0.5, 0.5)
@@ -56,6 +70,49 @@ class WholeBodyMuJoCoShardConfig:
             raise ValueError("trial_seconds and context_trials must be positive")
         if self.action_scale <= 0.0:
             raise ValueError("action_scale must be positive")
+        if self.action_amplitude_by_slot is not None:
+            for slot, amplitude in self.action_amplitude_by_slot.items():
+                if not isinstance(slot, str) or not slot:
+                    raise ValueError("action amplitude slots must be non-empty strings")
+                if not math.isfinite(float(amplitude)) or float(amplitude) <= 0.0:
+                    raise ValueError("action amplitudes must be finite positive radians")
+        if self.action_amplitude_by_slot is not None and self.action_residual_bounds_by_slot is not None:
+            raise ValueError("action amplitude and residual bounds are mutually exclusive")
+        if self.action_residual_bounds_by_slot is not None:
+            for slot, bounds in self.action_residual_bounds_by_slot.items():
+                if not isinstance(slot, str) or not slot or len(bounds) != 2:
+                    raise ValueError("action residual bound slots must be non-empty pairs")
+                if not all(math.isfinite(float(value)) and float(value) > 0.0 for value in bounds):
+                    raise ValueError("action residual bounds must be finite positive radians")
+        if self.observation_joint_reference_by_slot is not None and any(
+            not isinstance(slot, str) or not slot or not math.isfinite(float(value))
+            for slot, value in self.observation_joint_reference_by_slot.items()
+        ):
+            raise ValueError("observation joint references must be finite values")
+        if not math.isfinite(self.observation_joint_velocity_scale) or self.observation_joint_velocity_scale <= 0.0:
+            raise ValueError("observation_joint_velocity_scale must be finite positive")
+        if not math.isfinite(self.observation_base_angular_velocity_scale) or self.observation_base_angular_velocity_scale <= 0.0:
+            raise ValueError("observation_base_angular_velocity_scale must be finite positive")
+        if not math.isfinite(self.phase_period_s) or self.phase_period_s <= 0.0:
+            raise ValueError("phase_period_s must be finite positive")
+        if self.logical_foot_groups is not None:
+            if not self.logical_foot_groups:
+                raise ValueError("logical_foot_groups must not be empty")
+            for foot, geoms in self.logical_foot_groups.items():
+                if not isinstance(foot, str) or not foot or not geoms:
+                    raise ValueError("logical foot groups require non-empty names and geoms")
+                if any(not isinstance(geom, str) or not geom for geom in geoms):
+                    raise ValueError("logical foot geom names must be non-empty strings")
+        if self.logical_foot_reference_sites is not None:
+            if self.logical_foot_groups is None:
+                raise ValueError("logical foot reference sites require logical foot groups")
+            if set(self.logical_foot_reference_sites) != set(self.logical_foot_groups):
+                raise ValueError("logical foot reference sites must exactly cover logical feet")
+            if any(
+                not isinstance(site, str) or not site
+                for site in self.logical_foot_reference_sites.values()
+            ):
+                raise ValueError("logical foot reference site names must be non-empty strings")
 
     @property
     def substeps(self) -> int:
@@ -301,6 +358,31 @@ class WholeBodyMuJoCoShard:
             int(self.model.jnt_dofadr[joint_id]) for joint_id in joint_ids
         )
         self._actuator_ids = actuator_ids
+        self._action_amplitude_by_slot: dict[str, float] | None = None
+        self._action_residual_bounds_by_slot: dict[str, tuple[float, float]] | None = None
+        configured_slots = {actuator.semantic_slot for actuator in blueprint.actuators}
+        for name, mapping in (("action_amplitude_by_slot", self.config.action_amplitude_by_slot),
+                              ("action_residual_bounds_by_slot", self.config.action_residual_bounds_by_slot)):
+            if mapping is not None and set(mapping) != configured_slots:
+                raise ValueError(f"{name} must exactly cover active actuator slots")
+        if self.config.action_amplitude_by_slot is not None:
+            self._action_amplitude_by_slot = {
+                slot: float(amplitude)
+                for slot, amplitude in self.config.action_amplitude_by_slot.items()
+            }
+        if self.config.action_residual_bounds_by_slot is not None:
+            self._action_residual_bounds_by_slot = {
+                slot: (float(bounds[0]), float(bounds[1]))
+                for slot, bounds in self.config.action_residual_bounds_by_slot.items()
+            }
+        if self.config.observation_joint_reference_by_slot is not None:
+            if set(self.config.observation_joint_reference_by_slot) != configured_slots:
+                raise ValueError("observation_joint_reference_by_slot must exactly cover active joint slots")
+            self._observation_joint_reference_by_slot = {
+                slot: float(value) for slot, value in self.config.observation_joint_reference_by_slot.items()
+            }
+        else:
+            self._observation_joint_reference_by_slot = None
         self._canonical_root_site_id = int(
             mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, CANONICAL_ROOT_SITE_NAME)
         )
@@ -321,9 +403,48 @@ class WholeBodyMuJoCoShard:
                 self._canonical_root_site_id,
             )
         self._canonical_stance_height: float | None = None
-        self._foot_geoms = {
-            f"{link.name}_footpad" for link in blueprint.links if link.foot
+        if self.config.logical_foot_groups is None:
+            foot_groups = {
+                link.name: (f"{link.name}_footpad",) for link in blueprint.links if link.foot
+            }
+        else:
+            foot_groups = {
+                str(foot): tuple(str(geom) for geom in geoms)
+                for foot, geoms in self.config.logical_foot_groups.items()
+            }
+        self._logical_foot_names = tuple(sorted(foot_groups))
+        self._logical_foot_groups = {
+            foot: tuple(foot_groups[foot]) for foot in self._logical_foot_names
         }
+        self._foot_geoms = {
+            geom for geoms in self._logical_foot_groups.values() for geom in geoms
+        }
+        self._foot_geom_ids_by_foot = tuple(
+            tuple(
+                int(mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, name))
+                for name in self._logical_foot_groups[foot]
+            )
+            for foot in self._logical_foot_names
+        )
+        self._foot_geom_ids = tuple(
+            geom_id for group in self._foot_geom_ids_by_foot for geom_id in group
+        )
+        if any(geom_id < 0 for geom_id in self._foot_geom_ids):
+            raise ValueError("compiled model is missing a generated footpad geom")
+        site_names = self.config.logical_foot_reference_sites or {}
+        self._foot_reference_site_ids = tuple(
+            int(mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, site_names[foot]))
+            if foot in site_names
+            else -1
+            for foot in self._logical_foot_names
+        )
+        if site_names and any(site_id < 0 for site_id in self._foot_reference_site_ids):
+            raise ValueError("compiled model is missing a logical foot reference site")
+        self._floor_geom_id = int(
+            mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, "floor")
+        )
+        if self._floor_geom_id < 0:
+            raise ValueError("compiled model is missing floor geom")
         self.stance_solution: StanceSolution = (
             solve_static_stance(self.model, self.data[0], blueprint, physical)
             if stance_solution is None
@@ -336,6 +457,10 @@ class WholeBodyMuJoCoShard:
         )
         self._commands = np.zeros((num_envs, 3), dtype=np.float64)
         self._last_action = np.zeros((num_envs, 45), dtype=np.float64)
+        self._foot_air_time = np.zeros((num_envs, len(self._logical_foot_names)), dtype=np.float64)
+        self._foot_contact_previous = np.zeros(
+            (num_envs, len(self._logical_foot_names)), dtype=bool
+        )
         self._trial_step = np.zeros(num_envs, dtype=np.int64)
         self._trial_index = np.zeros(num_envs, dtype=np.int64)
         self._context_index = np.zeros(num_envs, dtype=np.int64)
@@ -385,13 +510,62 @@ class WholeBodyMuJoCoShard:
         tilt = self.np.zeros(self.num_envs, dtype=self.np.float64)
         motor_strength = self.np.ones((self.num_envs, len(self.blueprint.joints)), dtype=self.np.float64)
         motor_latency = self.np.zeros_like(motor_strength, dtype=self.np.int64)
+        post_root_position = self.np.zeros((self.num_envs, 3), dtype=self.np.float64)
+        post_root_quaternion = self.np.zeros((self.num_envs, 4), dtype=self.np.float64)
+        post_root_linear_velocity = self.np.zeros((self.num_envs, 3), dtype=self.np.float64)
+        post_root_angular_velocity = self.np.zeros((self.num_envs, 3), dtype=self.np.float64)
+        post_projected_gravity = self.np.zeros((self.num_envs, 3), dtype=self.np.float64)
+        joint_position = self.np.zeros((self.num_envs, 45), dtype=self.np.float64)
+        joint_velocity = self.np.zeros((self.num_envs, 45), dtype=self.np.float64)
+        foot_count = len(self._logical_foot_names)
+        foot_contact = self.np.zeros((self.num_envs, foot_count), dtype=bool)
+        foot_normal_force = self.np.zeros((self.num_envs, foot_count), dtype=self.np.float64)
+        foot_height = self.np.zeros((self.num_envs, foot_count), dtype=self.np.float64)
+        foot_planar_speed = self.np.zeros((self.num_envs, foot_count), dtype=self.np.float64)
+        foot_vertical_speed = self.np.zeros((self.num_envs, foot_count), dtype=self.np.float64)
+        foot_air_time = self.np.zeros((self.num_envs, foot_count), dtype=self.np.float64)
+        touchdown = self.np.zeros((self.num_envs, foot_count), dtype=bool)
+        target_would_clamp = self.np.zeros((self.num_envs, 45), dtype=bool)
+        actual_clamp = self.np.zeros((self.num_envs, 45), dtype=bool)
+        unclamped_target = self.np.zeros((self.num_envs, 45), dtype=self.np.float64)
+        ctrl_target = self.np.zeros((self.num_envs, 45), dtype=self.np.float64)
         for env_id, data in enumerate(self.data):
             robot_action = self.embodiment.gather_action(action_array[env_id].tolist())
             processed = self._motor[env_id].process_action(tuple(robot_action), int(self._trial_step[env_id]))
-            self._set_targets(data, processed)
+            clamp_diagnostics = self._set_targets(data, processed)
+            for name, values in clamp_diagnostics.items():
+                if name == "target_would_clamp":
+                    target_would_clamp[env_id, self.embodiment.mapping.selector] = values
+                elif name == "actual_clamp":
+                    actual_clamp[env_id, self.embodiment.mapping.selector] = values
+                elif name == "unclamped_target":
+                    unclamped_target[env_id, self.embodiment.mapping.selector] = values
+                elif name == "ctrl_target":
+                    ctrl_target[env_id, self.embodiment.mapping.selector] = values
             for _ in range(self.config.substeps):
                 self.mujoco.mj_step(self.model, data)
             self._trial_step[env_id] += 1
+            post_root = self._canonical_state(data)
+            post_root_position[env_id] = post_root.world_position
+            post_root_quaternion[env_id] = post_root.world_quaternion_wxyz
+            post_root_linear_velocity[env_id] = post_root.local_linear_velocity
+            post_root_angular_velocity[env_id] = post_root.local_angular_velocity
+            post_projected_gravity[env_id] = post_root.projected_gravity
+            joint_position[env_id] = self.embodiment.scatter_joint_values(
+                tuple(float(data.qpos[address]) for address in self._joint_qpos)
+            )
+            joint_velocity[env_id] = self.embodiment.scatter_joint_values(
+                tuple(float(data.qvel[address]) for address in self._joint_dof)
+            )
+            (
+                foot_contact[env_id],
+                foot_normal_force[env_id],
+                foot_height[env_id],
+                foot_planar_speed[env_id],
+                foot_vertical_speed[env_id],
+                foot_air_time[env_id],
+                touchdown[env_id],
+            ) = self._post_step_foot_metrics(data, env_id)
             state = self._motor[env_id].state_at(int(self._trial_step[env_id]))
             motor_strength[env_id] = state.strength
             motor_latency[env_id] = state.extra_latency_steps
@@ -399,7 +573,7 @@ class WholeBodyMuJoCoShard:
             rewards[env_id], normalized_error[env_id], non_foot_contact[env_id] = self._reward(data, env_id)
             fall = self._is_fallen(data)
             fall_flags[env_id] = fall
-            gravity = self._canonical_state(data).projected_gravity
+            gravity = post_root.projected_gravity
             tilt[env_id] = math.atan2(math.sqrt(gravity[0] ** 2 + gravity[1] ** 2), max(1e-9, -gravity[2]))
             timeout = self._trial_step[env_id] >= self.config.trial_steps
             trial_done[env_id] = fall or timeout
@@ -438,6 +612,24 @@ class WholeBodyMuJoCoShard:
                 "motor_strength": motor_strength,
                 "motor_latency_steps": motor_latency,
                 "previous_action": previous_action,
+                "joint_position": joint_position,
+                "joint_velocity": joint_velocity,
+                "foot_contact": foot_contact,
+                "foot_normal_force": foot_normal_force,
+                "foot_height": foot_height,
+                "foot_planar_speed": foot_planar_speed,
+                "foot_vertical_speed": foot_vertical_speed,
+                "foot_air_time": foot_air_time,
+                "touchdown": touchdown,
+                "target_would_clamp": target_would_clamp,
+                "actual_clamp": actual_clamp,
+                "unclamped_target": unclamped_target,
+                "ctrl_target": ctrl_target,
+                "post_step_pre_reset_world_position": post_root_position,
+                "post_step_pre_reset_world_quaternion_wxyz": post_root_quaternion,
+                "post_step_pre_reset_local_linear_velocity": post_root_linear_velocity,
+                "post_step_pre_reset_local_angular_velocity": post_root_angular_velocity,
+                "post_step_pre_reset_projected_gravity": post_projected_gravity,
             },
             final_observation=final_observation,
         )
@@ -465,17 +657,45 @@ class WholeBodyMuJoCoShard:
         else:
             self._motor[env_id].reset_trial()
         self._last_action[env_id] = 0.0
+        self._foot_air_time[env_id] = 0.0
+        self._foot_contact_previous[env_id] = False
 
-    def _set_targets(self, data: Any, robot_action: tuple[float, ...]) -> None:
-        for value, actuator, actuator_id in zip(robot_action, self.blueprint.actuators, self._actuator_ids):
+    def _set_targets(self, data: Any, robot_action: tuple[float, ...]) -> dict[str, Any]:
+        would_clamp = self.np.zeros(len(self.blueprint.actuators), dtype=bool)
+        actual_clamp = self.np.zeros(len(self.blueprint.actuators), dtype=bool)
+        unclamped_target = self.np.zeros(len(self.blueprint.actuators), dtype=self.np.float64)
+        ctrl_target = self.np.zeros(len(self.blueprint.actuators), dtype=self.np.float64)
+        for index, (value, actuator, actuator_id) in enumerate(
+            zip(robot_action, self.blueprint.actuators, self._actuator_ids)
+        ):
             midpoint = self.stance_solution.actuator_ctrl[actuator.semantic_slot]
             lower, upper = (
                 float(self.model.actuator_ctrlrange[int(actuator_id), 0]),
                 float(self.model.actuator_ctrlrange[int(actuator_id), 1]),
             )
-            half_span = 0.5 * (upper - lower)
-            target = midpoint + self.config.action_scale * float(value) * half_span
-            data.ctrl[actuator_id] = min(upper, max(lower, target))
+            if self._action_residual_bounds_by_slot is not None:
+                negative, positive = self._action_residual_bounds_by_slot[actuator.semantic_slot]
+                target = midpoint + float(value) * (negative if float(value) < 0.0 else positive)
+            elif self._action_amplitude_by_slot is None:
+                half_span = 0.5 * (upper - lower)
+                target = midpoint + self.config.action_scale * float(value) * half_span
+            else:
+                target = (
+                    midpoint
+                    + float(value) * self._action_amplitude_by_slot[actuator.semantic_slot]
+                )
+            would_clamp[index] = target < lower or target > upper
+            clamped = min(upper, max(lower, target))
+            actual_clamp[index] = clamped != target
+            data.ctrl[actuator_id] = clamped
+            unclamped_target[index] = target
+            ctrl_target[index] = clamped
+        return {
+            "target_would_clamp": would_clamp,
+            "actual_clamp": actual_clamp,
+            "unclamped_target": unclamped_target,
+            "ctrl_target": ctrl_target,
+        }
 
     def _joint_limits(self, joint: Any) -> tuple[float, float]:
         scale = self.physical.joint_limit_scales.get(joint.semantic_slot, 1.0) if self.physical else 1.0
@@ -492,10 +712,19 @@ class WholeBodyMuJoCoShard:
     def _observation(self, data: Any, env_id: int, trial_start: bool) -> tuple[float, ...]:
         qpos = tuple(float(data.qpos[address]) for address in self._joint_qpos)
         qvel = tuple(float(data.qvel[address]) for address in self._joint_dof)
+        if self._observation_joint_reference_by_slot is not None:
+            qpos = tuple(
+                value - self._observation_joint_reference_by_slot[joint.semantic_slot]
+                for value, joint in zip(qpos, self.blueprint.joints)
+            )
+        qvel = tuple(value * self.config.observation_joint_velocity_scale for value in qvel)
         root = self._canonical_state(data)
-        return self.embodiment.encode_actor_observation(
+        observation = self.embodiment.encode_actor_observation(
             base_linear_velocity=root.local_linear_velocity,
-            base_angular_velocity=root.local_angular_velocity,
+            base_angular_velocity=tuple(
+                value * self.config.observation_base_angular_velocity_scale
+                for value in root.local_angular_velocity
+            ),
             projected_gravity=root.projected_gravity,
             command=tuple(float(value) for value in self._commands[env_id]),
             joint_position=qpos,
@@ -503,6 +732,12 @@ class WholeBodyMuJoCoShard:
             previous_action=tuple(float(value) for value in self._last_action[env_id]),
             trial_start=float(trial_start),
         )
+        if self.config.observation_phase:
+            phase = phase_from_trial_step(
+                self._trial_step[env_id], self.config.control_hz, self.config.phase_period_s
+            )
+            observation += (math.sin(2.0 * math.pi * float(phase)), math.cos(2.0 * math.pi * float(phase)))
+        return observation
 
     def _reward(self, data: Any, env_id: int) -> tuple[float, float, float]:
         command = self._commands[env_id]
@@ -536,6 +771,7 @@ class WholeBodyMuJoCoShard:
         if self._canonical_root_site_id is None:
             return type("LegacyRoot", (), {
                 "world_position": (float(data.qpos[0]), float(data.qpos[1]), float(data.qpos[2])),
+                "world_quaternion_wxyz": tuple(float(value) for value in data.qpos[3:7]),
                 "local_linear_velocity": tuple(float(value) for value in data.qvel[:3]),
                 "local_angular_velocity": tuple(float(value) for value in data.qvel[3:6]),
                 "projected_gravity": _projected_gravity(tuple(float(value) for value in data.qpos[3:7])),
@@ -543,17 +779,76 @@ class WholeBodyMuJoCoShard:
         return read_canonical_root_state(self.model, data, self._canonical_root_site_id)
 
     def _non_foot_contact(self, data: Any) -> float:
-        floor_id = self.mujoco.mj_name2id(self.model, self.mujoco.mjtObj.mjOBJ_GEOM, "floor")
         contacts = 0
         for index in range(data.ncon):
             contact = data.contact[index]
-            if contact.geom1 != floor_id and contact.geom2 != floor_id:
+            if contact.geom1 != self._floor_geom_id and contact.geom2 != self._floor_geom_id:
                 continue
-            other = contact.geom2 if contact.geom1 == floor_id else contact.geom1
+            other = contact.geom2 if contact.geom1 == self._floor_geom_id else contact.geom1
             name = self.mujoco.mj_id2name(self.model, self.mujoco.mjtObj.mjOBJ_GEOM, other) or ""
             if name not in self._foot_geoms:
                 contacts += 1
         return float(contacts > 0)
+
+    def _foot_contacts(self, data: Any) -> tuple[Any, Any]:
+        foot_index_by_id = {
+            int(geom_id): foot_index
+            for foot_index, group in enumerate(self._foot_geom_ids_by_foot)
+            for geom_id in group
+        }
+        contact = self.np.zeros(len(self._logical_foot_names), dtype=bool)
+        normal_force = self.np.zeros(len(self._logical_foot_names), dtype=self.np.float64)
+        for index in range(data.ncon):
+            pair = data.contact[index]
+            if pair.geom1 == self._floor_geom_id and pair.geom2 in foot_index_by_id:
+                foot_index = foot_index_by_id[int(pair.geom2)]
+            elif pair.geom2 == self._floor_geom_id and pair.geom1 in foot_index_by_id:
+                foot_index = foot_index_by_id[int(pair.geom1)]
+            else:
+                continue
+            force = self.np.zeros(6, dtype=self.np.float64)
+            self.mujoco.mj_contactForce(self.model, data, index, force)
+            contact[foot_index] = True
+            normal_force[foot_index] += max(0.0, float(force[0]))
+        return contact, normal_force
+
+    def _post_step_foot_metrics(self, data: Any, env_id: int) -> tuple[Any, Any, Any, Any, Any, Any, Any]:
+        contact, normal_force = self._foot_contacts(data)
+        height = self.np.asarray(
+            [
+                float(data.site_xpos[site_id, 2])
+                if site_id >= 0
+                else float(data.geom_xpos[self._foot_geom_ids_by_foot[index][0], 2])
+                for index, site_id in enumerate(self._foot_reference_site_ids)
+            ],
+            dtype=self.np.float64,
+        )
+        velocity = self.np.zeros((len(self._logical_foot_names), 6), dtype=self.np.float64)
+        for index, site_id in enumerate(self._foot_reference_site_ids):
+            obj_type = self.mujoco.mjtObj.mjOBJ_SITE if site_id >= 0 else self.mujoco.mjtObj.mjOBJ_GEOM
+            obj_id = site_id if site_id >= 0 else self._foot_geom_ids_by_foot[index][0]
+            self.mujoco.mj_objectVelocity(
+                self.model,
+                data,
+                obj_type,
+                int(obj_id),
+                velocity[index],
+                0,
+            )
+        linear_velocity = velocity[:, 3:6]
+        planar_speed = self.np.linalg.norm(linear_velocity[:, :2], axis=1)
+        vertical_speed = linear_velocity[:, 2]
+        touchdown = contact & ~self._foot_contact_previous[env_id]
+        previous_air_time = self._foot_air_time[env_id].copy()
+        next_air_time = self.np.where(
+            contact,
+            0.0,
+            previous_air_time + 1.0 / self.config.control_hz,
+        )
+        metric_air_time = self.np.where(touchdown, previous_air_time, next_air_time)
+        self._foot_air_time[env_id] = next_air_time
+        self._foot_contact_previous[env_id] = contact
+        return contact, normal_force, height, planar_speed, vertical_speed, metric_air_time, touchdown
 
     def _sample_command(self, rng: random.Random) -> tuple[float, float, float]:
         return (

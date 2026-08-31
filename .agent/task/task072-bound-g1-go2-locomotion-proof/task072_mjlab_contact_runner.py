@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import math
 import os
+import subprocess
 import sys
 import time
 import traceback
 import xml.etree.ElementTree as ET
 from copy import deepcopy
 from dataclasses import asdict, replace
-import importlib.util
 from pathlib import Path
 from typing import Any
 
@@ -26,12 +27,25 @@ ASSET_XML = CONTACT_ROOT / "unitree_g1_mjlab_g1_7capsule_task_v2.xml"
 CONTACT_PROFILE = CONTACT_ROOT / "contact_profile.json"
 STANCE = CONTACT_ROOT / "stance_solution.json"
 EXTERNAL_MJLAB = ROOT / ".external/unitree_rl_mjlab"
-if not EXTERNAL_MJLAB.exists():
-    EXTERNAL_MJLAB = Path("/home/admin1/workspace/proj/locomotion_rl/.external/unitree_rl_mjlab")
 GPU_LOCK = Path("/home/admin1/workspace/run/.gpu.lock")
 TASK_ID = "Task072-G1-MJLab-7Capsule-SingleGround-Flat"
 LINEAGE_ID = "mjlab_g1_7capsule_task_v3_single_ground"
 MJLAB_PARENT_TASK = "Unitree-G1-Flat"
+ACTION_CONTRACT_VERSION = "task072_mjlab_signed_headroom_v1"
+REWARD_CONTRACT_VERSION = "task072_mjlab_biped_phase_contact_v3"
+POLICY_ACTION_DOMAIN = {"transform": "clip", "lower": -1.0, "upper": 1.0}
+EVAL_CONFIG_DIFF_ALLOWLIST = {
+    "env.scene.num_envs",
+    "env.seed",
+    "env.episode_length_s",
+    "env.render_mode",
+    "agent.seed",
+    "registration.num_envs",
+    "registration.seed",
+    "registration.max_iterations",
+    "registration.task_id",
+    "registration.transitions_per_update",
+}
 MAX_TRANSITIONS = 63_897_600
 DEFAULT_SEED = 720301
 REQUIRED_CAPACITY_NUM_ENVS = 4096
@@ -394,6 +408,8 @@ def ensure_v2_artifacts() -> None:
 
 
 def _prepare_external_imports() -> None:
+    if not EXTERNAL_MJLAB.exists():
+        raise RuntimeError(f"Task072 requires frame-local external MJLab checkout: {EXTERNAL_MJLAB}")
     external = str(EXTERNAL_MJLAB)
     if external not in sys.path:
         sys.path.insert(0, external)
@@ -483,21 +499,91 @@ def _ground_plane_audit(model: Any, data: Any) -> dict[str, Any]:
     }
 
 
-def action_scale_from_asset_xml() -> dict[str, float]:
+def action_contract_from_asset_xml() -> dict[str, Any]:
     ensure_v2_artifacts()
     root = ET.parse(ASSET_XML).getroot()
-    scale: dict[str, float] = {}
+    stance = _stance_dict()
+    semantic_by_joint = {anonymous: semantic for semantic, anonymous in SEMANTIC_TO_ANON_JOINT.items()}
+    joint_ranges = {
+        joint.get("name"): tuple(float(value) for value in joint.get("range", "").split())
+        for joint in root.findall(".//joint")
+        if joint.get("name") and joint.get("range")
+    }
+    rows: list[dict[str, Any]] = []
     for actuator in root.findall(".//actuator/position"):
         joint = actuator.get("joint")
         kp = float(actuator.get("kp", "nan"))
         force = tuple(float(value) for value in actuator.get("forcerange", "").split())
-        if not joint or not force or kp <= 0.0:
+        if not joint or joint not in semantic_by_joint or joint not in joint_ranges or not force or kp <= 0.0:
             raise ValueError(f"bad position actuator scale inputs: {actuator.attrib}")
+        semantic = semantic_by_joint[joint]
+        lower, upper = joint_ranges[joint]
+        offset = float(stance["actuator_ctrl_eq"][semantic])
+        span = upper - lower
+        safety_margin = 0.05 * span
+        safe_lower = lower + safety_margin
+        safe_upper = upper - safety_margin
+        negative_headroom = offset - safe_lower
+        positive_headroom = safe_upper - offset
         effort = min(abs(value) for value in force)
-        scale[joint] = 0.25 * effort / kp
-    if len(scale) != 29:
-        raise ValueError(f"expected 29 anonymous G1 action scales, got {len(scale)}")
-    return scale
+        motor_delta = 0.25 * effort / kp
+        negative_amplitude = min(motor_delta, negative_headroom)
+        positive_amplitude = min(motor_delta, positive_headroom)
+        if (
+            lower > offset
+            or offset > upper
+            or negative_amplitude <= 0.0
+            or positive_amplitude <= 0.0
+        ):
+            raise ValueError(f"unsafe Task072 action headroom for {semantic}")
+        rows.append(
+            {
+                "semantic_joint": semantic,
+                "anonymous_joint": joint,
+                "actuator": actuator.get("name"),
+                "joint_range": [lower, upper],
+                "stance_action_offset": offset,
+                "motor_delta": motor_delta,
+                "safety_margin": safety_margin,
+                "negative_headroom": negative_headroom,
+                "positive_headroom": positive_headroom,
+                "signed_negative_amplitude": negative_amplitude,
+                "signed_positive_amplitude": positive_amplitude,
+            }
+        )
+    rows.sort(key=lambda row: row["anonymous_joint"])
+    if len(rows) != 29 or len({row["semantic_joint"] for row in rows}) != 29:
+        raise ValueError(f"expected unique 29 anonymous G1 action contract rows, got {len(rows)}")
+    payload = {
+        "schema_version": 1,
+        "version": ACTION_CONTRACT_VERSION,
+        "lineage_id": LINEAGE_ID,
+        "policy_action_domain": POLICY_ACTION_DOMAIN,
+        "target_rule": "offset + raw<0 ? raw*negative_amplitude : raw*positive_amplitude",
+        "rows": rows,
+    }
+    payload["payload_sha256"] = payload_sha256(payload)
+    return payload
+
+
+def action_scale_from_asset_xml() -> dict[str, float]:
+    contract = action_contract_from_asset_xml()
+    return {row["anonymous_joint"]: row["signed_positive_amplitude"] for row in contract["rows"]}
+
+
+def _signed_action_bounds_by_joint() -> tuple[dict[str, float], dict[str, float]]:
+    contract = action_contract_from_asset_xml()
+    negative = {row["anonymous_joint"]: row["signed_negative_amplitude"] for row in contract["rows"]}
+    positive = {row["anonymous_joint"]: row["signed_positive_amplitude"] for row in contract["rows"]}
+    return negative, positive
+
+
+def apply_signed_action_contract(raw_actions: Any, negative_scale: Any, positive_scale: Any, offset: Any) -> tuple[Any, Any]:
+    import torch
+
+    clipped = torch.clamp(raw_actions, POLICY_ACTION_DOMAIN["lower"], POLICY_ACTION_DOMAIN["upper"])
+    scale = torch.where(clipped < 0.0, negative_scale, positive_scale)
+    return clipped * scale + offset, clipped
 
 
 def _runtime_metadata(command: str) -> dict[str, Any]:
@@ -505,6 +591,18 @@ def _runtime_metadata(command: str) -> dict[str, Any]:
     import rsl_rl
     import torch
 
+    external_head = subprocess.run(
+        ["git", "-C", str(EXTERNAL_MJLAB), "rev-parse", "HEAD"],
+        check=False,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    external_status = subprocess.run(
+        ["git", "-C", str(EXTERNAL_MJLAB), "status", "--short"],
+        check=False,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
     return {
         "command": command,
         "cwd": str(Path.cwd()),
@@ -517,6 +615,13 @@ def _runtime_metadata(command: str) -> dict[str, Any]:
         "cuda_available": bool(torch.cuda.is_available()),
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
         "gpu_lock_path": str(GPU_LOCK),
+        "external_mjlab": {
+            "path": str(EXTERNAL_MJLAB.resolve()),
+            "expected_commit": "1425b15f73bd4095f0df53709d7c389c3eb9e790",
+            "actual_commit": external_head,
+            "tracked_clean": not external_status,
+            "status_short": external_status,
+        },
         "h200_used": False,
         "external_downloads_performed": False,
         "task048_checkpoint_used": False,
@@ -533,12 +638,13 @@ def build_task_cfg(
 ) -> tuple[Any, Any, type | None, dict[str, Any]]:
     ensure_v2_artifacts()
     _prepare_external_imports()
+    import mjlab.tasks  # noqa: F401
     import mujoco
-    import mjlab.tasks
-    import src.tasks
+    import src.tasks  # noqa: F401
     from mjlab.actuator import XmlPositionActuatorCfg
     from mjlab.entity import EntityArticulationInfoCfg
-    from mjlab.envs.mdp.actions import JointPositionActionCfg
+    from mjlab.envs.mdp.actions import JointPositionAction, JointPositionActionCfg
+    from mjlab.envs.mdp.actions.actions import resolve_matching_names_values
     from mjlab.sensor import ContactMatch
     from mjlab.tasks.registry import load_env_cfg, load_rl_cfg, load_runner_cls, register_mjlab_task
     from mjlab.utils.spec_config import CollisionCfg
@@ -628,33 +734,69 @@ def build_task_cfg(
     action_cfg.preserve_order = True
     action_cfg.use_default_offset = False
     action_cfg.offset = action_offset
-    action_cfg.scale = action_scale_from_asset_xml()
-    if fixed_command:
-        twist_cmd = env_cfg.commands["twist"]
-        twist_cmd.heading_command = False
-        twist_cmd.rel_standing_envs = 0.0
-        twist_cmd.rel_heading_envs = 0.0
-        twist_cmd.init_velocity_prob = 0.0
-        twist_cmd.resampling_time_range = (1.0e9, 1.0e9)
-        twist_cmd.ranges.lin_vel_x = (0.5, 0.5)
-        twist_cmd.ranges.lin_vel_y = (0.0, 0.0)
-        twist_cmd.ranges.ang_vel_z = (0.0, 0.0)
-        twist_cmd.ranges.heading = None
-        env_cfg.episode_length_s = 10_000.0
-        for event_name in ("push_robot", "foot_friction", "encoder_bias", "base_com"):
-            env_cfg.events.pop(event_name, None)
-        if "reset_base" in env_cfg.events:
-            env_cfg.events["reset_base"].params["pose_range"] = {
-                "x": (0.0, 0.0),
-                "y": (0.0, 0.0),
-                "z": (0.0, 0.0),
-                "yaw": (0.0, 0.0),
-            }
-        if "reset_robot_joints" in env_cfg.events:
-            env_cfg.events["reset_robot_joints"].params["position_range"] = (0.0, 0.0)
-            env_cfg.events["reset_robot_joints"].params["velocity_range"] = (0.0, 0.0)
-        env_cfg.observations["actor"].enable_corruption = False
-        env_cfg.curriculum = {}
+    negative_scale, positive_scale = _signed_action_bounds_by_joint()
+    action_cfg.scale = positive_scale
+    action_cfg.task072_negative_scale = negative_scale
+    action_cfg.task072_positive_scale = positive_scale
+    action_cfg.task072_policy_action_domain = dict(POLICY_ACTION_DOMAIN)
+
+    class Task072SignedJointPositionAction(JointPositionAction):
+        def __init__(self, cfg: Any, env: Any) -> None:
+            import torch
+
+            super().__init__(cfg, env)
+            neg_index, _neg_names, neg_values = resolve_matching_names_values(
+                cfg.task072_negative_scale, self._target_names
+            )
+            pos_index, _pos_names, pos_values = resolve_matching_names_values(
+                cfg.task072_positive_scale, self._target_names
+            )
+            self._task072_negative_scale = self._scale.clone()
+            self._task072_positive_scale = self._scale.clone()
+            self._task072_negative_scale[:, neg_index] = torch.tensor(neg_values, device=self.device)
+            self._task072_positive_scale[:, pos_index] = torch.tensor(pos_values, device=self.device)
+            self.task072_clip_fraction = 0.0
+
+        def process_actions(self, actions: Any) -> None:
+            self._raw_actions[:] = actions
+            self._processed_actions, clipped = apply_signed_action_contract(
+                self._raw_actions,
+                self._task072_negative_scale,
+                self._task072_positive_scale,
+                self._offset,
+            )
+            self.task072_clip_fraction = float((clipped != self._raw_actions).float().mean().detach().cpu())
+
+    action_cfg.build = lambda env: Task072SignedJointPositionAction(action_cfg, env)  # type: ignore[method-assign]
+    twist_cmd = env_cfg.commands["twist"]
+    twist_cmd.heading_command = False
+    twist_cmd.rel_standing_envs = 0.0
+    twist_cmd.rel_heading_envs = 0.0
+    twist_cmd.init_velocity_prob = 0.0
+    twist_cmd.resampling_time_range = (1.0e9, 1.0e9)
+    twist_cmd.ranges.lin_vel_x = (0.5, 0.5)
+    twist_cmd.ranges.lin_vel_y = (0.0, 0.0)
+    twist_cmd.ranges.ang_vel_z = (0.0, 0.0)
+    twist_cmd.ranges.heading = None
+    env_cfg.episode_length_s = 10_000.0 if not fixed_command else float(max(20.0, rollout_steps / 50.0))
+    for event_name in ("push_robot", "foot_friction", "encoder_bias", "base_com"):
+        env_cfg.events.pop(event_name, None)
+    if "reset_base" in env_cfg.events:
+        env_cfg.events["reset_base"].params["pose_range"] = {
+            "x": (0.0, 0.0),
+            "y": (0.0, 0.0),
+            "z": (0.0, 0.0),
+            "yaw": (0.0, 0.0),
+        }
+    if "reset_robot_joints" in env_cfg.events:
+        env_cfg.events["reset_robot_joints"].params["position_range"] = (0.0, 0.0)
+        env_cfg.events["reset_robot_joints"].params["velocity_range"] = (0.0, 0.0)
+    env_cfg.observations["actor"].enable_corruption = False
+    env_cfg.curriculum = {}
+    if "is_terminated" in env_cfg.rewards:
+        env_cfg.rewards.pop("is_terminated")
+    if "feet_gait" in env_cfg.rewards:
+        env_cfg.rewards.pop("feet_gait")
 
     agent_cfg.seed = int(seed)
     agent_cfg.num_steps_per_env = int(rollout_steps)
@@ -678,10 +820,14 @@ def build_task_cfg(
         "rollout_steps_per_env": int(rollout_steps),
         "transitions_per_update": int(num_envs) * int(rollout_steps),
         "max_iterations": int(max_iterations),
-        "fixed_command": bool(fixed_command),
+        "fixed_command": True,
         "run_name": agent_cfg.run_name,
         "experiment_name": agent_cfg.experiment_name,
-        "action_scale_sha256": payload_sha256(action_cfg.scale),
+        "action_contract_version": ACTION_CONTRACT_VERSION,
+        "action_contract_sha256": action_contract_from_asset_xml()["payload_sha256"],
+        "action_scale_sha256": payload_sha256({"negative": negative_scale, "positive": positive_scale}),
+        "policy_action_domain": dict(POLICY_ACTION_DOMAIN),
+        "reward_contract_version": REWARD_CONTRACT_VERSION,
         "lineage_id": LINEAGE_ID,
         "joint_mapping": mapping_table,
         "semantic_to_anonymous_joint": semantic_to_joint,
@@ -692,11 +838,108 @@ def build_task_cfg(
         "expected_stance_joint_qpos": dict(stance["joint_qpos"]),
         "runtime_action_offset": action_offset,
         "expected_actuator_ctrl_eq": dict(stance["actuator_ctrl_eq"]),
-        "eval_disabled_events": ["push_robot", "foot_friction", "encoder_bias", "base_com"] if fixed_command else [],
-        "eval_curriculum_disabled": bool(fixed_command),
+        "disabled_events": ["push_robot", "foot_friction", "encoder_bias", "base_com"],
+        "curriculum_disabled": True,
+        "removed_parent_rewards": ["is_terminated", "feet_gait"],
     }
-    register_mjlab_task(task_id, env_cfg, env_cfg, agent_cfg, runner_cls)
+    try:
+        register_mjlab_task(task_id, env_cfg, env_cfg, agent_cfg, runner_cls)
+    except ValueError as exc:
+        if "already registered" not in str(exc):
+            raise
     return env_cfg, agent_cfg, runner_cls, registration
+
+
+def _canonical_config_payload(env_cfg: Any, agent_cfg: Any, registration: dict[str, Any], *, render_mode: str | None) -> dict[str, Any]:
+    twist = env_cfg.commands["twist"]
+    action_cfg = env_cfg.actions["joint_pos"]
+    return {
+        "schema_version": 1,
+        "lineage_id": LINEAGE_ID,
+        "env": {
+            "scene": {"num_envs": int(env_cfg.scene.num_envs)},
+            "seed": int(env_cfg.seed),
+            "episode_length_s": float(env_cfg.episode_length_s),
+            "render_mode": render_mode,
+            "command": {
+                "lin_vel_x": list(twist.ranges.lin_vel_x),
+                "lin_vel_y": list(twist.ranges.lin_vel_y),
+                "ang_vel_z": list(twist.ranges.ang_vel_z),
+                "heading": twist.ranges.heading,
+                "heading_command": bool(twist.heading_command),
+                "standing_probability": float(twist.rel_standing_envs),
+                "heading_probability": float(twist.rel_heading_envs),
+                "init_velocity_probability": float(twist.init_velocity_prob),
+                "resampling_time_range": list(twist.resampling_time_range),
+            },
+            "events": sorted(env_cfg.events),
+            "actor_observation_corruption": bool(env_cfg.observations["actor"].enable_corruption),
+            "curriculum": dict(env_cfg.curriculum),
+            "reward_names": sorted(env_cfg.rewards),
+        },
+        "agent": {
+            "seed": int(agent_cfg.seed),
+            "num_steps_per_env": int(agent_cfg.num_steps_per_env),
+            "max_iterations": int(agent_cfg.max_iterations),
+            "resume": bool(agent_cfg.resume),
+            "clip_actions": getattr(agent_cfg, "clip_actions", None),
+        },
+        "action": {
+            "version": ACTION_CONTRACT_VERSION,
+            "policy_action_domain": dict(POLICY_ACTION_DOMAIN),
+            "target_names": list(action_cfg.actuator_names),
+            "negative_scale": dict(action_cfg.task072_negative_scale),
+            "positive_scale": dict(action_cfg.task072_positive_scale),
+            "offset": dict(action_cfg.offset),
+        },
+        "reward": {"version": REWARD_CONTRACT_VERSION},
+        "registration": registration,
+    }
+
+
+def _diff_payload(left: Any, right: Any, prefix: str = "") -> list[str]:
+    if isinstance(left, dict) and isinstance(right, dict):
+        keys = sorted(set(left) | set(right))
+        return [
+            path
+            for key in keys
+            for path in _diff_payload(left.get(key), right.get(key), f"{prefix}.{key}" if prefix else str(key))
+        ]
+    if left != right:
+        return [prefix or "configuration"]
+    return []
+
+
+def canonical_train_eval_config_payload() -> dict[str, Any]:
+    train_env, train_agent, _runner_cls, train_registration = build_task_cfg(
+        REQUIRED_CAPACITY_NUM_ENVS,
+        REQUIRED_ROLLOUT_STEPS,
+        DEFAULT_SEED,
+        1,
+    )
+    eval_env, eval_agent, _runner_cls, eval_registration = build_task_cfg(
+        256,
+        REQUIRED_ROLLOUT_STEPS,
+        DEFAULT_SEED + 99,
+        1,
+        fixed_command=True,
+    )
+    train_payload = _canonical_config_payload(train_env, train_agent, train_registration, render_mode=None)
+    eval_payload = _canonical_config_payload(eval_env, eval_agent, eval_registration, render_mode=None)
+    diff = _diff_payload(train_payload, eval_payload)
+    non_allowlisted = [path for path in diff if path not in EVAL_CONFIG_DIFF_ALLOWLIST]
+    payload = {
+        "schema_version": 1,
+        "lineage_id": LINEAGE_ID,
+        "train": train_payload,
+        "eval": eval_payload,
+        "eval_diff_allowlist": sorted(EVAL_CONFIG_DIFF_ALLOWLIST),
+        "diff": diff,
+        "non_allowlisted_diff": non_allowlisted,
+        "passed": not non_allowlisted,
+    }
+    payload["payload_sha256"] = payload_sha256(payload)
+    return payload
 
 
 def _env_smoke(num_envs: int, rollout_steps: int, seed: int, device: str, steps: int) -> dict[str, Any]:
@@ -841,7 +1084,7 @@ def verify_runtime_binding(args: argparse.Namespace) -> int:
                 raise ValueError(f"compiled model is missing stance joint: {joint_name}")
             frozen_data.qpos[int(model.jnt_qposadr[joint_id])] = value
         ground = _ground_plane_audit(model, frozen_data)
-        hold_steps = int(round(2.0 / float(env.unwrapped.step_dt)))
+        hold_steps = round(2.0 / float(env.unwrapped.step_dt))
         hold_done_count = int(done.sum().detach().cpu())
         height_values = [float(robot.data.root_link_pos_w[0, 2].detach().cpu())]
         gravity_xy_values = [float(torch.linalg.norm(robot.data.projected_gravity_b[0, :2]).detach().cpu())]
@@ -945,7 +1188,7 @@ def verify_runtime_binding(args: argparse.Namespace) -> int:
         result["checks"] = checks
         result["passed"] = all(checks.values())
         env.close()
-    except BaseException as exc:
+    except Exception as exc:  # noqa: BLE001
         result.update({"passed": False, "error": repr(exc), "traceback": traceback.format_exc()})
     finally:
         if outer is not None:
@@ -967,7 +1210,7 @@ def r0_smoke(args: argparse.Namespace) -> int:
             steps=args.steps,
         )
         result["error"] = None
-    except BaseException as exc:
+    except Exception as exc:  # noqa: BLE001
         result = {
             "passed": False,
             "error": repr(exc),
@@ -1003,7 +1246,7 @@ def capacity_smoke(args: argparse.Namespace) -> int:
         return 1
     try:
         gpu_lock = _require_gpu_lock_for_device(args.device)
-    except BaseException as exc:
+    except Exception as exc:  # noqa: BLE001
         payload = {
             **_common_manifest(args),
             "candidates": [int(v) for v in args.candidates],
@@ -1036,7 +1279,7 @@ def capacity_smoke(args: argparse.Namespace) -> int:
                 steps=args.steps,
             )
             item["error"] = None
-        except BaseException as exc:
+        except Exception as exc:  # noqa: BLE001
             item = {
                 "num_envs": int(num_envs),
                 "rollout_steps_per_env": args.rollout_steps,
@@ -1107,11 +1350,16 @@ def one_update_train(args: argparse.Namespace) -> int:
     import torch
     from mjlab.envs import ManagerBasedRlEnv
     from mjlab.rl import MjlabOnPolicyRunner, RslRlVecEnvWrapper
+    from mjlab.tasks.registry import load_env_cfg, load_rl_cfg, load_runner_cls
     from mjlab.utils.torch import configure_torch_backends
 
-    from mjlab.tasks.registry import load_env_cfg, load_rl_cfg, load_runner_cls
-
-    _env_cfg, _agent_cfg, _runner_cls, registration = build_task_cfg(args.num_envs, args.rollout_steps, args.seed, args.updates)
+    _env_cfg, _agent_cfg, _runner_cls, registration = build_task_cfg(
+        args.num_envs,
+        args.rollout_steps,
+        args.seed,
+        args.updates,
+        fixed_command=True,
+    )
     env_cfg = load_env_cfg(registration["task_id"])
     agent_cfg = load_rl_cfg(registration["task_id"])
     agent_cfg.max_iterations = args.updates
@@ -1135,6 +1383,7 @@ def one_update_train(args: argparse.Namespace) -> int:
     payload = {
         **_common_manifest(args),
         "task_id": registration["task_id"],
+        "schema_kind": "one_update_train_smoke",
         "run_dir": str(log_dir),
         "num_envs": args.num_envs,
         "rollout_steps_per_env": args.rollout_steps,
@@ -1151,6 +1400,7 @@ def one_update_train(args: argparse.Namespace) -> int:
             "consumption_checks": capacity_evidence["consumption_checks"],
         },
         "wall_time_s": time.time() - start,
+        "training_execution_complete": len(checkpoints) > 0,
         "passed": len(checkpoints) > 0,
     }
     write_json((log_dir / "task072_mjlab_one_update_smoke.json"), payload)
@@ -1178,6 +1428,17 @@ def evaluate_checkpoint(args: argparse.Namespace) -> int:
     from mjlab.utils.torch import configure_torch_backends
 
     checkpoint = args.checkpoint.resolve()
+    if int(args.eval_envs) != 256 or float(args.eval_seconds) != 20.0:
+        raise ValueError("formal Task072 MJLab eval is fixed at 256 envs for 20 s")
+    manifest_payload = json.loads(args.run_manifest.read_text(encoding="utf-8"))
+    allowed_checkpoints = {
+        str(Path(path).resolve()): sha
+        for path, sha in manifest_payload.get("checkpoint_sha256", {}).items()
+    }
+    if str(checkpoint) not in allowed_checkpoints:
+        raise ValueError("eval checkpoint is not listed in the training manifest")
+    if sha256_path(checkpoint) != allowed_checkpoints[str(checkpoint)]:
+        raise ValueError("eval checkpoint SHA does not match the training manifest")
     result: dict[str, Any]
     start = time.time()
     try:
@@ -1203,7 +1464,7 @@ def evaluate_checkpoint(args: argparse.Namespace) -> int:
 
         robot = env.unwrapped.scene["robot"]
         contact_sensor = env.unwrapped.scene["feet_ground_contact"]
-        steps = int(round(args.eval_seconds / float(env.unwrapped.step_dt)))
+        steps = round(args.eval_seconds / float(env.unwrapped.step_dt))
         start_x = robot.data.root_link_pos_w[:, 0].clone()
         fallen = torch.zeros(args.eval_envs, dtype=torch.bool, device=args.device)
         active_counts = torch.zeros(args.eval_envs, dtype=torch.float32, device=args.device)
@@ -1302,6 +1563,7 @@ def evaluate_checkpoint(args: argparse.Namespace) -> int:
         result = {
             **_common_manifest(args),
             "checkpoint": {"path": str(checkpoint), "sha256": sha256_path(checkpoint)},
+            "training_manifest": {"path": str(args.run_manifest.resolve()), "sha256": sha256_path(args.run_manifest.resolve())},
             "gpu_lock": gpu_lock,
             "metrics": metrics,
             "checks": checks,
@@ -1309,7 +1571,7 @@ def evaluate_checkpoint(args: argparse.Namespace) -> int:
             "wall_time_s": time.time() - start,
         }
         env.close()
-    except BaseException as exc:
+    except Exception as exc:  # noqa: BLE001
         result = {
             **_common_manifest(args),
             "checkpoint": {"path": str(checkpoint), "sha256": sha256_path(checkpoint) if checkpoint.exists() else None},
@@ -1324,12 +1586,58 @@ def evaluate_checkpoint(args: argparse.Namespace) -> int:
     return 0 if result["passed"] else 1
 
 
+def render_command(args: argparse.Namespace) -> int:
+    result = {
+        **_common_manifest(args),
+        "schema_kind": "render_video",
+        "checkpoint": str(args.checkpoint.resolve()),
+        "output": str(args.output.resolve()),
+        "passed": False,
+        "error": "Task072 MJLab render requires a numeric eval pass and is disabled in this repair-only CPU gate",
+    }
+    write_json(args.output.with_suffix(".json").resolve(), result)
+    print(json.dumps({"passed": False, "output": str(args.output.with_suffix(".json").resolve())}), flush=True)
+    return 1
+
+
+def verify_reload_command(args: argparse.Namespace) -> int:
+    result = {
+        **_common_manifest(args),
+        "schema_kind": "independent_reload_verifier",
+        "checkpoint": str(args.checkpoint.resolve()),
+        "eval": str(args.eval.resolve()),
+        "passed": False,
+        "error": "reload verifier refuses without matching training manifest, checkpoint, eval and video evidence",
+    }
+    write_json(args.output.resolve(), result)
+    print(json.dumps({"passed": False, "output": str(args.output.resolve())}), flush=True)
+    return 1
+
+
+def freeze_command(args: argparse.Namespace) -> int:
+    result = {
+        **_common_manifest(args),
+        "schema_kind": "freeze_manifest",
+        "passed": False,
+        "error": "Task072 freeze refused: numeric eval, video, and independent verifier are not passing",
+        "required_evidence": ["eval", "video", "independent_reload_verifier"],
+    }
+    write_json(args.output.resolve(), result)
+    print(json.dumps({"passed": False, "output": str(args.output.resolve())}), flush=True)
+    return 1
+
+
 def _common_manifest(args: argparse.Namespace) -> dict[str, Any]:
+    ensure_v2_artifacts()
     contact_payload = json.loads(CONTACT_PROFILE.read_text(encoding="utf-8"))
     stance_payload = json.loads(STANCE.read_text(encoding="utf-8"))
-    manifest_subtask = "003f" if getattr(args, "command", None) == "verify-runtime-binding" else "003g"
+    action_contract = action_contract_from_asset_xml()
+    canonical = canonical_train_eval_config_payload()
+    runtime = _runtime_metadata(" ".join(sys.argv))
+    external = runtime["external_mjlab"]
+    manifest_subtask = "003f" if getattr(args, "command", None) == "verify-runtime-binding" else "003h"
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "task": "task072-bound-g1-go2-locomotion-proof",
         "subtask": manifest_subtask,
         "lineage_id": LINEAGE_ID,
@@ -1348,9 +1656,27 @@ def _common_manifest(args: argparse.Namespace) -> dict[str, Any]:
         "contact_profile_id": CONTACT_PROFILE_ID,
         "runner_source_sha256": sha256_path(Path(__file__).resolve()),
         "runtime_spec_sha256": hashlib.sha256(runtime_spec_xml().encode()).hexdigest(),
+        "action_contract": {
+            "version": ACTION_CONTRACT_VERSION,
+            "payload_sha256": action_contract["payload_sha256"],
+            "policy_action_domain": dict(POLICY_ACTION_DOMAIN),
+        },
+        "reward_contract": {"version": REWARD_CONTRACT_VERSION},
+        "canonical_train_eval_config": {
+            "payload_sha256": canonical["payload_sha256"],
+            "diff": canonical["diff"],
+            "eval_diff_allowlist": canonical["eval_diff_allowlist"],
+            "non_allowlisted_diff": canonical["non_allowlisted_diff"],
+            "passed": canonical["passed"],
+        },
+        "external_mjlab_checks": {
+            "frame_local": EXTERNAL_MJLAB.is_relative_to(ROOT),
+            "commit_pinned": external["actual_commit"] == external["expected_commit"],
+            "tracked_clean": external["tracked_clean"],
+        },
         "max_transitions": MAX_TRANSITIONS,
         "seed": getattr(args, "seed", DEFAULT_SEED),
-        "runtime": _runtime_metadata(" ".join(sys.argv)),
+        "runtime": runtime,
     }
 
 
@@ -1388,6 +1714,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     evaluate = sub.add_parser("evaluate")
     evaluate.add_argument("--checkpoint", type=Path, required=True)
+    evaluate.add_argument("--run-manifest", type=Path, required=True)
     evaluate.add_argument("--output", type=Path, required=True)
     evaluate.add_argument("--eval-envs", type=int, default=256)
     evaluate.add_argument("--eval-seconds", type=float, default=20.0)
@@ -1400,6 +1727,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     verify.add_argument("--seed", type=int, default=DEFAULT_SEED)
     verify.add_argument("--device", default="cpu")
     verify.set_defaults(func=verify_runtime_binding)
+    render = sub.add_parser("render")
+    render.add_argument("--checkpoint", type=Path, required=True)
+    render.add_argument("--output", type=Path, required=True)
+    render.add_argument("--seed", type=int, default=DEFAULT_SEED + 199)
+    render.add_argument("--device", default="cuda:0")
+    render.set_defaults(func=render_command)
+    reload_verify = sub.add_parser("verify-reload")
+    reload_verify.add_argument("--checkpoint", type=Path, required=True)
+    reload_verify.add_argument("--eval", type=Path, required=True)
+    reload_verify.add_argument("--output", type=Path, required=True)
+    reload_verify.add_argument("--seed", type=int, default=DEFAULT_SEED + 299)
+    reload_verify.add_argument("--device", default="cpu")
+    reload_verify.set_defaults(func=verify_reload_command)
+    freeze = sub.add_parser("freeze")
+    freeze.add_argument("--output", type=Path, default=RUNTIME_BINDING_ROOT / "freeze/task072_freeze_manifest.json")
+    freeze.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    freeze.add_argument("--device", default="cpu")
+    freeze.set_defaults(func=freeze_command)
     return parser.parse_args(argv)
 
 

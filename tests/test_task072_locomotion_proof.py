@@ -157,7 +157,7 @@ def test_mjlab_runner_records_003f_only_for_runtime_verifier(tmp_path: Path) -> 
     verify = MJLAB_RUNNER.parse_args(["verify-runtime-binding", "--output", "verify.json"])
     capacity = MJLAB_RUNNER.parse_args(["capacity-smoke", "--output", "capacity.json"])
     one_update = MJLAB_RUNNER.parse_args(["one-update-train", "--run-dir", "run"])
-    evaluate = MJLAB_RUNNER.parse_args(["evaluate", "--checkpoint", "model_100.pt", "--output", "eval.json"])
+    evaluate = MJLAB_RUNNER.parse_args(["evaluate", "--checkpoint", "model_100.pt", "--run-manifest", "run_manifest.json", "--output", "eval.json"])
     assert verify.command == "verify-runtime-binding"
     assert MJLAB_RUNNER._device_requires_gpu_lock(evaluate.device) is True
 
@@ -176,6 +176,9 @@ def test_mjlab_runner_records_003f_only_for_runtime_verifier(tmp_path: Path) -> 
     original_payload_sha = MJLAB_RUNNER.payload_sha256
     original_runtime_spec = MJLAB_RUNNER.runtime_spec_xml
     original_runtime = MJLAB_RUNNER._runtime_metadata
+    original_canonical = MJLAB_RUNNER.canonical_train_eval_config_payload
+    original_action_contract = MJLAB_RUNNER.action_contract_from_asset_xml
+    original_ensure = MJLAB_RUNNER.ensure_v2_artifacts
     contact = tmp_path / "contact.json"
     stance = tmp_path / "stance.json"
     contact.write_text(json.dumps(contact_payload), encoding="utf-8")
@@ -183,14 +186,31 @@ def test_mjlab_runner_records_003f_only_for_runtime_verifier(tmp_path: Path) -> 
     try:
         MJLAB_RUNNER.CONTACT_PROFILE = contact
         MJLAB_RUNNER.STANCE = stance
+        MJLAB_RUNNER.ensure_v2_artifacts = lambda: None
         MJLAB_RUNNER.sha256_path = fake_sha
         MJLAB_RUNNER.payload_sha256 = fake_payload_sha
         MJLAB_RUNNER.runtime_spec_xml = lambda: "<mujoco/>"
-        MJLAB_RUNNER._runtime_metadata = lambda _command: {}
+        MJLAB_RUNNER._runtime_metadata = lambda _command: {
+            "external_mjlab": {
+                "actual_commit": "1425b15f73bd4095f0df53709d7c389c3eb9e790",
+                "expected_commit": "1425b15f73bd4095f0df53709d7c389c3eb9e790",
+                "tracked_clean": True,
+            }
+        }
+        MJLAB_RUNNER.canonical_train_eval_config_payload = lambda: {
+            "payload_sha256": "c" * 64,
+            "diff": [],
+            "eval_diff_allowlist": [],
+            "non_allowlisted_diff": [],
+            "passed": True,
+        }
+        MJLAB_RUNNER.action_contract_from_asset_xml = lambda: {
+            "payload_sha256": "d" * 64,
+        }
         assert MJLAB_RUNNER._common_manifest(verify)["subtask"] == "003f"
-        assert MJLAB_RUNNER._common_manifest(capacity)["subtask"] == "003g"
-        assert MJLAB_RUNNER._common_manifest(one_update)["subtask"] == "003g"
-        assert MJLAB_RUNNER._common_manifest(evaluate)["subtask"] == "003g"
+        assert MJLAB_RUNNER._common_manifest(capacity)["subtask"] == "003h"
+        assert MJLAB_RUNNER._common_manifest(one_update)["subtask"] == "003h"
+        assert MJLAB_RUNNER._common_manifest(evaluate)["subtask"] == "003h"
     finally:
         MJLAB_RUNNER.CONTACT_PROFILE = original_contact
         MJLAB_RUNNER.STANCE = original_stance
@@ -198,6 +218,9 @@ def test_mjlab_runner_records_003f_only_for_runtime_verifier(tmp_path: Path) -> 
         MJLAB_RUNNER.payload_sha256 = original_payload_sha
         MJLAB_RUNNER.runtime_spec_xml = original_runtime_spec
         MJLAB_RUNNER._runtime_metadata = original_runtime
+        MJLAB_RUNNER.canonical_train_eval_config_payload = original_canonical
+        MJLAB_RUNNER.action_contract_from_asset_xml = original_action_contract
+        MJLAB_RUNNER.ensure_v2_artifacts = original_ensure
 
 
 def test_mjlab_runtime_defaults_are_v3_single_ground_paths() -> None:
@@ -266,11 +289,84 @@ def test_mjlab_gpu_lock_required_for_cuda_only() -> None:
     assert MJLAB_RUNNER._device_requires_gpu_lock("cpu") is False
 
 
-def test_repaired_smoke_verifier_accepts_existing_evidence(tmp_path: Path) -> None:
+def test_mjlab_action_contract_signed_bounds_cover_all_targets() -> None:
+    torch = pytest.importorskip("torch")
+    contract = MJLAB_RUNNER.action_contract_from_asset_xml()
+    assert contract["version"] == "task072_mjlab_signed_headroom_v1"
+    assert len(contract["rows"]) == 29
+    assert len({row["semantic_joint"] for row in contract["rows"]}) == 29
+    assert contract["policy_action_domain"] == {"transform": "clip", "lower": -1.0, "upper": 1.0}
+    for row in contract["rows"]:
+        lower, upper = row["joint_range"]
+        offset = row["stance_action_offset"]
+        for raw, key in ((-1.0, "signed_negative_amplitude"), (0.0, "signed_positive_amplitude"), (1.0, "signed_positive_amplitude")):
+            target = offset + raw * row[key]
+            assert lower < target < upper
+            assert target >= lower + row["safety_margin"] - 1e-12
+            assert target <= upper - row["safety_margin"] + 1e-12
+    raw = torch.tensor([[-2.0, -1.0, 0.0, 1.0, 2.0]])
+    neg = torch.ones_like(raw) * 0.1
+    pos = torch.ones_like(raw) * 0.2
+    offset = torch.zeros_like(raw) + 0.5
+    target, clipped = MJLAB_RUNNER.apply_signed_action_contract(raw, neg, pos, offset)
+    assert torch.allclose(clipped, torch.tensor([[-1.0, -1.0, 0.0, 1.0, 1.0]]))
+    assert torch.allclose(target, torch.tensor([[0.4, 0.4, 0.5, 0.7, 0.7]]))
+
+
+def test_mjlab_canonical_train_eval_config_diff_is_allowlisted() -> None:
+    payload = MJLAB_RUNNER.canonical_train_eval_config_payload()
+    assert payload["passed"] is True
+    assert payload["non_allowlisted_diff"] == []
+    assert payload["train"]["env"]["command"]["lin_vel_x"] == [0.5, 0.5]
+    assert payload["train"]["env"]["events"] == ["reset_base", "reset_robot_joints"]
+    assert "is_terminated" not in payload["train"]["env"]["reward_names"]
+    assert "feet_gait" not in payload["train"]["env"]["reward_names"]
+    assert payload["train"]["action"]["policy_action_domain"]["transform"] == "clip"
+
+
+def test_mjlab_evaluate_requires_manifest_bound_checkpoint(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "model_1.pt"
+    checkpoint.write_bytes(b"bad")
+    manifest = tmp_path / "run_manifest.json"
+    manifest.write_text(json.dumps({"checkpoint_sha256": {}}), encoding="utf-8")
+    args = MJLAB_RUNNER.parse_args([
+        "evaluate",
+        "--checkpoint",
+        str(checkpoint),
+        "--run-manifest",
+        str(manifest),
+        "--output",
+        str(tmp_path / "eval.json"),
+        "--device",
+        "cpu",
+    ])
+    with pytest.raises(ValueError, match="not listed"):
+        MJLAB_RUNNER.evaluate_checkpoint(args)
+
+
+def test_mjlab_render_reload_and_freeze_are_fail_closed(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "model_1.pt"
+    checkpoint.write_bytes(b"bad")
+    eval_path = tmp_path / "eval.json"
+    eval_path.write_text("{}", encoding="utf-8")
+    assert MJLAB_RUNNER.render_command(
+        MJLAB_RUNNER.parse_args(["render", "--checkpoint", str(checkpoint), "--output", str(tmp_path / "walk.mp4"), "--device", "cpu"])
+    ) == 1
+    assert MJLAB_RUNNER.verify_reload_command(
+        MJLAB_RUNNER.parse_args(["verify-reload", "--checkpoint", str(checkpoint), "--eval", str(eval_path), "--output", str(tmp_path / "reload.json")])
+    ) == 1
+    assert MJLAB_RUNNER.freeze_command(
+        MJLAB_RUNNER.parse_args(["freeze", "--output", str(tmp_path / "freeze.json")])
+    ) == 1
+
+
+def test_repaired_smoke_verifier_rejects_historical_source_drift(tmp_path: Path) -> None:
     base = TASK072.TASK_DIR / "artifacts/nominal_v4/unitree_g1/E3a_mjlab_kl_repair"
     args = SimpleNamespace(run_manifest=base / "smoke/run_manifest.json", no_update_gate=base / "no_update_correctness_gate.json", output=tmp_path / "r4.json")
-    assert REPAIR.verify_smoke(args) == 0
-    assert __import__("json").loads(args.output.read_text())["r4_repaired_smoke_passed"] is True
+    assert REPAIR.verify_smoke(args) != 0
+    payload = __import__("json").loads(args.output.read_text())
+    assert payload["r4_repaired_smoke_passed"] is False
+    assert "source environment SHA drift" in payload["failure_reasons"]
 
 
 def test_repaired_smoke_verifier_rejects_tampered_binding(tmp_path: Path) -> None:
@@ -288,41 +384,13 @@ def test_repaired_smoke_verifier_rejects_tampered_binding(tmp_path: Path) -> Non
 
 
 def test_repaired_smoke_gate_binds_full_lineage_and_parameter_delta() -> None:
-    payload = REPAIR.check_smoke(REPAIR.R4_MANIFEST_PATH, REPAIR.NO_UPDATE_PATH)
-    manifest = json.loads(REPAIR.R4_MANIFEST_PATH.read_text(encoding="utf-8"))
-    sources = manifest["static_lineage"]["sources"]
-    assert manifest["source_sha256"] == REPAIR.payload_sha(sources)
-    assert manifest["source_sha256"] != sources["task072_cli"]["sha256"]
-    assert set(payload["controlled_sources"]) == set(REPAIR.SOURCE_PATHS)
-    assert payload["old_rejected_E3a_preserved"] is True
-    assert payload["random_initialization_matches_e2"] is True
-    assert payload["parameter_update"]["parameter_count_compared"] == 243803
-    assert payload["parameter_update"]["delta_max_abs"] == pytest.approx(
-        0.0006282080430537462,
-        abs=0.0,
-    )
-    assert payload["parameter_update"]["delta_l2"] == pytest.approx(
-        0.19559913081391125,
-        abs=0.0,
-    )
+    with pytest.raises(ValueError, match="source environment SHA drift"):
+        REPAIR.check_smoke(REPAIR.R4_MANIFEST_PATH, REPAIR.NO_UPDATE_PATH)
 
 
 def test_repaired_r4_gate_requires_entire_recomputed_payload() -> None:
-    payload = REPAIR.check_smoke(REPAIR.R4_MANIFEST_PATH, REPAIR.NO_UPDATE_PATH)
-    assert REPAIR.validate_r4_gate_payload(payload) == payload
-    assert REPAIR.require_r4_gate(REPAIR.R4_GATE_PATH) == payload
-    for path, value in (
-        (("old_rejected_E3a_preserved",), False),
-        (("claim_boundary", "r5_training_started"), True),
-        (("artifact_sha256", "progression"), "0" * 64),
-    ):
-        forged = copy.deepcopy(payload)
-        target = forged
-        for key in path[:-1]:
-            target = target[key]
-        target[path[-1]] = value
-        with pytest.raises(ValueError, match="deterministic recomputation"):
-            REPAIR.validate_r4_gate_payload(forged)
+    with pytest.raises(ValueError, match="source environment SHA drift"):
+        REPAIR.require_r4_gate(REPAIR.R4_GATE_PATH)
 
 
 def _valid_optimizer_reports(*, updates: int, minibatches_per_epoch: int) -> list[dict[str, object]]:
@@ -476,29 +544,9 @@ def test_repaired_manifest_rejects_run_identity_and_source_drift() -> None:
     no_update, e2, _ = REPAIR.load_fixed_evidence(REPAIR.NO_UPDATE_PATH)
     manifest = json.loads(REPAIR.R4_MANIFEST_PATH.read_text(encoding="utf-8"))
     expected = REPAIR.repaired_config(e2["configuration"], stage="smoke")
-    REPAIR.validate_manifest(
-        manifest,
-        expected_config=expected,
-        e2_config=e2["configuration"],
-        no_update=no_update,
-    )
-    run_identity = copy.deepcopy(manifest)
-    run_identity["run_identity"]["case"] = "forged"
-    with pytest.raises(ValueError, match="run identity"):
-        REPAIR.validate_manifest(
-            run_identity,
-            expected_config=expected,
-            e2_config=e2["configuration"],
-            no_update=no_update,
-        )
-    source = copy.deepcopy(manifest)
-    source["static_lineage"]["sources"]["environment"]["sha256"] = "0" * 64
-    source["static_lineage_sha256"] = REPAIR.payload_sha(source["static_lineage"])
-    source["run_identity"]["static_lineage_sha256"] = source["static_lineage_sha256"]
-    source["run_identity_sha256"] = REPAIR.payload_sha(source["run_identity"])
     with pytest.raises(ValueError, match="source environment SHA drift"):
         REPAIR.validate_manifest(
-            source,
+            manifest,
             expected_config=expected,
             e2_config=e2["configuration"],
             no_update=no_update,
@@ -559,7 +607,10 @@ def test_e3a_cli_and_adaptive_schedule_increase() -> None:
         ["train", "--case", "unitree_g1", "--stage", "smoke", "--variant", "E3a_adaptive_kl"]
     )
     assert args.variant == "E3a_adaptive_kl"
-    from h200_locomotion_lab.policies.whole_body_mlp import WholeBodyMLPActorCritic, WholeBodyMLPConfig
+    from h200_locomotion_lab.policies.whole_body_mlp import (
+        WholeBodyMLPActorCritic,
+        WholeBodyMLPConfig,
+    )
 
     model = WholeBodyMLPActorCritic(
         WholeBodyMLPConfig(obs_dim=1, action_dim=1, hidden_dim=4, hidden_layers=1),
@@ -915,7 +966,7 @@ def test_static_lineage_binds_task_independent_ppo_kernel() -> None:
 
 
 def test_e1_observation_schema_and_legacy_trainer_dimension() -> None:
-    torch = pytest.importorskip("torch")
+    pytest.importorskip("torch")
     from h200_locomotion_lab.training.whole_body_ppo import WholeBodyPPOConfig, WholeBodyPPOTrainer
 
     class Env:

@@ -52,7 +52,11 @@ from h200_locomotion_lab.robots.whole_body_slots import (
     WHOLE_BODY_SCHEMA_HASH,
     build_berkeley_humanoid_mapping,
 )
-from h200_locomotion_lab.robots.whole_body_stance import StanceSolution, stance_cache_key
+from h200_locomotion_lab.robots.whole_body_stance import (
+    StanceSolution,
+    stance_cache_key,
+    support_points_for_geom,
+)
 from h200_locomotion_lab.tools.whole_body_ppo_smoke import parse_args
 from h200_locomotion_lab.training.whole_body_curriculum import (
     CurriculumScheduler,
@@ -153,6 +157,160 @@ def test_physical_randomization_includes_limits_nominal_and_positive_inertia() -
     mujoco = pytest.importorskip("mujoco")
     model = mujoco.MjModel.from_xml_string(compile_mjcf(blueprint, physical))
     assert (model.dof_M0 > 0.0).all()
+
+
+def test_mujoco_action_amplitude_path_matches_legacy_scalar_targets() -> None:
+    pytest.importorskip("mujoco")
+    import numpy as np
+
+    from h200_locomotion_lab.envs.whole_body_mujoco import (
+        WholeBodyMuJoCoShard,
+        WholeBodyMuJoCoShardConfig,
+    )
+
+    blueprint = MorphologyGenerator().generate("quadruped", 3)
+    legacy = WholeBodyMuJoCoShard(
+        blueprint,
+        num_envs=1,
+        config=WholeBodyMuJoCoShardConfig(action_scale=0.25, seed=7),
+    )
+    amplitudes = {
+        actuator.semantic_slot: 0.25
+        * 0.5
+        * float(
+            legacy.model.actuator_ctrlrange[int(actuator_id), 1]
+            - legacy.model.actuator_ctrlrange[int(actuator_id), 0]
+        )
+        for actuator, actuator_id in zip(blueprint.actuators, legacy._actuator_ids)
+    }
+    mapped = WholeBodyMuJoCoShard(
+        blueprint,
+        num_envs=1,
+        config=WholeBodyMuJoCoShardConfig(
+            action_scale=0.99,
+            action_amplitude_by_slot=amplitudes,
+            seed=7,
+        ),
+        stance_solution=legacy.stance_solution,
+    )
+    action = np.zeros((1, 45), dtype=np.float32)
+    for active_index, unified_index in enumerate(legacy.embodiment.mapping.selector):
+        action[0, unified_index] = -0.5 + 0.1 * active_index
+    legacy.step(action)
+    mapped.step(action)
+    assert np.allclose(legacy.data[0].ctrl, mapped.data[0].ctrl)
+    missing = dict(amplitudes)
+    missing.pop(next(iter(missing)))
+    with pytest.raises(ValueError, match="exactly cover"):
+        WholeBodyMuJoCoShard(
+            blueprint,
+            num_envs=1,
+            config=WholeBodyMuJoCoShardConfig(action_amplitude_by_slot=missing),
+        )
+
+
+def test_residual_bounds_and_observation_scaling_are_diagnostic_and_same_dimensional() -> None:
+    pytest.importorskip("mujoco")
+    import numpy as np
+
+    from h200_locomotion_lab.envs.whole_body_mujoco import (
+        WholeBodyMuJoCoShard,
+        WholeBodyMuJoCoShardConfig,
+    )
+
+    blueprint = MorphologyGenerator().generate("quadruped", 3)
+    bounds = {actuator.semantic_slot: (0.1, 0.1) for actuator in blueprint.actuators}
+    legacy = WholeBodyMuJoCoShard(blueprint, num_envs=1, config=WholeBodyMuJoCoShardConfig(seed=8))
+    scaled = WholeBodyMuJoCoShard(
+        blueprint,
+        num_envs=1,
+        config=WholeBodyMuJoCoShardConfig(
+            action_residual_bounds_by_slot=bounds,
+            observation_joint_reference_by_slot=legacy.stance_solution.joint_qpos,
+            observation_joint_velocity_scale=0.05,
+            observation_base_angular_velocity_scale=0.2,
+            seed=8,
+        ),
+        stance_solution=legacy.stance_solution,
+    )
+    step = scaled.step(np.zeros((1, 45), dtype=np.float32))
+    assert not np.asarray(step.metrics["target_would_clamp"]).any()
+    assert not np.asarray(step.metrics["actual_clamp"]).any()
+    assert step.actor_observation.shape == (1, 193)
+    assert np.isfinite(scaled.reset()).all()
+
+
+def test_logical_foot_reference_sites_are_optional_but_explicit_names_fail_closed() -> None:
+    pytest.importorskip("mujoco")
+
+    from h200_locomotion_lab.envs.whole_body_mujoco import (
+        WholeBodyMuJoCoShard,
+        WholeBodyMuJoCoShardConfig,
+    )
+
+    blueprint = MorphologyGenerator().generate("quadruped", 3)
+    shard = WholeBodyMuJoCoShard(
+        blueprint,
+        num_envs=1,
+        config=WholeBodyMuJoCoShardConfig(seed=9),
+    )
+    assert all(site_id < 0 for site_id in shard._foot_reference_site_ids)
+    assert shard.step(__import__("numpy").zeros((1, 45), dtype=__import__("numpy").float32)).metrics["foot_height"].shape[1] > 0
+
+    foot_groups = {
+        link.name: (f"{link.name}_footpad",)
+        for link in blueprint.links
+        if link.foot
+    }
+    with pytest.raises(ValueError, match="logical foot reference site"):
+        WholeBodyMuJoCoShard(
+            blueprint,
+            num_envs=1,
+            config=WholeBodyMuJoCoShardConfig(
+                seed=10,
+                logical_foot_groups=foot_groups,
+                logical_foot_reference_sites={name: f"{name}_missing_site" for name in foot_groups},
+            ),
+        )
+
+
+def test_stance_support_points_cover_box_capsule_and_sphere() -> None:
+    mujoco = pytest.importorskip("mujoco")
+    import numpy as np
+
+    model = mujoco.MjModel.from_xml_string(
+        """
+        <mujoco>
+          <worldbody>
+            <geom name="floor" type="plane" size="1 1 0.1"/>
+            <body name="support" pos="0 0 0.5">
+              <geom name="box_foot" type="box" pos="0 0 0" size="0.2 0.1 0.05"/>
+              <geom name="capsule_foot" type="capsule" fromto="0.75 0 0 1.25 0 0" size="0.03"/>
+              <geom name="sphere_foot" type="sphere" pos="2 0 0" size="0.04"/>
+            </body>
+          </worldbody>
+        </mujoco>
+        """
+    )
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+
+    box_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "box_foot")
+    capsule_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "capsule_foot")
+    sphere_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "sphere_foot")
+    box = support_points_for_geom(mujoco, np, model, data, box_id)
+    capsule = support_points_for_geom(mujoco, np, model, data, capsule_id)
+    sphere = support_points_for_geom(mujoco, np, model, data, sphere_id)
+
+    assert box.shape == (4, 3)
+    assert capsule.shape == (2, 3)
+    assert sphere.shape == (1, 3)
+    assert np.isfinite(box).all()
+    assert np.isfinite(capsule).all()
+    assert np.isfinite(sphere).all()
+    assert np.allclose(box[:, 2], 0.45)
+    assert np.allclose(capsule[:, 2], 0.47)
+    assert np.allclose(sphere[:, 2], 0.46)
 
 
 def test_batched_mapping_and_mask_support_torch() -> None:

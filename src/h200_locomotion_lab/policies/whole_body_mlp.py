@@ -8,8 +8,10 @@ from typing import Any
 
 from h200_locomotion_lab.masked_distribution import (
     masked_entropy,
+    masked_raw_gaussian_log_prob,
     masked_tanh_gaussian_log_prob,
     sample_masked_tanh_gaussian,
+    sample_masked_tanh_gaussian_with_raw,
 )
 
 
@@ -80,6 +82,23 @@ class WholeBodyMLPActorCritic:
     ) -> tuple[Any, Any, Any]:
         return self.module.evaluate_actions(observation, action, active_mask=active_action_mask)
 
+    def evaluate_raw_actions(
+        self,
+        observation: Any,
+        raw_action: Any,
+        *,
+        active_action_mask: Any | None = None,
+    ) -> tuple[Any, Any, Any]:
+        return self.module.evaluate_raw_actions(
+            observation,
+            raw_action,
+            active_mask=active_action_mask,
+        )
+
+    def act_with_details(self, observation: Any, *, deterministic: bool = False,
+                         active_mask: Any | None = None) -> tuple[Any, Any, Any, Any, Any, Any, Any]:
+        return self.module.act_with_details(observation, deterministic=deterministic, active_mask=active_mask)
+
     def forward(self, observation: Any) -> tuple[Any, Any]:
         return self.module(observation)
 
@@ -130,6 +149,15 @@ class _ActorCriticModule:
         )
         return action, log_prob, value, entropy
 
+    def act_with_details(self, observation: Any, *, deterministic: bool = False,
+                         active_mask: Any | None = None) -> tuple[Any, Any, Any, Any, Any, Any, Any]:
+        mean, value = self(observation)
+        log_std = self.log_std.expand_as(mean)
+        active_mask = self.mask if active_mask is None else active_mask
+        action, raw, log_prob, entropy = sample_masked_tanh_gaussian_with_raw(
+            mean, log_std, active_mask, deterministic=deterministic, tanh_eps=self.config.tanh_eps)
+        return action, raw, log_prob, entropy, value, mean, log_std
+
     def evaluate_actions(
         self,
         observation: Any,
@@ -152,6 +180,28 @@ class _ActorCriticModule:
             active_mask,
         )
         return log_prob, entropy, value
+
+    def evaluate_raw_actions(
+        self,
+        observation: Any,
+        raw_action: Any,
+        *,
+        active_mask: Any | None = None,
+    ) -> tuple[Any, Any, Any]:
+        mean, value = self(observation)
+        log_std = self.log_std.expand_as(mean)
+        active_mask = self.mask if active_mask is None else active_mask
+        return (
+            masked_raw_gaussian_log_prob(
+                raw_action,
+                mean,
+                log_std,
+                active_mask,
+                tanh_eps=self.config.tanh_eps,
+            ),
+            masked_entropy(self._normal_entropy(log_std), active_mask),
+            value,
+        )
 
     def _normal_entropy(self, log_std: Any) -> Any:
         return log_std + 0.5 * math.log(2.0 * math.pi * math.e)
