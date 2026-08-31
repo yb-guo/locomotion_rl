@@ -495,6 +495,19 @@ baseline、progression、SHA 或任一指标失败，均视为该 case 未通过
   `verify-runtime-binding` 继续记录 `003f`，`r0-smoke`、`capacity-smoke`、`one-update-train` 与
   `evaluate` 记录 `003g`；CUDA eval artifact 需记录 GPU lock 祖先进程证据。等待重新运行 CPU
   verifier 和 v3 single-ground 训练链路。
+- 2026-08-31：003g v3 single-ground G1 正式 run 已完成并失败。训练 source commit
+  `41e98278f25c0741de8cdc8f668964aac2086c09`，runner SHA
+  `d7560de48175aece01d626e59ff13a8e28c66829c42cdcfb6e2d1aa61219656e`，runtime spec SHA
+  `9216ef486aa9b535412c65b198e5a168d76d595763e88cf900057a65aa33874a`，asset XML SHA
+  `c41bfe757fbeb51f094a08457258d17004989948be6eb1fac5bbf3eafa644f93`。CPU verifier SHA
+  `8ef6762545ae3ee5e0336684af95ed66c69774d9497e775b939537a6332c1c7f` passed；v3 capacity artifact SHA
+  `16e24b010c9c48b7b6698473ab4c16dddf445ef7a81fcd347c31c2dc548d2419` selected `4096 x 24`。
+  one-update smoke SHA `f721fd68b6c9f71c7331bd6c82510facf2db5a60c5b6e0612de1fb4011cb15a5` passed。
+  proof training manifest SHA `b86e6efd3003b2527b8c494183a00507e78935b685471d9fd12299d98826c131`
+  recorded `63,897,600` transitions and checkpoint output. Fixed-command evals for
+  `model_100/200/400/649` all failed walking gate; final `model_649` zero-fall `1.0` but mean vx
+  `0.0064487740`, +x `0.1289754808`, planar error `0.4939913750`, left single support `0`。No video
+  generated; 004 freeze remains blocked.
 
 ## Review
 
