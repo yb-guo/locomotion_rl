@@ -153,12 +153,12 @@ def test_mjlab_runner_capacity_defaults_require_4096_equivalence() -> None:
     assert MJLAB_RUNNER.REQUIRED_TRANSITIONS_PER_UPDATE == 4096 * 24
 
 
-def test_mjlab_defaults_are_v3_single_ground_paths() -> None:
+def test_mjlab_runtime_defaults_are_v3_single_ground_paths() -> None:
     assert MJLAB_RUNNER.DEFAULT_OUTPUT_ROOT == MJLAB_RUNNER.RUNTIME_BINDING_ROOT
     assert MJLAB_RUNNER.DEFAULT_OUTPUT_ROOT.is_relative_to(MJLAB_RUNNER.RUNTIME_BINDING_ROOT)
     assert MJLAB_RUNNER.RUNTIME_BINDING_ROOT.name == "mjlab_g1_7capsule_task_v3_single_ground"
     assert "mjlab_contact_training/g1" not in str(MJLAB_RUNNER.DEFAULT_OUTPUT_ROOT)
-    assert MJLAB_RUNNER.parse_args(["registration-smoke"]).output.is_relative_to(MJLAB_RUNNER.RUNTIME_BINDING_ROOT)
+    assert MJLAB_RUNNER.parse_args(["r0-smoke"]).output.is_relative_to(MJLAB_RUNNER.RUNTIME_BINDING_ROOT)
     assert MJLAB_RUNNER.parse_args(["capacity-smoke"]).output.is_relative_to(MJLAB_RUNNER.RUNTIME_BINDING_ROOT)
     assert MJLAB_RUNNER.parse_args(["one-update-train"]).run_dir.is_relative_to(MJLAB_RUNNER.RUNTIME_BINDING_ROOT)
 
