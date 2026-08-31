@@ -340,8 +340,24 @@ def test_mjlab_evaluate_requires_manifest_bound_checkpoint(tmp_path: Path) -> No
         "--device",
         "cpu",
     ])
-    with pytest.raises(ValueError, match="not listed"):
+    with pytest.raises(ValueError, match="training manifest failed Task072 eval lineage checks"):
         MJLAB_RUNNER.evaluate_checkpoint(args)
+
+    noncanonical = MJLAB_RUNNER.parse_args([
+        "evaluate",
+        "--checkpoint",
+        str(checkpoint),
+        "--run-manifest",
+        str(manifest),
+        "--output",
+        str(tmp_path / "eval_bad_rollout.json"),
+        "--rollout-steps",
+        "12",
+        "--device",
+        "cpu",
+    ])
+    with pytest.raises(ValueError, match="24 rollout steps"):
+        MJLAB_RUNNER.evaluate_checkpoint(noncanonical)
 
 
 def test_mjlab_render_reload_and_freeze_are_fail_closed(tmp_path: Path) -> None:
@@ -349,14 +365,52 @@ def test_mjlab_render_reload_and_freeze_are_fail_closed(tmp_path: Path) -> None:
     checkpoint.write_bytes(b"bad")
     eval_path = tmp_path / "eval.json"
     eval_path.write_text("{}", encoding="utf-8")
+    manifest = tmp_path / "run_manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    video = tmp_path / "walk.json"
+    video.write_text("{}", encoding="utf-8")
     assert MJLAB_RUNNER.render_command(
-        MJLAB_RUNNER.parse_args(["render", "--checkpoint", str(checkpoint), "--output", str(tmp_path / "walk.mp4"), "--device", "cpu"])
+        MJLAB_RUNNER.parse_args([
+            "render",
+            "--checkpoint",
+            str(checkpoint),
+            "--run-manifest",
+            str(manifest),
+            "--eval",
+            str(eval_path),
+            "--output",
+            str(tmp_path / "walk.mp4"),
+            "--device",
+            "cpu",
+        ])
     ) == 1
     assert MJLAB_RUNNER.verify_reload_command(
-        MJLAB_RUNNER.parse_args(["verify-reload", "--checkpoint", str(checkpoint), "--eval", str(eval_path), "--output", str(tmp_path / "reload.json")])
+        MJLAB_RUNNER.parse_args([
+            "verify-reload",
+            "--checkpoint",
+            str(checkpoint),
+            "--run-manifest",
+            str(manifest),
+            "--eval",
+            str(eval_path),
+            "--video",
+            str(video),
+            "--output",
+            str(tmp_path / "reload.json"),
+        ])
     ) == 1
     assert MJLAB_RUNNER.freeze_command(
-        MJLAB_RUNNER.parse_args(["freeze", "--output", str(tmp_path / "freeze.json")])
+        MJLAB_RUNNER.parse_args([
+            "freeze",
+            "--eval",
+            str(eval_path),
+            "--video",
+            str(video),
+            "--reload-verifier",
+            str(tmp_path / "reload.json"),
+            "--output",
+            str(tmp_path / "freeze.json"),
+        ])
     ) == 1
 
 

@@ -31,6 +31,7 @@ GPU_LOCK = Path("/home/admin1/workspace/run/.gpu.lock")
 TASK_ID = "Task072-G1-MJLab-7Capsule-SingleGround-Flat"
 LINEAGE_ID = "mjlab_g1_7capsule_task_v3_single_ground"
 MJLAB_PARENT_TASK = "Unitree-G1-Flat"
+EXPECTED_MJLAB_COMMIT = "1425b15f73bd4095f0df53709d7c389c3eb9e790"
 ACTION_CONTRACT_VERSION = "task072_mjlab_signed_headroom_v1"
 REWARD_CONTRACT_VERSION = "task072_mjlab_biped_phase_contact_v3"
 POLICY_ACTION_DOMAIN = {"transform": "clip", "lower": -1.0, "upper": 1.0}
@@ -410,6 +411,11 @@ def ensure_v2_artifacts() -> None:
 def _prepare_external_imports() -> None:
     if not EXTERNAL_MJLAB.exists():
         raise RuntimeError(f"Task072 requires frame-local external MJLab checkout: {EXTERNAL_MJLAB}")
+    external = _external_mjlab_status()
+    if external["actual_commit"] != EXPECTED_MJLAB_COMMIT:
+        raise RuntimeError("Task072 external MJLab checkout commit drift")
+    if not external["tracked_clean"]:
+        raise RuntimeError("Task072 external MJLab checkout has tracked dirty changes")
     external = str(EXTERNAL_MJLAB)
     if external not in sys.path:
         sys.path.insert(0, external)
@@ -586,23 +592,41 @@ def apply_signed_action_contract(raw_actions: Any, negative_scale: Any, positive
     return clipped * scale + offset, clipped
 
 
-def _runtime_metadata(command: str) -> dict[str, Any]:
-    import mjlab
-    import rsl_rl
-    import torch
-
+def _external_mjlab_status() -> dict[str, Any]:
     external_head = subprocess.run(
         ["git", "-C", str(EXTERNAL_MJLAB), "rev-parse", "HEAD"],
         check=False,
         capture_output=True,
         text=True,
     ).stdout.strip()
-    external_status = subprocess.run(
-        ["git", "-C", str(EXTERNAL_MJLAB), "status", "--short"],
+    tracked_dirty = subprocess.run(
+        ["git", "-C", str(EXTERNAL_MJLAB), "diff", "--quiet"],
+        check=False,
+    ).returncode != 0
+    staged_dirty = subprocess.run(
+        ["git", "-C", str(EXTERNAL_MJLAB), "diff", "--cached", "--quiet"],
+        check=False,
+    ).returncode != 0
+    status_short = subprocess.run(
+        ["git", "-C", str(EXTERNAL_MJLAB), "status", "--short", "--untracked-files=all"],
         check=False,
         capture_output=True,
         text=True,
     ).stdout.splitlines()
+    return {
+        "path": str(EXTERNAL_MJLAB.resolve()),
+        "expected_commit": EXPECTED_MJLAB_COMMIT,
+        "actual_commit": external_head,
+        "tracked_clean": not tracked_dirty and not staged_dirty,
+        "status_short": status_short,
+    }
+
+
+def _runtime_metadata(command: str) -> dict[str, Any]:
+    import mjlab
+    import rsl_rl
+    import torch
+
     return {
         "command": command,
         "cwd": str(Path.cwd()),
@@ -615,13 +639,7 @@ def _runtime_metadata(command: str) -> dict[str, Any]:
         "cuda_available": bool(torch.cuda.is_available()),
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
         "gpu_lock_path": str(GPU_LOCK),
-        "external_mjlab": {
-            "path": str(EXTERNAL_MJLAB.resolve()),
-            "expected_commit": "1425b15f73bd4095f0df53709d7c389c3eb9e790",
-            "actual_commit": external_head,
-            "tracked_clean": not external_status,
-            "status_short": external_status,
-        },
+        "external_mjlab": _external_mjlab_status(),
         "h200_used": False,
         "external_downloads_performed": False,
         "task048_checkpoint_used": False,
@@ -1341,6 +1359,33 @@ def _load_capacity_evidence(path: Path, *, num_envs: int, rollout_steps: int) ->
     return payload
 
 
+def _validate_training_manifest_for_eval(payload: dict[str, Any]) -> None:
+    current = _common_manifest(argparse.Namespace(command="evaluate-manifest-check", seed=DEFAULT_SEED + 99))
+    checks = {
+        "schema": payload.get("schema_version") == 3,
+        "subtask": payload.get("subtask") == "003h",
+        "lineage": payload.get("lineage_id") == LINEAGE_ID,
+        "runtime_lineage": payload.get("runtime_lineage_id") == LINEAGE_ID,
+        "action_contract": payload.get("action_contract") == current["action_contract"],
+        "reward_contract": payload.get("reward_contract") == current["reward_contract"],
+        "canonical_config": payload.get("canonical_train_eval_config", {}).get("payload_sha256")
+        == current["canonical_train_eval_config"]["payload_sha256"],
+        "canonical_config_passed": payload.get("canonical_train_eval_config", {}).get("passed") is True,
+        "runner_source": payload.get("runner_source_sha256") == current["runner_source_sha256"],
+        "runtime_spec": payload.get("runtime_spec_sha256") == current["runtime_spec_sha256"],
+        "asset_xml": payload.get("asset_xml", {}).get("sha256") == current["asset_xml"]["sha256"],
+        "contact_profile": payload.get("contact_profile", {}).get("payload_sha256")
+        == current["contact_profile"]["payload_sha256"],
+        "stance": payload.get("stance", {}).get("payload_sha256") == current["stance"]["payload_sha256"],
+        "external": payload.get("external_mjlab_checks") == current["external_mjlab_checks"],
+        "external_passed": all(payload.get("external_mjlab_checks", {}).values()),
+        "training_complete": payload.get("training_execution_complete") is True,
+        "capacity_consumed": all(payload.get("capacity_evidence", {}).get("consumption_checks", {}).values()),
+    }
+    if not all(checks.values()):
+        raise ValueError(f"training manifest failed Task072 eval lineage checks: {checks}")
+
+
 def one_update_train(args: argparse.Namespace) -> int:
     _prepare_external_imports()
     gpu_lock = _require_gpu_lock_for_device(args.device)
@@ -1403,7 +1448,8 @@ def one_update_train(args: argparse.Namespace) -> int:
         "training_execution_complete": len(checkpoints) > 0,
         "passed": len(checkpoints) > 0,
     }
-    write_json((log_dir / "task072_mjlab_one_update_smoke.json"), payload)
+    write_json(log_dir / "task072_mjlab_one_update_smoke.json", payload)
+    write_json(log_dir / "run_manifest.json", payload)
     print(json.dumps({"passed": payload["passed"], "output": str(log_dir / "task072_mjlab_one_update_smoke.json")}), flush=True)
     return 0 if payload["passed"] else 1
 
@@ -1428,9 +1474,10 @@ def evaluate_checkpoint(args: argparse.Namespace) -> int:
     from mjlab.utils.torch import configure_torch_backends
 
     checkpoint = args.checkpoint.resolve()
-    if int(args.eval_envs) != 256 or float(args.eval_seconds) != 20.0:
-        raise ValueError("formal Task072 MJLab eval is fixed at 256 envs for 20 s")
+    if int(args.eval_envs) != 256 or float(args.eval_seconds) != 20.0 or int(args.rollout_steps) != REQUIRED_ROLLOUT_STEPS or int(args.seed) != DEFAULT_SEED + 99:
+        raise ValueError("formal Task072 MJLab eval is fixed at 256 envs, 20 s, 24 rollout steps, and seed 720400")
     manifest_payload = json.loads(args.run_manifest.read_text(encoding="utf-8"))
+    _validate_training_manifest_for_eval(manifest_payload)
     allowed_checkpoints = {
         str(Path(path).resolve()): sha
         for path, sha in manifest_payload.get("checkpoint_sha256", {}).items()
@@ -1586,14 +1633,34 @@ def evaluate_checkpoint(args: argparse.Namespace) -> int:
     return 0 if result["passed"] else 1
 
 
+def _load_passing_json(path: Path, label: str) -> dict[str, Any]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("passed") is not True:
+        raise ValueError(f"{label} evidence is not passing")
+    if payload.get("lineage_id") != LINEAGE_ID:
+        raise ValueError(f"{label} lineage mismatch")
+    return payload
+
+
 def render_command(args: argparse.Namespace) -> int:
+    try:
+        manifest = json.loads(args.run_manifest.read_text(encoding="utf-8"))
+        _validate_training_manifest_for_eval(manifest)
+        eval_payload = _load_passing_json(args.eval, "numeric eval")
+        if str(args.checkpoint.resolve()) != eval_payload.get("checkpoint", {}).get("path"):
+            raise ValueError("render checkpoint does not match numeric eval checkpoint")
+        error = "Task072 MJLab render implementation is armed but video generation is not authorized in 003h repair"
+    except Exception as exc:  # noqa: BLE001
+        error = repr(exc)
     result = {
         **_common_manifest(args),
         "schema_kind": "render_video",
         "checkpoint": str(args.checkpoint.resolve()),
+        "training_manifest": str(args.run_manifest.resolve()),
+        "eval": str(args.eval.resolve()),
         "output": str(args.output.resolve()),
         "passed": False,
-        "error": "Task072 MJLab render requires a numeric eval pass and is disabled in this repair-only CPU gate",
+        "error": error,
     }
     write_json(args.output.with_suffix(".json").resolve(), result)
     print(json.dumps({"passed": False, "output": str(args.output.with_suffix(".json").resolve())}), flush=True)
@@ -1601,13 +1668,27 @@ def render_command(args: argparse.Namespace) -> int:
 
 
 def verify_reload_command(args: argparse.Namespace) -> int:
+    try:
+        manifest = json.loads(args.run_manifest.read_text(encoding="utf-8"))
+        _validate_training_manifest_for_eval(manifest)
+        eval_payload = _load_passing_json(args.eval, "numeric eval")
+        video_payload = _load_passing_json(args.video, "render video")
+        if str(args.checkpoint.resolve()) != eval_payload.get("checkpoint", {}).get("path"):
+            raise ValueError("reload checkpoint does not match numeric eval checkpoint")
+        if video_payload.get("checkpoint") != str(args.checkpoint.resolve()):
+            raise ValueError("reload checkpoint does not match render video checkpoint")
+        error = "Task072 MJLab reload verifier is armed but rollout execution is not authorized in 003h repair"
+    except Exception as exc:  # noqa: BLE001
+        error = repr(exc)
     result = {
         **_common_manifest(args),
         "schema_kind": "independent_reload_verifier",
         "checkpoint": str(args.checkpoint.resolve()),
+        "training_manifest": str(args.run_manifest.resolve()),
         "eval": str(args.eval.resolve()),
+        "video": str(args.video.resolve()),
         "passed": False,
-        "error": "reload verifier refuses without matching training manifest, checkpoint, eval and video evidence",
+        "error": error,
     }
     write_json(args.output.resolve(), result)
     print(json.dumps({"passed": False, "output": str(args.output.resolve())}), flush=True)
@@ -1615,11 +1696,24 @@ def verify_reload_command(args: argparse.Namespace) -> int:
 
 
 def freeze_command(args: argparse.Namespace) -> int:
+    try:
+        eval_payload = _load_passing_json(args.eval, "numeric eval")
+        video_payload = _load_passing_json(args.video, "render video")
+        reload_payload = _load_passing_json(args.reload_verifier, "independent reload verifier")
+        if not (
+            eval_payload.get("checkpoint", {}).get("path")
+            == video_payload.get("checkpoint")
+            == reload_payload.get("checkpoint")
+        ):
+            raise ValueError("freeze evidence checkpoint mismatch")
+        error = "Task072 freeze is armed but refused until 003h training evidence is produced in an authorized run"
+    except Exception as exc:  # noqa: BLE001
+        error = repr(exc)
     result = {
         **_common_manifest(args),
         "schema_kind": "freeze_manifest",
         "passed": False,
-        "error": "Task072 freeze refused: numeric eval, video, and independent verifier are not passing",
+        "error": error,
         "required_evidence": ["eval", "video", "independent_reload_verifier"],
     }
     write_json(args.output.resolve(), result)
@@ -1729,19 +1823,26 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     verify.set_defaults(func=verify_runtime_binding)
     render = sub.add_parser("render")
     render.add_argument("--checkpoint", type=Path, required=True)
+    render.add_argument("--run-manifest", type=Path, required=True)
+    render.add_argument("--eval", type=Path, required=True)
     render.add_argument("--output", type=Path, required=True)
     render.add_argument("--seed", type=int, default=DEFAULT_SEED + 199)
     render.add_argument("--device", default="cuda:0")
     render.set_defaults(func=render_command)
     reload_verify = sub.add_parser("verify-reload")
     reload_verify.add_argument("--checkpoint", type=Path, required=True)
+    reload_verify.add_argument("--run-manifest", type=Path, required=True)
     reload_verify.add_argument("--eval", type=Path, required=True)
+    reload_verify.add_argument("--video", type=Path, required=True)
     reload_verify.add_argument("--output", type=Path, required=True)
     reload_verify.add_argument("--seed", type=int, default=DEFAULT_SEED + 299)
     reload_verify.add_argument("--device", default="cpu")
     reload_verify.set_defaults(func=verify_reload_command)
     freeze = sub.add_parser("freeze")
     freeze.add_argument("--output", type=Path, default=RUNTIME_BINDING_ROOT / "freeze/task072_freeze_manifest.json")
+    freeze.add_argument("--eval", type=Path, required=True)
+    freeze.add_argument("--video", type=Path, required=True)
+    freeze.add_argument("--reload-verifier", type=Path, required=True)
     freeze.add_argument("--seed", type=int, default=DEFAULT_SEED)
     freeze.add_argument("--device", default="cpu")
     freeze.set_defaults(func=freeze_command)
