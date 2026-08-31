@@ -663,8 +663,8 @@ def build_task_cfg(
     agent_cfg.logger = "tensorboard"
     agent_cfg.upload_model = False
     agent_cfg.resume = False
-    agent_cfg.run_name = "task072_g1_mjlab_7capsule_single_ground"
-    agent_cfg.experiment_name = "task072_g1_mjlab_7capsule_single_ground"
+    agent_cfg.run_name = LINEAGE_ID
+    agent_cfg.experiment_name = LINEAGE_ID
     registration = {
         "task_id": task_id,
         "parent_task": MJLAB_PARENT_TASK,
@@ -679,6 +679,8 @@ def build_task_cfg(
         "transitions_per_update": int(num_envs) * int(rollout_steps),
         "max_iterations": int(max_iterations),
         "fixed_command": bool(fixed_command),
+        "run_name": agent_cfg.run_name,
+        "experiment_name": agent_cfg.experiment_name,
         "action_scale_sha256": payload_sha256(action_cfg.scale),
         "lineage_id": LINEAGE_ID,
         "joint_mapping": mapping_table,
@@ -914,7 +916,11 @@ def verify_runtime_binding(args: argparse.Namespace) -> int:
             "optimizer_step_calls": 0, "parameter_delta_max_abs": 0.0,
         })
         checks = {
-            "lineage": registration["lineage_id"] == LINEAGE_ID,
+            "lineage": (
+                registration["lineage_id"] == LINEAGE_ID
+                and registration["run_name"] == LINEAGE_ID
+                and registration["experiment_name"] == LINEAGE_ID
+            ),
             "joint_mapping": registration["joint_mapping_count"] == 29 and registration["joint_mapping_unmapped"] == 0 and registration["joint_mapping_duplicate"] == 0,
             "default_joint_qpos": result["default_qpos_error_max"] <= STANCE_TOL,
             "reset_joint_qpos": result["reset_joint_qpos_error_max"] <= STANCE_TOL,

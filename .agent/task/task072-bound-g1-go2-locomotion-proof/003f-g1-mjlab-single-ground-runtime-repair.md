@@ -37,6 +37,7 @@ checkpoint 初始化、外部下载和 walking pass 声明。
   `contype=0, conaffinity=1` 的半启用隐藏 plane；结果 `6 passed`。
 
 - 2026-08-31：配置修复后以 `CUDA_VISIBLE_DEVICES=''` 重跑 CPU verifier，现存 v3 verifier SHA `377daa19e8d84950208f8b0b6f820ffd5360a9e00e10ef1d752c9d48299f27a1`，runner source SHA `30d18f0c07d105d5f65de65010df49fef88bf304d8d221f1d425ce4b1c6f2a5e`；`passed=true`、`optimizer_step_calls=0`、`parameter_delta_max_abs=0`。
+- 2026-08-31：reviewer fix 后最终 runner source SHA `b323fce3d90889f2836512be6888021f343a00c3e06354b39c4a64242708a57c`，v3 verifier SHA `551d0743a029ca033b02d049a88cb48f5c36cd01d00bb58a3d737f4bffdf420f`；registration 的 `lineage_id`、`run_name`、`experiment_name` 均为 `mjlab_g1_7capsule_task_v3_single_ground`，`passed=true`。
 
 ## Review
 

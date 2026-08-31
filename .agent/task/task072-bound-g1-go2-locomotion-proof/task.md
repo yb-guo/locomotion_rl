@@ -484,6 +484,7 @@ baseline、progression、SHA 或任一指标失败，均视为该 case 未通过
 ## Cleanup record
 
 - 2026-08-31：按用户请求以 `gio trash` 清理两个已确认无效目录：`artifacts/mjlab_contact_training/g1`（10 `.pt`，62,819,574 file bytes，约 60M）与 `artifacts/mjlab_runtime_binding/g1/mjlab_g1_7capsule_task_v2`（9 `.pt`，51,918,322 file bytes，约 50M）。两路径已不存在；contact v2 与 runtime v3 保留。默认输出根改为 v3；runner SHA `30d18f0c07d105d5f65de65010df49fef88bf304d8d221f1d425ce4b1c6f2a5e`，v3 verifier SHA `377daa19e8d84950208f8b0b6f820ffd5360a9e00e10ef1d752c9d48299f27a1`，verifier passed。
+- 2026-08-31：reviewer fix 后最终 runner SHA `b323fce3d90889f2836512be6888021f343a00c3e06354b39c4a64242708a57c`，v3 verifier SHA `551d0743a029ca033b02d049a88cb48f5c36cd01d00bb58a3d737f4bffdf420f`；registration 的 `lineage_id`、`run_name`、`experiment_name` 均为 `mjlab_g1_7capsule_task_v3_single_ground`，verifier passed。
 
 ## Review
 

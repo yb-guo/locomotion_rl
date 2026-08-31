@@ -565,6 +565,7 @@
       "waist_roll": 0.00294073441521368,
       "waist_yaw": 4.606079599602654e-05
     },
+    "experiment_name": "mjlab_g1_7capsule_task_v3_single_ground",
     "fixed_command": true,
     "foot_bodies": [
       "anon_limb0_ankle_roll_link",
@@ -746,6 +747,7 @@
     "parent_task": "Unitree-G1-Flat",
     "pelvis_body": "anon_pelvis_core",
     "rollout_steps_per_env": 1,
+    "run_name": "mjlab_g1_7capsule_task_v3_single_ground",
     "runtime_action_offset": {
       "anon_left_arm_elbow_pitch_link_joint": 0.6796403307106039,
       "anon_left_arm_shoulder_pitch_link_joint": -0.07597131275736767,
@@ -889,7 +891,7 @@
   "reset_root_pose_errors": {
     "max_abs": 4.416348237798657e-08
   },
-  "runner_source_sha256": "30d18f0c07d105d5f65de65010df49fef88bf304d8d221f1d425ce4b1c6f2a5e",
+  "runner_source_sha256": "b323fce3d90889f2836512be6888021f343a00c3e06354b39c4a64242708a57c",
   "runtime": {
     "command": ".agent/task/task072-bound-g1-go2-locomotion-proof/task072_mjlab_contact_runner.py verify-runtime-binding --output .agent/task/task072-bound-g1-go2-locomotion-proof/artifacts/mjlab_runtime_binding/g1/mjlab_g1_7capsule_task_v3_single_ground/runtime_binding_verifier.json --device cpu",
     "cuda_available": false,
