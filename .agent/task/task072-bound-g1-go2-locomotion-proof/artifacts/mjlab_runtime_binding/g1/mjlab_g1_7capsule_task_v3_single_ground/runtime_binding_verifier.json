@@ -891,9 +891,9 @@
   "reset_root_pose_errors": {
     "max_abs": 4.416348237798657e-08
   },
-  "runner_source_sha256": "b323fce3d90889f2836512be6888021f343a00c3e06354b39c4a64242708a57c",
+  "runner_source_sha256": "d7560de48175aece01d626e59ff13a8e28c66829c42cdcfb6e2d1aa61219656e",
   "runtime": {
-    "command": ".agent/task/task072-bound-g1-go2-locomotion-proof/task072_mjlab_contact_runner.py verify-runtime-binding --output .agent/task/task072-bound-g1-go2-locomotion-proof/artifacts/mjlab_runtime_binding/g1/mjlab_g1_7capsule_task_v3_single_ground/runtime_binding_verifier.json --device cpu",
+    "command": ".agent/task/task072-bound-g1-go2-locomotion-proof/task072_mjlab_contact_runner.py verify-runtime-binding --output .agent/task/task072-bound-g1-go2-locomotion-proof/artifacts/mjlab_runtime_binding/g1/mjlab_g1_7capsule_task_v3_single_ground/runtime_binding_verifier.json --device cpu --seed 720301",
     "cuda_available": false,
     "cuda_visible_devices": "",
     "cwd": "/home/admin1/workspace/run/locomotion_rl/task071-1",

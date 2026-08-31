@@ -153,6 +153,53 @@ def test_mjlab_runner_capacity_defaults_require_4096_equivalence() -> None:
     assert MJLAB_RUNNER.REQUIRED_TRANSITIONS_PER_UPDATE == 4096 * 24
 
 
+def test_mjlab_runner_records_003f_only_for_runtime_verifier(tmp_path: Path) -> None:
+    verify = MJLAB_RUNNER.parse_args(["verify-runtime-binding", "--output", "verify.json"])
+    capacity = MJLAB_RUNNER.parse_args(["capacity-smoke", "--output", "capacity.json"])
+    one_update = MJLAB_RUNNER.parse_args(["one-update-train", "--run-dir", "run"])
+    evaluate = MJLAB_RUNNER.parse_args(["evaluate", "--checkpoint", "model_100.pt", "--output", "eval.json"])
+    assert verify.command == "verify-runtime-binding"
+    assert MJLAB_RUNNER._device_requires_gpu_lock(evaluate.device) is True
+
+    contact_payload = {"contact_profile_id": MJLAB_RUNNER.CONTACT_PROFILE_ID}
+    stance_payload = {"contact_profile_id": MJLAB_RUNNER.CONTACT_PROFILE_ID}
+
+    def fake_sha(_path: Path) -> str:
+        return "a" * 64
+
+    def fake_payload_sha(_payload: object) -> str:
+        return "b" * 64
+
+    original_contact = MJLAB_RUNNER.CONTACT_PROFILE
+    original_stance = MJLAB_RUNNER.STANCE
+    original_sha = MJLAB_RUNNER.sha256_path
+    original_payload_sha = MJLAB_RUNNER.payload_sha256
+    original_runtime_spec = MJLAB_RUNNER.runtime_spec_xml
+    original_runtime = MJLAB_RUNNER._runtime_metadata
+    contact = tmp_path / "contact.json"
+    stance = tmp_path / "stance.json"
+    contact.write_text(json.dumps(contact_payload), encoding="utf-8")
+    stance.write_text(json.dumps(stance_payload), encoding="utf-8")
+    try:
+        MJLAB_RUNNER.CONTACT_PROFILE = contact
+        MJLAB_RUNNER.STANCE = stance
+        MJLAB_RUNNER.sha256_path = fake_sha
+        MJLAB_RUNNER.payload_sha256 = fake_payload_sha
+        MJLAB_RUNNER.runtime_spec_xml = lambda: "<mujoco/>"
+        MJLAB_RUNNER._runtime_metadata = lambda _command: {}
+        assert MJLAB_RUNNER._common_manifest(verify)["subtask"] == "003f"
+        assert MJLAB_RUNNER._common_manifest(capacity)["subtask"] == "003g"
+        assert MJLAB_RUNNER._common_manifest(one_update)["subtask"] == "003g"
+        assert MJLAB_RUNNER._common_manifest(evaluate)["subtask"] == "003g"
+    finally:
+        MJLAB_RUNNER.CONTACT_PROFILE = original_contact
+        MJLAB_RUNNER.STANCE = original_stance
+        MJLAB_RUNNER.sha256_path = original_sha
+        MJLAB_RUNNER.payload_sha256 = original_payload_sha
+        MJLAB_RUNNER.runtime_spec_xml = original_runtime_spec
+        MJLAB_RUNNER._runtime_metadata = original_runtime
+
+
 def test_mjlab_runtime_defaults_are_v3_single_ground_paths() -> None:
     assert MJLAB_RUNNER.DEFAULT_OUTPUT_ROOT == MJLAB_RUNNER.RUNTIME_BINDING_ROOT
     assert MJLAB_RUNNER.DEFAULT_OUTPUT_ROOT.is_relative_to(MJLAB_RUNNER.RUNTIME_BINDING_ROOT)

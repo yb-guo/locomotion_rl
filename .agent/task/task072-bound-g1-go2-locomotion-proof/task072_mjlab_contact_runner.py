@@ -1170,6 +1170,7 @@ def _force_fixed_command(env: Any) -> None:
 
 def evaluate_checkpoint(args: argparse.Namespace) -> int:
     _prepare_external_imports()
+    gpu_lock = _require_gpu_lock_for_device(args.device)
     import torch
     from mjlab.envs import ManagerBasedRlEnv
     from mjlab.rl import MjlabOnPolicyRunner, RslRlVecEnvWrapper
@@ -1301,6 +1302,7 @@ def evaluate_checkpoint(args: argparse.Namespace) -> int:
         result = {
             **_common_manifest(args),
             "checkpoint": {"path": str(checkpoint), "sha256": sha256_path(checkpoint)},
+            "gpu_lock": gpu_lock,
             "metrics": metrics,
             "checks": checks,
             "passed": all(checks.values()),
@@ -1311,6 +1313,7 @@ def evaluate_checkpoint(args: argparse.Namespace) -> int:
         result = {
             **_common_manifest(args),
             "checkpoint": {"path": str(checkpoint), "sha256": sha256_path(checkpoint) if checkpoint.exists() else None},
+            "gpu_lock": gpu_lock,
             "passed": False,
             "error": repr(exc),
             "traceback": traceback.format_exc(),
@@ -1324,10 +1327,11 @@ def evaluate_checkpoint(args: argparse.Namespace) -> int:
 def _common_manifest(args: argparse.Namespace) -> dict[str, Any]:
     contact_payload = json.loads(CONTACT_PROFILE.read_text(encoding="utf-8"))
     stance_payload = json.loads(STANCE.read_text(encoding="utf-8"))
+    manifest_subtask = "003f" if getattr(args, "command", None) == "verify-runtime-binding" else "003g"
     return {
         "schema_version": 2,
         "task": "task072-bound-g1-go2-locomotion-proof",
-        "subtask": "003f",
+        "subtask": manifest_subtask,
         "lineage_id": LINEAGE_ID,
         "asset_xml": {"path": str(ASSET_XML.resolve()), "sha256": sha256_path(ASSET_XML)},
         "contact_profile": {

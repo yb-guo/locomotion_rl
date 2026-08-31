@@ -74,6 +74,11 @@ untrained/zero baselines 直接比较，并无条件写 `paired_baselines_verifi
      `mjlab_g1_7capsule_task_v3_single_ground` runtime lineage；
    - 运行时移除 asset `floor`，编译后只允许 scene `terrain`，并 fail closed 审计 14 个 foot capsules；
    - 只运行 CPU/no-update verifier，正式 v3 capacity/training 需另行授权。
+3g. `003g-g1-mjlab-single-ground-walking-proof.md`
+   - 在 003f 已通过的 single-ground runtime lineage 上使用 RTX 5060 Ti 从随机初始化正式训练；
+   - 依次运行 v3 capacity smoke、4096x24 one-update smoke、4096x24x650 proof training 和固定命令
+     checkpoint eval；
+   - walking numeric gate 未通过不得生成伪 passing video、不得 freeze、不得调 reward 或参数搜索。
 4. `004-freeze-g1-passing-lineage.md`
    - 只有 G1 全 gate 通过后，冻结实现 commit、配置、descriptor、asset、checkpoint 与 verifier
      SHA；
@@ -202,7 +207,8 @@ pointer 和整份 action contract raw/payload SHA。每个 manifest/report 都�
 原始路线为 `001 -> 002 -> 003 -> 004 -> 005`；其失败证据保持不变。当前有效链路严格为
 `003b v1 geometry pass -> 003c rejected runtime binding mismatch -> 003d rejected double-ground ->
 003e rejected contaminated training -> 003f single-ground runtime repair -> separately authorized v3
-walking run -> 004 freeze -> Task073 asset migration -> Task074 18-case training`。
+walking run / 003g single-ground walking proof -> 004 freeze -> Task073 asset migration -> Task074
+18-case training`。
 003f no-update verifier 未通过不得运行新的 capacity smoke；新的 v3 walking run 未通过不得 freeze 或
 启动 Task073。
 004 必须绑定新的 contact/stance/asset lineage，不能
@@ -485,6 +491,10 @@ baseline、progression、SHA 或任一指标失败，均视为该 case 未通过
 
 - 2026-08-31：按用户请求以 `gio trash` 清理两个已确认无效目录：`artifacts/mjlab_contact_training/g1`（10 `.pt`，62,819,574 file bytes，约 60M）与 `artifacts/mjlab_runtime_binding/g1/mjlab_g1_7capsule_task_v2`（9 `.pt`，51,918,322 file bytes，约 50M）。两路径已不存在；contact v2 与 runtime v3 保留。默认输出根改为 v3；runner SHA `30d18f0c07d105d5f65de65010df49fef88bf304d8d221f1d425ce4b1c6f2a5e`，v3 verifier SHA `377daa19e8d84950208f8b0b6f820ffd5360a9e00e10ef1d752c9d48299f27a1`，verifier passed。
 - 2026-08-31：reviewer fix 后最终 runner SHA `b323fce3d90889f2836512be6888021f343a00c3e06354b39c4a64242708a57c`，v3 verifier SHA `551d0743a029ca033b02d049a88cb48f5c36cd01d00bb58a3d737f4bffdf420f`；registration 的 `lineage_id`、`run_name`、`experiment_name` 均为 `mjlab_g1_7capsule_task_v3_single_ground`，verifier passed。
+- 2026-08-31：003g 已建立，状态 `in_progress / not_passed`。Runner manifest 接线修正为
+  `verify-runtime-binding` 继续记录 `003f`，`r0-smoke`、`capacity-smoke`、`one-update-train` 与
+  `evaluate` 记录 `003g`；CUDA eval artifact 需记录 GPU lock 祖先进程证据。等待重新运行 CPU
+  verifier 和 v3 single-ground 训练链路。
 
 ## Review
 
