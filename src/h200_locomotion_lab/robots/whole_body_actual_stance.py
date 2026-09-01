@@ -126,7 +126,11 @@ class _Context:
     joint_qpos: tuple[int, ...]
     joint_dof: tuple[int, ...]
     actuator_ids: tuple[int, ...]
-    foot_geoms: tuple[str, ...]
+    foot_geom_groups: dict[str, tuple[str, ...]]
+
+    @property
+    def logical_feet(self) -> tuple[str, ...]:
+        return tuple(sorted(self.foot_geom_groups))
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,7 +212,8 @@ def _ctrl_bounds(ctx: _Context, margin: float) -> tuple[Any, Any]:
 def _foot_geom_ids(ctx: _Context) -> set[int]:
     return {
         int(ctx.mujoco.mj_name2id(ctx.model, ctx.mujoco.mjtObj.mjOBJ_GEOM, name))
-        for name in ctx.foot_geoms
+        for names in ctx.foot_geom_groups.values()
+        for name in names
     }
 
 
@@ -248,22 +253,57 @@ def _self_collision_geom_pairs(ctx: _Context) -> list[tuple[int, int]]:
     return pairs
 
 
+def _support_points_for_geom(ctx: _Context, geom_id: int) -> Any:
+    center = ctx.np.asarray(ctx.data.geom_xpos[geom_id], dtype=ctx.np.float64)
+    rot = ctx.np.asarray(ctx.data.geom_xmat[geom_id], dtype=ctx.np.float64).reshape(3, 3)
+    size = ctx.np.asarray(ctx.model.geom_size[geom_id], dtype=ctx.np.float64)
+    geom_type = int(ctx.model.geom_type[geom_id])
+    if geom_type == int(ctx.mujoco.mjtGeom.mjGEOM_BOX):
+        half = size[:3]
+        return ctx.np.asarray(
+            [
+                center + rot @ ctx.np.asarray([sx * half[0], sy * half[1], -half[2]], dtype=ctx.np.float64)
+                for sx in (-1.0, 1.0)
+                for sy in (-1.0, 1.0)
+            ],
+            dtype=ctx.np.float64,
+        )
+    if geom_type == int(ctx.mujoco.mjtGeom.mjGEOM_CAPSULE):
+        radius = float(size[0])
+        half_length = float(size[1])
+        axis = rot[:, 2]
+        down = ctx.np.asarray((0.0, 0.0, -radius), dtype=ctx.np.float64)
+        return ctx.np.asarray(
+            [center - axis * half_length + down, center + axis * half_length + down],
+            dtype=ctx.np.float64,
+        )
+    if geom_type == int(ctx.mujoco.mjtGeom.mjGEOM_SPHERE):
+        radius = float(size[0])
+        return ctx.np.asarray([center + ctx.np.asarray((0.0, 0.0, -radius), dtype=ctx.np.float64)])
+    if geom_type == int(ctx.mujoco.mjtGeom.mjGEOM_CYLINDER):
+        radius = float(size[0])
+        half_height = float(size[1])
+        return ctx.np.asarray(
+            [
+                center + rot @ ctx.np.asarray([sx * radius, sy * radius, -half_height], dtype=ctx.np.float64)
+                for sx, sy in ((-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0))
+            ],
+            dtype=ctx.np.float64,
+        )
+    radius = float(max(size))
+    return ctx.np.asarray([center + ctx.np.asarray((0.0, 0.0, -radius), dtype=ctx.np.float64)])
+
+
 def _footpad_corners(ctx: _Context) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for foot in ctx.foot_geoms:
-        geom_id = int(ctx.mujoco.mj_name2id(ctx.model, ctx.mujoco.mjtObj.mjOBJ_GEOM, foot))
-        center = ctx.np.asarray(ctx.data.geom_xpos[geom_id], dtype=ctx.np.float64)
-        rot = ctx.np.asarray(ctx.data.geom_xmat[geom_id], dtype=ctx.np.float64).reshape(3, 3)
-        half = ctx.np.asarray(ctx.model.geom_size[geom_id], dtype=ctx.np.float64)[:3]
-        for sx in (-1.0, 1.0):
-            for sy in (-1.0, 1.0):
-                point = center + rot @ ctx.np.asarray(
-                    [sx * half[0], sy * half[1], -half[2]],
-                    dtype=ctx.np.float64,
-                )
+    for foot in ctx.logical_feet:
+        for geom_name in ctx.foot_geom_groups[foot]:
+            geom_id = int(ctx.mujoco.mj_name2id(ctx.model, ctx.mujoco.mjtObj.mjOBJ_GEOM, geom_name))
+            for point in _support_points_for_geom(ctx, geom_id):
                 rows.append(
                     {
                         "foot": foot,
+                        "geom": geom_name,
                         "geom_id": geom_id,
                         "point": [float(value) for value in point],
                         "height": float(point[2]),
@@ -276,7 +316,7 @@ def _flat_patch_report(ctx: _Context, *, penetration: float) -> dict[str, Any]:
     corners = _footpad_corners(ctx)
     heights = [float(corner["height"]) for corner in corners]
     foot_reports: dict[str, dict[str, float | int]] = {}
-    for foot in ctx.foot_geoms:
+    for foot in ctx.logical_feet:
         foot_heights = [float(corner["height"]) for corner in corners if corner["foot"] == foot]
         foot_reports[foot] = {
             "corner_count": len(foot_heights),
@@ -384,12 +424,13 @@ def _foot_load_threshold(ctx: _Context) -> float:
 
 def _contact_report(ctx: _Context) -> dict[str, Any]:
     floor_id = _floor_geom_id(ctx)
-    foot_by_id = {
-        int(ctx.mujoco.mj_name2id(ctx.model, ctx.mujoco.mjtObj.mjOBJ_GEOM, name)): name
-        for name in ctx.foot_geoms
-    }
-    contacts_by_foot = {name: 0 for name in ctx.foot_geoms}
-    normal_by_foot = {name: 0.0 for name in ctx.foot_geoms}
+    foot_by_id = {}
+    for foot, names in ctx.foot_geom_groups.items():
+        for geom_name in names:
+            geom_id = int(ctx.mujoco.mj_name2id(ctx.model, ctx.mujoco.mjtObj.mjOBJ_GEOM, geom_name))
+            foot_by_id[geom_id] = foot
+    contacts_by_foot = {name: 0 for name in ctx.logical_feet}
+    normal_by_foot = {name: 0.0 for name in ctx.logical_feet}
     support_contacts = 0
     nonfoot_contacts = 0
     self_contacts = 0
@@ -437,7 +478,7 @@ def _snapshot(ctx: _Context, qpos: Any, ctrl: Any) -> dict[str, Any]:
     double_support = all(
         int(contact["contacts_by_foot"].get(name, 0)) > 0
         and float(contact["normal_force_by_foot"].get(name, 0.0)) >= min_load
-        for name in ctx.foot_geoms
+        for name in ctx.logical_feet
     )
     actuator_saturation_events = 0
     actuator_force_max = 0.0
@@ -616,7 +657,7 @@ def _contact_entry_steps(
         )
         contact = _contact_report(ctx)
         entered = bool(
-            all(int(contact["contacts_by_foot"].get(name, 0)) > 0 for name in ctx.foot_geoms)
+            all(int(contact["contacts_by_foot"].get(name, 0)) > 0 for name in ctx.logical_feet)
             and int(contact["forbidden_nonfoot_floor_contacts"]) == 0
             and int(contact["self_contacts"]) == 0
         )
@@ -780,7 +821,7 @@ def _dynamic_residual(ctx: _Context, vector: Any, start: Any, lower: Any, upper:
         _LOAD_DEFICIT_WEIGHT
         * max(0.0, min_load - float(contact["normal_force_by_foot"].get(name, 0.0)))
         / max(min_load, 1e-12)
-        for name in ctx.foot_geoms
+        for name in ctx.logical_feet
     )
     if not patch["corner_count"]:
         values.append(100.0)
@@ -980,7 +1021,8 @@ def solve_actual_dynamics_stance(
     joint_qpos: tuple[int, ...],
     joint_dof: tuple[int, ...],
     actuator_ids: tuple[int, ...],
-    foot_geoms: tuple[str, ...],
+        foot_geom_groups: dict[str, tuple[str, ...]] | None = None,
+        foot_geoms: tuple[str, ...] | None = None,
     start_qpos: Any,
     joint_margin: float = 0.05,
     ctrl_margin: float = 0.01,
@@ -1002,7 +1044,11 @@ def solve_actual_dynamics_stance(
         joint_qpos=joint_qpos,
         joint_dof=joint_dof,
         actuator_ids=actuator_ids,
-        foot_geoms=tuple(sorted(foot_geoms)),
+        foot_geom_groups=(
+            {name: (name,) for name in sorted(foot_geoms or ())}
+            if foot_geom_groups is None
+            else {str(key): tuple(value) for key, value in foot_geom_groups.items()}
+        ),
     )
     kinematic_attempts = [
         _solve_kinematic(ctx, start, joint_margin=joint_margin, max_nfev=kinematic_max_nfev)

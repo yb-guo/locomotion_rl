@@ -207,6 +207,8 @@ def solve_static_stance(
     sweeps: int = 120,
     kinematic_max_nfev: int = 400,
     dynamics_max_nfev: int = 350,
+    foot_geom_groups: Mapping[str, tuple[str, ...]] | None = None,
+    model_xml_sha256: str | None = None,
 ) -> StanceSolution:
     """Solve a physical-instance-specific static reset pose and input.
 
@@ -229,7 +231,23 @@ def solve_static_stance(
     if ctrl_limit_margin < 0.0:
         raise ValueError("ctrl_limit_margin must be non-negative")
     instance_key = morphology_instance_key(blueprint, physical)
-    cache_key = stance_cache_key(instance_key)
+    base_cache_key = stance_cache_key(instance_key)
+    cache_key = base_cache_key
+    if foot_geom_groups is not None or model_xml_sha256 is not None:
+        cache_key = hashlib.sha256(
+            json.dumps(
+                {
+                    "base_cache_key": base_cache_key,
+                    "foot_geom_groups": {
+                        str(key): list(value)
+                        for key, value in sorted((foot_geom_groups or {}).items())
+                    },
+                    "model_xml_sha256": model_xml_sha256,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
     qpos_adr, joint_ids = _joint_qpos_addresses(mujoco, model, blueprint)
     actuator_ids = tuple(
         int(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, actuator.name))
@@ -251,7 +269,7 @@ def solve_static_stance(
         qpos_adr,
         joint_ids,
     )
-    foot_geom_ids = _foot_geom_ids(mujoco, model, blueprint)
+    foot_geom_ids = _foot_geom_ids(mujoco, model, blueprint, foot_geom_groups=foot_geom_groups)
     leg_joints = _leg_joint_indices(blueprint)
     if not leg_joints:
         raise StaticStanceSolveError("static stance requires at least one generated leg joint")
@@ -262,24 +280,6 @@ def solve_static_stance(
         )
         for index in leg_joints
     ]
-
-    def corners(geom_id: int) -> Any:
-        center = np.asarray(data.geom_xpos[geom_id])
-        rot = np.asarray(data.geom_xmat[geom_id]).reshape(3, 3)
-        size = np.asarray(model.geom_size[geom_id])
-        if int(model.geom_type[geom_id]) == int(mujoco.mjtGeom.mjGEOM_BOX):
-            half = size[:3]
-        elif int(model.geom_type[geom_id]) == int(mujoco.mjtGeom.mjGEOM_CAPSULE):
-            half = np.array([size[1], 0.0, size[0]])
-        else:
-            half = np.array([max(size), max(size), max(size)])
-        return np.asarray(
-            [
-                center + rot @ np.array([sx * half[0], sy * half[1], -half[2]])
-                for sx in (-1.0, 1.0)
-                for sy in (-1.0, 1.0)
-            ]
-        )
 
     def center_of_mass() -> Any:
         total_mass = float(np.sum(model.body_mass))
@@ -298,7 +298,7 @@ def solve_static_stance(
         support_points = []
         foot_spread_values = []
         for geom_id in foot_geom_ids:
-            pts = corners(geom_id)
+            pts = support_points_for_geom(mujoco, np, model, data, geom_id)
             bottom = float(np.min(pts[:, 2]))
             top_bottom_face = float(np.max(pts[:, 2]))
             contact_terms += (bottom - margin) ** 2
@@ -369,7 +369,7 @@ def solve_static_stance(
         raise StaticStanceSolveError("static stance search did not produce a candidate")
 
     evaluate(best_vector)
-    _align_base_to_average_foot_bottom(mujoco, model, data, foot_geom_ids, corners, margin)
+    _align_base_to_average_foot_bottom(mujoco, np, model, data, foot_geom_ids, margin)
     if not all(math.isfinite(float(value)) for value in data.qpos):
         raise StaticStanceSolveError("static stance candidate contains non-finite qpos")
     if best_terms.get("contact", float("inf")) > 0.10 or best_terms.get("tilt", float("inf")) > 0.10:
@@ -393,7 +393,9 @@ def solve_static_stance(
                 joint_qpos=qpos_adr,
                 joint_dof=tuple(int(model.jnt_dofadr[joint_id]) for joint_id in joint_ids),
                 actuator_ids=actuator_ids,
-                foot_geoms=tuple(f"{link.name}_footpad" for link in blueprint.links if link.foot),
+                foot_geom_groups=_default_foot_geom_groups(blueprint)
+                if foot_geom_groups is None
+                else foot_geom_groups,
                 start_qpos=start_qpos,
                 joint_margin=max(0.05, joint_limit_margin),
                 ctrl_margin=ctrl_limit_margin,
@@ -439,6 +441,7 @@ def solve_static_stance(
         actuator_ctrl=actuator_ctrl,
         root_xy=(float(actual_qpos[0]), float(actual_qpos[1])),
         root_quat=tuple(float(value) for value in actual_qpos[3:7]),  # type: ignore[arg-type]
+        model_xml_sha256=model_xml_sha256,
     )
     solution.validate_for(blueprint, physical)
     _STANCE_CACHE[cache_key] = solution
@@ -485,18 +488,69 @@ def _set_blueprint_nominal_qpos(
     return tuple(nominal_values[index] for index in _leg_joint_indices(blueprint))
 
 
-def _foot_geom_ids(mujoco: Any, model: Any, blueprint: MorphologyBlueprint) -> tuple[int, ...]:
+def _default_foot_geom_groups(blueprint: MorphologyBlueprint) -> dict[str, tuple[str, ...]]:
+    return {link.name: (f"{link.name}_footpad",) for link in blueprint.links if link.foot}
+
+
+def _foot_geom_ids(
+    mujoco: Any,
+    model: Any,
+    blueprint: MorphologyBlueprint,
+    *,
+    foot_geom_groups: Mapping[str, tuple[str, ...]] | None = None,
+) -> tuple[int, ...]:
     geom_ids = []
-    for link in blueprint.links:
-        if not link.foot:
-            continue
-        geom_id = int(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f"{link.name}_footpad"))
-        if geom_id < 0:
-            raise StaticStanceSolveError(f"compiled model is missing footpad for {link.name}")
-        geom_ids.append(geom_id)
+    groups = _default_foot_geom_groups(blueprint) if foot_geom_groups is None else foot_geom_groups
+    for names in groups.values():
+        for name in names:
+            geom_id = int(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, str(name)))
+            if geom_id < 0:
+                raise StaticStanceSolveError(f"compiled model is missing foot geom {name}")
+            geom_ids.append(geom_id)
     if not geom_ids:
-        raise StaticStanceSolveError("static stance requires at least one footpad geom")
+        raise StaticStanceSolveError("static stance requires at least one foot geom")
     return tuple(geom_ids)
+
+
+def support_points_for_geom(mujoco: Any, np: Any, model: Any, data: Any, geom_id: int) -> Any:
+    center = np.asarray(data.geom_xpos[geom_id], dtype=np.float64)
+    rot = np.asarray(data.geom_xmat[geom_id], dtype=np.float64).reshape(3, 3)
+    size = np.asarray(model.geom_size[geom_id], dtype=np.float64)
+    geom_type = int(model.geom_type[geom_id])
+    if geom_type == int(mujoco.mjtGeom.mjGEOM_BOX):
+        half = size[:3]
+        return np.asarray(
+            [
+                center + rot @ np.asarray([sx * half[0], sy * half[1], -half[2]], dtype=np.float64)
+                for sx in (-1.0, 1.0)
+                for sy in (-1.0, 1.0)
+            ],
+            dtype=np.float64,
+        )
+    if geom_type == int(mujoco.mjtGeom.mjGEOM_CAPSULE):
+        radius = float(size[0])
+        half_length = float(size[1])
+        axis = rot[:, 2]
+        down = np.asarray((0.0, 0.0, -radius), dtype=np.float64)
+        return np.asarray(
+            [center - axis * half_length + down, center + axis * half_length + down],
+            dtype=np.float64,
+        )
+    if geom_type == int(mujoco.mjtGeom.mjGEOM_SPHERE):
+        radius = float(size[0])
+        return np.asarray([center + np.asarray((0.0, 0.0, -radius), dtype=np.float64)])
+    if geom_type == int(mujoco.mjtGeom.mjGEOM_CYLINDER):
+        radius = float(size[0])
+        half_height = float(size[1])
+        return np.asarray(
+            [
+                center + rot @ np.asarray([sx * radius, sy * radius, -half_height], dtype=np.float64)
+                for sx, sy in ((-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0))
+            ],
+            dtype=np.float64,
+        )
+    radius = float(max(size))
+    return np.asarray([center + np.asarray((0.0, 0.0, -radius), dtype=np.float64)])
 
 
 def _shrink_joint_bounds(bounds: tuple[float, float], margin: float) -> tuple[float, float]:
@@ -532,13 +586,16 @@ def _leg_joint_indices(blueprint: MorphologyBlueprint) -> tuple[int, ...]:
 
 def _align_base_to_average_foot_bottom(
     mujoco: Any,
+    np: Any,
     model: Any,
     data: Any,
     foot_geom_ids: tuple[int, ...],
-    corners: Any,
     margin: float,
 ) -> None:
-    bottoms = [float(min(corners(geom_id)[:, 2])) for geom_id in foot_geom_ids]
+    bottoms = [
+        float(np.min(support_points_for_geom(mujoco, np, model, data, geom_id)[:, 2]))
+        for geom_id in foot_geom_ids
+    ]
     if not bottoms:
         raise StaticStanceSolveError("static stance has no foot bottoms to align")
     data.qpos[2] += margin - (sum(bottoms) / len(bottoms))

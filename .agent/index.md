@@ -80,6 +80,9 @@ Locomotion Lab 的 agent 入口。当前主力硬件是 RTX 5060 Ti；H200 profi
 - `task/task069-locoformer-paper-faithful-morphology/task.md`
 - `task/task070-archetype-constrained-standable-morphology/task.md`
 - `task/task071-multimorphology-training-readiness/task.md`
+- `task/task072-bound-g1-go2-locomotion-proof/task.md`
+- `task/task073-explicit-terminal-contact-assets/task.md`
+- `task/task074-all-configuration-training/task.md`
 
 ## Consensus
 
