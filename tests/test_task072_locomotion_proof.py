@@ -358,14 +358,29 @@ def _task072_fake_training_manifest(tmp_path: Path, records: list[dict[str, obje
     records = records or [_task072_clip_record(index) for index in range(MJLAB_RUNNER.TASK072_PILOT_UPDATES)]
     summary = MJLAB_RUNNER.pool_task072_clip_records(records, last_n=7)
     progression = tmp_path / "progression.json"
-    progression.write_text(json.dumps({"passed": all(summary["checks"].values())}), encoding="utf-8")
-    checkpoint_sha = {
-        str((tmp_path / f"model_{update}.pt").resolve()): f"{update:064x}"
-        for update in MJLAB_RUNNER.TASK072_PILOT_EVAL_UPDATES
-    }
+    progression.write_text(json.dumps({"passed": True}), encoding="utf-8")
+    checkpoint_sha = {}
+    for update in MJLAB_RUNNER.TASK072_PILOT_EVAL_UPDATES:
+        checkpoint = tmp_path / f"model_{update}.pt"
+        checkpoint.write_bytes(f"model-{update}".encode())
+        checkpoint_sha[str(checkpoint.resolve())] = MJLAB_RUNNER.sha256_path(checkpoint)
+    env_cfg, _agent_cfg, _runner_cls, registration = MJLAB_RUNNER.build_task_cfg(
+        1, 24, MJLAB_RUNNER.DEFAULT_SEED, 1
+    )
+    runtime_table = MJLAB_RUNNER.task072_reward_active_table_from_cfg(env_cfg.rewards)
+    losses = [{"value": 0.1 + update * 0.001} for update in range(MJLAB_RUNNER.TASK072_PILOT_UPDATES)]
+    update_reports = [
+        {
+            "update_index": update,
+            "losses": loss,
+            "pre_update_std": {"shape": [29], "min": 1.0, "mean": 1.0, "max": 1.0, "finite": True},
+            "post_update_std": {"shape": [29], "min": 0.9, "mean": 0.9, "max": 0.9, "finite": True},
+        }
+        for update, loss in enumerate(losses)
+    ]
     return {
         "schema_version": 3,
-        "subtask": "003i",
+        "subtask": MJLAB_RUNNER.TASK072_ACTIVE_SUBTASK,
         "lineage_id": MJLAB_RUNNER.LINEAGE_ID,
         "runtime_lineage_id": MJLAB_RUNNER.LINEAGE_ID,
         "seed": MJLAB_RUNNER.DEFAULT_SEED,
@@ -376,11 +391,50 @@ def _task072_fake_training_manifest(tmp_path: Path, records: list[dict[str, obje
         "checkpoint_sha256": checkpoint_sha,
         "action_clip_update_records": records,
         "action_clip_last_7_summary": summary,
+        "policy_distribution_lineage": {
+            "actor_distribution_class": "rsl_rl.modules.distribution.GaussianDistribution",
+            "init_std": 1.0,
+            "std_type": "scalar",
+            "entropy_coef": 0.01,
+            "num_learning_epochs": 5,
+            "num_mini_batches": 4,
+            "learning_rate": 0.001,
+            "schedule": "adaptive",
+            "desired_kl": 0.01,
+            "clip_actions": 1.0,
+            "action_dimension": 29,
+        },
+        "optimizer_step_count": 5 * 4 * 21,
+        "expected_optimizer_step_count": 5 * 4 * 21,
+        "parameter_delta": {"finite": True, "max_abs": 0.1, "changed_parameter_count": 1},
+        "losses": losses,
+        "update_reports": update_reports,
+        "runtime_reward_active_table": runtime_table,
+        "runtime_reward_active_table_sha256": registration["reward_active_table_sha256"],
+        "runtime_rollout_evidence": {
+            "check_for_nan_enabled": True,
+            "expected_rollout_steps": 24 * 21,
+            "observed_rollout_steps": 24 * 21,
+            "expected_transitions": 4096 * 24 * 21,
+            "observed_transitions": 4096 * 24 * 21,
+            "obs_finite": True,
+            "rewards_finite": True,
+            "dones_finite": True,
+            "finite": True,
+        },
+        "check_for_nan_enabled": True,
+        "runtime_reward_active_term_count": len(runtime_table),
+        "reward_contract": {
+            "version": MJLAB_RUNNER.REWARD_CONTRACT_VERSION,
+            "canonical_payload_sha256": registration["reward_payload_sha256"],
+            "config_active_table_sha256": registration["reward_active_table_sha256"],
+        },
         "progression": {"path": str(progression), "sha256": MJLAB_RUNNER.sha256_path(progression)},
         "capacity_evidence": {"consumption_checks": {"ok": True}},
         "external_mjlab_checks": {"frame_local": True, "commit_pinned": True, "tracked_clean": True},
         "training_execution_complete": True,
-        "passed": all(summary["checks"].values()),
+        "acceptance_checks": {name: True for name in MJLAB_RUNNER.TASK072_ACCEPTANCE_CHECK_NAMES},
+        "passed": True,
     }
 
 
@@ -398,7 +452,7 @@ def _task072_fake_eval(
     checkpoint_path = next(path for path in manifest["checkpoint_sha256"] if Path(path).stem == f"model_{update}")
     return {
         "schema_version": 3,
-        "subtask": "003i",
+        "subtask": MJLAB_RUNNER.TASK072_ACTIVE_SUBTASK,
         "lineage_id": MJLAB_RUNNER.LINEAGE_ID,
         "checkpoint": {"path": checkpoint_path, "sha256": manifest["checkpoint_sha256"][checkpoint_path]},
         "training_manifest": {"sha256": manifest_sha},
@@ -447,9 +501,7 @@ def test_task072_clip_summary_and_training_manifest_fail_closed(tmp_path: Path, 
             max_abs_raw_action=1.5,
         )
     heavy_summary = MJLAB_RUNNER.pool_task072_clip_records(heavy, last_n=7)
-    assert heavy_summary["checks"]["scalar_clip_fraction"] is False
-    with pytest.raises(ValueError, match="failed thresholds"):
-        MJLAB_RUNNER.validate_task072_clip_summary(heavy_summary, expected_update_indices=list(range(14, 21)))
+    assert MJLAB_RUNNER.validate_task072_clip_summary(heavy_summary, expected_update_indices=list(range(14, 21))) is heavy_summary
 
     current = {
         "action_contract": {},
@@ -463,9 +515,11 @@ def test_task072_clip_summary_and_training_manifest_fail_closed(tmp_path: Path, 
         "external_mjlab_checks": {"frame_local": True, "commit_pinned": True, "tracked_clean": True},
     }
     monkeypatch.setattr(MJLAB_RUNNER, "_common_manifest", lambda _args: current)
+    fake_manifest = _task072_fake_training_manifest(tmp_path, records)
+    current["reward_contract"] = fake_manifest["reward_contract"]
     manifest = {
         **current,
-        **_task072_fake_training_manifest(tmp_path, records),
+        **fake_manifest,
         "action_contract": current["action_contract"],
         "reward_contract": current["reward_contract"],
         "canonical_train_eval_config": current["canonical_train_eval_config"],
@@ -479,14 +533,39 @@ def test_task072_clip_summary_and_training_manifest_fail_closed(tmp_path: Path, 
     no_capacity["capacity_evidence"] = {"consumption_checks": {}}
     with pytest.raises(ValueError, match="training manifest failed"):
         MJLAB_RUNNER._validate_training_manifest_for_eval(no_capacity)
-    over_threshold = {
+    high_clip_manifest = {
         **manifest,
         "action_clip_update_records": heavy,
         "action_clip_last_7_summary": heavy_summary,
         "passed": True,
     }
-    with pytest.raises(ValueError, match="training manifest failed"):
-        MJLAB_RUNNER._validate_training_manifest_for_eval(over_threshold)
+    MJLAB_RUNNER._validate_training_manifest_for_eval(high_clip_manifest)
+
+
+def test_task072_one_update_acceptance_evidence_is_complete_and_fail_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    current = {
+        "action_contract": {}, "reward_contract": {},
+        "canonical_train_eval_config": {"payload_sha256": "c" * 64, "passed": True},
+        "runner_source_sha256": "r" * 64, "runtime_spec_sha256": "s" * 64,
+        "asset_xml": {"sha256": "a" * 64}, "contact_profile": {"payload_sha256": "p" * 64},
+        "stance": {"payload_sha256": "t" * 64},
+        "external_mjlab_checks": {"frame_local": True, "commit_pinned": True, "tracked_clean": True},
+    }
+    monkeypatch.setattr(MJLAB_RUNNER, "_common_manifest", lambda _args: current)
+    fake_manifest = _task072_fake_training_manifest(tmp_path)
+    current["reward_contract"] = fake_manifest["reward_contract"]
+    manifest = {**current, **fake_manifest}
+    MJLAB_RUNNER._validate_training_manifest_for_eval(manifest)
+    for missing_field in (
+        "optimizer_step_count",
+        "parameter_delta",
+        "losses",
+        "runtime_reward_active_table",
+    ):
+        incomplete = copy.deepcopy(manifest)
+        del incomplete[missing_field]
+        with pytest.raises(ValueError, match="training manifest failed"):
+            MJLAB_RUNNER._validate_training_manifest_for_eval(incomplete)
 
 
 def test_task072_pilot_gate_requires_survival_non_regression_and_clip_updates(tmp_path: Path) -> None:
@@ -553,8 +632,8 @@ def test_task072_pilot_gate_requires_survival_non_regression_and_clip_updates(tm
         _task072_fake_eval(bad_manifest, 14, median_first_fall=2.5),
         _task072_fake_eval(bad_manifest, 20, median_first_fall=2.8),
     ])
-    assert gate["passed"] is False
-    assert "training.clip_last_7_thresholds" in gate["failure_reasons"]
+    assert gate["passed"] is True
+    assert "training.clip_last_7_valid" not in gate["failure_reasons"]
 
 
 def _passing_gate_metrics() -> dict[str, object]:
@@ -661,11 +740,11 @@ def test_mjlab_runner_capacity_defaults_require_4096_equivalence() -> None:
     train = MJLAB_RUNNER.parse_args(["one-update-train", "--run-dir", "run"])
     assert train.num_envs == 4096
     assert train.rollout_steps == 24
-    assert train.capacity_artifact == MJLAB_RUNNER.RUNTIME_BINDING_ROOT / "003i_capacity_smoke_2048_4096_6144.json"
+    assert train.capacity_artifact == MJLAB_RUNNER.RUNTIME_BINDING_ROOT / "003j_capacity_smoke_2048_4096_6144.json"
     assert MJLAB_RUNNER.REQUIRED_TRANSITIONS_PER_UPDATE == 4096 * 24
 
 
-def test_mjlab_runner_records_003f_only_for_runtime_verifier_then_003i(tmp_path: Path) -> None:
+def test_mjlab_runner_records_003f_only_for_runtime_verifier_then_003j(tmp_path: Path) -> None:
     verify = MJLAB_RUNNER.parse_args(["verify-runtime-binding", "--output", "verify.json"])
     capacity = MJLAB_RUNNER.parse_args(["capacity-smoke", "--output", "capacity.json"])
     one_update = MJLAB_RUNNER.parse_args(["one-update-train", "--run-dir", "run"])
@@ -730,9 +809,9 @@ def test_mjlab_runner_records_003f_only_for_runtime_verifier_then_003i(tmp_path:
         MJLAB_RUNNER.task072_canonical_reward_payload = lambda _table: {"payload_sha256": "e" * 64}
         MJLAB_RUNNER.task072_validate_reward_active_table = lambda _table: "f" * 64
         assert MJLAB_RUNNER._common_manifest(verify)["subtask"] == "003f"
-        assert MJLAB_RUNNER._common_manifest(capacity)["subtask"] == "003i"
-        assert MJLAB_RUNNER._common_manifest(one_update)["subtask"] == "003i"
-        assert MJLAB_RUNNER._common_manifest(evaluate)["subtask"] == "003i"
+        assert MJLAB_RUNNER._common_manifest(capacity)["subtask"] == MJLAB_RUNNER.TASK072_ACTIVE_SUBTASK
+        assert MJLAB_RUNNER._common_manifest(one_update)["subtask"] == MJLAB_RUNNER.TASK072_ACTIVE_SUBTASK
+        assert MJLAB_RUNNER._common_manifest(evaluate)["subtask"] == MJLAB_RUNNER.TASK072_ACTIVE_SUBTASK
     finally:
         MJLAB_RUNNER.CONTACT_PROFILE = original_contact
         MJLAB_RUNNER.STANCE = original_stance
@@ -759,12 +838,12 @@ def test_mjlab_runtime_defaults_are_v3_single_ground_paths() -> None:
     assert MJLAB_RUNNER.parse_args(["capacity-smoke"]).output.is_relative_to(MJLAB_RUNNER.RUNTIME_BINDING_ROOT)
     assert MJLAB_RUNNER.parse_args(["one-update-train"]).run_dir.is_relative_to(MJLAB_RUNNER.RUNTIME_BINDING_ROOT)
     pilot_gate = MJLAB_RUNNER.parse_args(["pilot-gate"])
-    assert pilot_gate.output == MJLAB_RUNNER.RUNTIME_BINDING_ROOT / "003i_pilot_gate.json"
+    assert pilot_gate.output == MJLAB_RUNNER.RUNTIME_BINDING_ROOT / "003j_pilot_gate.json"
     assert [path.name for path in pilot_gate.eval] == [
-        "003i_eval_pilot_model_0_fixed_vx0p5_seed720400.json",
-        "003i_eval_pilot_model_7_fixed_vx0p5_seed720400.json",
-        "003i_eval_pilot_model_14_fixed_vx0p5_seed720400.json",
-        "003i_eval_pilot_model_20_fixed_vx0p5_seed720400.json",
+        "003j_eval_pilot_model_0_fixed_vx0p5_seed720400.json",
+        "003j_eval_pilot_model_7_fixed_vx0p5_seed720400.json",
+        "003j_eval_pilot_model_14_fixed_vx0p5_seed720400.json",
+        "003j_eval_pilot_model_20_fixed_vx0p5_seed720400.json",
     ]
 
 

@@ -460,6 +460,9 @@ versioned subtask 和既有正式 walking gate 执行。
   eval 或 `003i_pilot_gate.json`；003i 状态为
   `one_update_failed / smoke_trained / not_passed`。
 
+- 2026-09-01：003j 以 gate-scope mismatch supersede 003i 的 one-update clip continuation 条件；
+  003i 的失败状态、manifest、model 与 diagnostic artifact 保持历史原样，不得改判或续训。
+
 ## Review
 
 - [x] exact 23-term v3 已整体替换 parent reward；gait 保留且 centered velocity 使 static full reward

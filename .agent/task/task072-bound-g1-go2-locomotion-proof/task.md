@@ -9,7 +9,7 @@
 reward；G1 通过后冻结全部代码、配置和资产 lineage，再在完全相同的 source commit 上重跑
 Go2、视频和 verifier。
 
-Task073 在 003i fresh pilot、后续 versioned G1 proof 与 004 freeze 完成前保持 blocked。本任务不扩展到其余 16 个构型，
+Task073 在 003j fresh pilot、后续 versioned G1 proof 与 004 freeze 完成前保持 blocked。本任务不扩展到其余 16 个构型，
 不启用质量、COM、摩擦、电机、push、sensor
 noise 或 terrain randomization，也不使用 command curriculum。Task048 checkpoint 与本地课程资料
 只能作为设计/预算参考，不得作为 Task072 初始化权重或 pass evidence。
@@ -17,7 +17,7 @@ noise 或 terrain randomization，也不使用 command curriculum。Task048 chec
 003b/003c/003d/003e/003f/003g 是旧 v3/v4 MJLab lineage 的历史路线。003g 已完成 single-ground
 training/eval，但后验确认 training contract 仍继承 `Unitree-G1-Flat` 的随机 command、DR/curriculum、
 parent reward 和对称 action scale；因此 003g 只作为 failed evidence，不能作为可继续训练的父合同。
-当前唯一活动路线是 003i MJLab reward/eval/survival repair；fixed-command/no-DR/no-curriculum 约束没有例外。
+当前唯一活动路线是 003j G1 MJLab action-clip gate scope repair；fixed-command/no-DR/no-curriculum 约束没有例外。
 
 ### R1 diagnosis and reopen
 
@@ -221,10 +221,10 @@ pointer 和整份 action contract raw/payload SHA。每个 manifest/report 都�
 原始路线为 `001 -> 002 -> 003 -> 004 -> 005`；其失败证据保持不变。当前有效链路严格为
 `003b v1 geometry pass -> 003c rejected runtime binding mismatch -> 003d rejected double-ground ->
 003e rejected contaminated training -> 003f single-ground runtime repair -> 003g failed training evidence ->
-003h rejected diagnostic -> 003i reward/eval/survival repair -> separately authorized capacity/pilot ->
+003h rejected diagnostic -> 003i rejected action-clip gate-scope diagnostic -> 003j action-clip gate-scope repair -> separately authorized capacity/pilot ->
 future versioned proof subtask -> 004 freeze -> Task073 asset migration ->
 Task074 18-case training`。
-003i implementation source 未提交、CPU gates 未通过、新 authorized pilot 未通过或后续 formal proof
+003j implementation source 未提交、CPU gates 未通过、新 authorized pilot 未通过或后续 formal proof
 未通过，不得 freeze 或启动 Task073。
 004 必须绑定新的 contact/stance/asset lineage，不能
 复用旧 `official_sim_physics_overlay_v1` stance 或把旧失败 artifact 补判通过。任何阶段失败都保留完整失败 artifact，并停止向
