@@ -433,7 +433,9 @@ def _task072_fake_training_manifest(tmp_path: Path, records: list[dict[str, obje
         "capacity_evidence": {"consumption_checks": {"ok": True}},
         "external_mjlab_checks": {"frame_local": True, "commit_pinned": True, "tracked_clean": True},
         "training_execution_complete": True,
-        "acceptance_checks": {name: True for name in MJLAB_RUNNER.TASK072_ACCEPTANCE_CHECK_NAMES},
+        "acceptance_checks": {
+            name: True for name in reversed(MJLAB_RUNNER.TASK072_ACCEPTANCE_CHECK_NAMES)
+        },
         "passed": True,
     }
 

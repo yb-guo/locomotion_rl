@@ -2628,7 +2628,7 @@ def _validate_training_manifest_for_eval(payload: dict[str, Any]) -> None:
         and runtime_evidence.get("observed_rollout_steps") == runtime_evidence.get("expected_rollout_steps")
         and runtime_evidence.get("observed_transitions") == payload.get("observed_transitions")
     )
-    acceptance_ok = isinstance(acceptance_checks, dict) and tuple(acceptance_checks) == TASK072_ACCEPTANCE_CHECK_NAMES and all(
+    acceptance_ok = isinstance(acceptance_checks, dict) and set(acceptance_checks) == set(TASK072_ACCEPTANCE_CHECK_NAMES) and all(
         value is True for value in acceptance_checks.values()
     ) and policy_lineage_ok and optimizer_steps_ok and parameter_delta_ok and losses_ok and runtime_table_ok and runtime_evidence_ok
     progression = payload.get("progression", {})
@@ -3240,7 +3240,7 @@ def task072_pilot_continuation_gate(
             "capacity_consumed": bool(capacity_checks) and all(capacity_checks.values()),
             "acceptance_checks": (
                 isinstance(training_manifest.get("acceptance_checks"), dict)
-                and tuple(training_manifest["acceptance_checks"]) == TASK072_ACCEPTANCE_CHECK_NAMES
+                and set(training_manifest["acceptance_checks"]) == set(TASK072_ACCEPTANCE_CHECK_NAMES)
                 and all(value is True for value in training_manifest["acceptance_checks"].values())
                 and all(
                     key in training_manifest
