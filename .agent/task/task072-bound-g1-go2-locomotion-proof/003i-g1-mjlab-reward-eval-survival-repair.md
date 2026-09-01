@@ -1,6 +1,6 @@
 # 003i — G1 MJLab reward-v3、eval 语义与 survival repair
 
-状态：**awaiting_user_gpu_authorization / not_trained / not_passed**。
+状态：**one_update_failed / smoke_trained / not_passed**。
 
 003i 是 003h 后验审计后的唯一活动 subtask。它只关闭三个已经定位的合同错误：
 
@@ -20,8 +20,9 @@ versioned proof subtask，并再次取得正式训练授权。
 `003h rejected_diagnostic -> 003i CPU implementation/tests -> user-authorized capacity/one-update ->
 fresh pilot -> pilot continuation gate -> future versioned proof subtask -> 004`。
 
-003i pending、CPU gate 失败、未获 GPU 授权或 pilot gate 失败时，004、Task073、Task074 全部
-保持 blocked。当前用户消息只授权编写本合同，不授权 CUDA capacity、one-update 或 pilot。
+003i pending、CPU gate 失败、未获 GPU 授权、one-update gate 失败或 pilot gate 失败时，
+004、Task073、Task074 全部保持 blocked。2026-09-01 GPU 授权已执行到 one-update；one-update
+clip gate 失败后已停止，未运行 fresh pilot、eval、pilot gate、proof、video 或 freeze。
 
 ## Frozen rejected evidence
 
@@ -434,6 +435,30 @@ versioned subtask 和既有正式 walking gate 执行。
   `tests/test_task072_locomotion_proof.py tests/test_whole_body_extended.py` returned
   `80 passed, 35 warnings`；`git diff --check` passed。未运行 CUDA、capacity、one-update、pilot、
   proof、video 或 freeze。
+- 2026-09-01：整理脏文件后提交 `3fad223dc37f7d00f89582c50cda2fed5f2fcfa2`，并在该 clean HEAD
+  重新确认 003i CPU verifier passed。runner SHA
+  `f12ae2ade55815094fb9a29b046d87892909a22d641d7d482e82e464c8818233`、test SHA
+  `dde574f527fc31980b65ed922bcd648c1a9ce481693e49d77b55dbfc87a7be6a`、reward payload SHA
+  `ef8fe4b5c8f3edcbd293cc170b03ae99665e79f04d289105f57f04e19d617051`、actual manager active-table SHA
+  `323feac6197abc6d706205f39d5f332b834e87332d453919ccfb1998f5eea7e2` 均与 CPU verifier 一致；
+  refreshed CPU verifier artifact SHA
+  `e3058b1385ee3d6136b541a4efa1e433b76f2072caf2ec0cd3400e4765f95f80`。
+  003i capacity smoke 在 `/home/admin1/workspace/run/.gpu.lock` ancestor 下通过，artifact SHA
+  `6cbb7fb4e42908cfd304dec8f7f7b462dc0423e54e670c052d835d2f0853e462`；
+  candidates `2048/4096/6144` 全部 finite/passed，required selected `4096 x 24 = 98,304`，
+  `gpu_lock.held_by_ancestor=true`。随后运行 exact `4096x24x1` one-update seed `720301`，
+  生成 `model_0.pt` SHA
+  `3a810edb8e2c5f7d8f9f1825309cd14da202f396e7f70b9c62ba76ca5e315e30`、manifest SHA
+  `b8920fc985b90bec63b7864765ba5a47652b57bb49026067cf390b37e776c33c`、progression SHA
+  `3a6d4dc656eac3e3d126e729dc14056bf2e85f05f0f801d2591589d62baaa598`、policy ONNX SHA
+  `3a260a462922140f9876e378d2270d64307a1ec97345647173e6d2d565ab0478`；capacity consumption checks
+  全部 true，`training_execution_complete=true`，但 one-update `passed=false`，原因是 action clip
+  gate failed：scalar clip fraction `0.3195660470545977 > 0.10`、env-step-any clip fraction
+  `0.9999898274739584 > 0.50`、max per-joint clip fraction
+  `0.3235677083333333 > 0.25`（`left_arm_shoulder_pitch`），max abs raw action
+  `5.651471138000488`。按 stop rule 未运行 `4096x24x21` fresh pilot、model `0/7/14/20`
+  eval 或 `003i_pilot_gate.json`；003i 状态为
+  `one_update_failed / smoke_trained / not_passed`。
 
 ## Review
 
@@ -446,5 +471,7 @@ versioned subtask 和既有正式 walking gate 执行。
 - [x] action clip 每 update 的整数计数、四类输出、last-7 pooled gate 均可复算。
 - [x] CPU matrix 与 source commit 已通过；若未取得单独 GPU 授权，状态停在
   `awaiting_user_gpu_authorization / not_trained / not_passed`。
+- [x] GPU capacity passed 后 exact one-update 因 action clip scalar/env-step/per-joint gates 失败而停止；
+  failure artifact 已保留，未继续 pilot/eval/gate。
 - [ ] fresh-init pilot 通过 continuation gate 后也只允许新建 proof subtask；否则停止
   004/Task073/Task074。

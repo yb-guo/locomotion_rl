@@ -1,6 +1,6 @@
 # Task072 — Bound G1/Go2 nominal locomotion proof
 
-状态：**awaiting_user_gpu_authorization / not_trained / not_passed**。
+状态：**one_update_failed / smoke_trained / not_passed**。
 
 ## 目标与边界
 
@@ -91,6 +91,8 @@ untrained/zero baselines 直接比较，并无条件写 `paired_baselines_verifi
    - CPU gates 全过且重新取得用户 GPU 授权后，从随机初始化 seed `720301` 重跑 `4096x24x21` pilot，
      eval updates `0,7,14,20`；不得使用 003h checkpoint。失败即停止；通过也只允许新建后续
      versioned proof subtask，不能直接进入 004。004/Task073/074 继续 blocked。
+   - 2026-09-01 授权后 003i capacity smoke passed；exact `4096x24x1` one-update 因 action clip
+     scalar/env-step/per-joint gates 失败而停止，fresh pilot、eval、pilot gate 未运行。
 4. `004-freeze-g1-passing-lineage.md`
    - 只有 G1 全 gate 通过后，冻结实现 commit、配置、descriptor、asset、checkpoint 与 verifier
      SHA；
@@ -548,10 +550,28 @@ baseline、progression、SHA 或任一指标失败，均视为该 case 未通过
   和 q_ref/source-hash active-table validation；`py_compile`、
   scoped pytest `80 passed, 35 warnings`、`git diff --check` passed。未运行 CUDA/capacity/
   one-update/pilot/proof/video/freeze，004/Task073/Task074 继续 blocked。
+- 2026-09-01：整理脏文件后提交 `3fad223dc37f7d00f89582c50cda2fed5f2fcfa2`，并在该 clean HEAD
+  重新确认 003i CPU verifier passed。refreshed verifier SHA
+  `e3058b1385ee3d6136b541a4efa1e433b76f2072caf2ec0cd3400e4765f95f80`；runner SHA
+  `f12ae2ade55815094fb9a29b046d87892909a22d641d7d482e82e464c8818233`、test SHA
+  `dde574f527fc31980b65ed922bcd648c1a9ce481693e49d77b55dbfc87a7be6a`、reward payload SHA
+  `ef8fe4b5c8f3edcbd293cc170b03ae99665e79f04d289105f57f04e19d617051`、active-table SHA
+  `323feac6197abc6d706205f39d5f332b834e87332d453919ccfb1998f5eea7e2`。003i capacity smoke passed，
+  artifact SHA `6cbb7fb4e42908cfd304dec8f7f7b462dc0423e54e670c052d835d2f0853e462`，
+  selected `4096 x 24 = 98,304`，highest passed `6144`，`gpu_lock.held_by_ancestor=true`。
+  exact `4096x24x1` one-update seed `720301` ran from random init and produced `model_0.pt` SHA
+  `3a810edb8e2c5f7d8f9f1825309cd14da202f396e7f70b9c62ba76ca5e315e30`，但 manifest
+  `b8920fc985b90bec63b7864765ba5a47652b57bb49026067cf390b37e776c33c` returned `passed=false`：
+  scalar clip `0.3195660470545977 > 0.10`、env-step-any clip
+  `0.9999898274739584 > 0.50`、max per-joint clip `0.3235677083333333 > 0.25`
+  (`left_arm_shoulder_pitch`)，progression SHA
+  `3a6d4dc656eac3e3d126e729dc14056bf2e85f05f0f801d2591589d62baaa598`。按 stop rule 未运行
+  fresh pilot、model `0/7/14/20` eval、`003i_pilot_gate.json`、proof、video 或 freeze；
+  004/Task073/Task074 继续 blocked。
 
 ## Review
 
-状态：**awaiting_user_gpu_authorization / not_trained / not_passed**。
+状态：**one_update_failed / smoke_trained / not_passed**。
 
 Task072 只有在 exact-bound G1 和 Go2 都在同一冻结 source commit/config contract 上满足全部数值、
 视频、baseline、checkpoint 与 verifier gate 后才能标记 passed。Task071 的 one-update PPO smoke、旧
@@ -572,8 +592,9 @@ gate 已通过，R5 2.048M 也已执行，但 exact-init binding 和原 optimize
 正确 v2 binding 下的 walking failure。003f single-ground runtime no-update verifier 已通过，但未启动新的
 v3 capacity/training/eval/video。003g single-ground training/eval 已失败，且因 training contract 分叉不得
 继承；003h 虽完成用户授权的 capacity/one-update/pilot/eval，但后验确认 reward v3 未实例化且 eval
-混淆 timeout/fall，全部降级为 rejected diagnostic。003i bounded repair 已完成并通过 CPU verifier；未
-运行 fresh pilot。G1/Go2 full proof 仍未通过，Task072 继续保持 **not_passed**。
+混淆 timeout/fall，全部降级为 rejected diagnostic。003i bounded repair 已完成并通过 CPU verifier；
+GPU capacity passed，但 one-update action clip gate failed，未运行 fresh pilot/eval/gate。
+G1/Go2 full proof 仍未通过，Task072 继续保持 **not_passed**。
 
 ## R2 single-variable recovery route
 
