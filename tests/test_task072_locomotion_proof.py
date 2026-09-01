@@ -203,6 +203,14 @@ def test_task072_reward_v3_literal_has_exact_active_order() -> None:
     phase_drift[6]["params"]["period"] = 1.0
     with pytest.raises(ValueError, match="phase params drift"):
         MJLAB_RUNNER.task072_validate_reward_active_table(phase_drift)
+    q_ref_drift = copy.deepcopy(table)
+    q_ref_drift[13]["params"]["q_ref"][0] += 0.01
+    with pytest.raises(ValueError, match="pose q_ref drift"):
+        MJLAB_RUNNER.task072_validate_reward_active_table(q_ref_drift)
+    source_hash_drift = copy.deepcopy(table)
+    source_hash_drift[0]["function_source_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="source hash drift"):
+        MJLAB_RUNNER.task072_validate_reward_active_table(source_hash_drift)
     with pytest.raises(ValueError, match="reward active-table SHA drift"):
         MJLAB_RUNNER.task072_require_train_eval_reward_match("a" * 64, "b" * 64)
 
@@ -420,6 +428,14 @@ def test_task072_clip_summary_and_training_manifest_fail_closed(tmp_path: Path, 
     bad_fraction["scalar_clip_fraction"] = 0.5
     with pytest.raises(ValueError, match="scalar fraction mismatch"):
         MJLAB_RUNNER.validate_task072_clip_records([bad_fraction])
+    fractional_counter = copy.deepcopy(records[0])
+    fractional_counter["clipped_scalars"] = 0.5
+    with pytest.raises(ValueError, match="must be an integer"):
+        MJLAB_RUNNER.validate_task072_clip_records([fractional_counter])
+    fractional_summary = copy.deepcopy(summary)
+    fractional_summary["env_steps_with_any_clip"] = 0.5
+    with pytest.raises(ValueError, match="must be an integer"):
+        MJLAB_RUNNER.validate_task072_clip_summary(fractional_summary, expected_update_indices=list(range(14, 21)))
 
     names = list(MJLAB_RUNNER.SEMANTIC_TO_ANON_JOINT)
     heavy = copy.deepcopy(records)
@@ -459,6 +475,10 @@ def test_task072_clip_summary_and_training_manifest_fail_closed(tmp_path: Path, 
     forged["action_clip_update_records"][0]["clipped_scalars"] = 1
     with pytest.raises(ValueError, match="training manifest failed"):
         MJLAB_RUNNER._validate_training_manifest_for_eval(forged)
+    no_capacity = copy.deepcopy(manifest)
+    no_capacity["capacity_evidence"] = {"consumption_checks": {}}
+    with pytest.raises(ValueError, match="training manifest failed"):
+        MJLAB_RUNNER._validate_training_manifest_for_eval(no_capacity)
     over_threshold = {
         **manifest,
         "action_clip_update_records": heavy,
@@ -510,6 +530,11 @@ def test_task072_pilot_gate_requires_survival_non_regression_and_clip_updates(tm
     missing_eval = MJLAB_RUNNER.task072_pilot_continuation_gate(manifest, evals[:3])
     assert missing_eval["passed"] is False
     assert "eval_set.exact_updates" in missing_eval["failure_reasons"]
+    no_capacity_manifest = copy.deepcopy(manifest)
+    no_capacity_manifest["capacity_evidence"] = {"consumption_checks": {}}
+    gate = MJLAB_RUNNER.task072_pilot_continuation_gate(no_capacity_manifest, evals)
+    assert gate["passed"] is False
+    assert "training.capacity_consumed" in gate["failure_reasons"]
 
     names = list(MJLAB_RUNNER.SEMANTIC_TO_ANON_JOINT)
     heavy_records = [_task072_clip_record(index) for index in range(MJLAB_RUNNER.TASK072_PILOT_UPDATES)]

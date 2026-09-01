@@ -1083,11 +1083,15 @@ def task072_canonical_reward_payload(active_table: list[dict[str, Any]]) -> dict
 
 
 def task072_validate_reward_active_table(table: list[dict[str, Any]]) -> str:
+    import inspect
+
     if [row.get("name") for row in table] != list(REWARD_V3_ORDER):
         raise ValueError("Task072 reward active table has wrong key/order/count")
     forbidden = {"foot_gait", "feet_gait", "is_terminated"}
     if forbidden & {str(row.get("name")) for row in table}:
         raise ValueError("Task072 reward active table contains forbidden parent reward")
+    stance = _stance_dict()
+    stance_payload_sha = payload_sha256(stance)
     source_file = str(Path(__file__).resolve())
     indices = _runtime_entity_indices()
     expected_foot_site_ids = [int(indices["site_ids"][name]) for name in FOOT_SITES]
@@ -1108,6 +1112,10 @@ def task072_validate_reward_active_table(table: list[dict[str, Any]]) -> str:
             raise ValueError(f"Task072 reward term is nested: {name}")
         if row.get("source_file") != source_file:
             raise ValueError(f"Task072 reward term source file drift: {name}")
+        expected_func = globals()[f"task072_reward_{name}"]
+        expected_source_hash = hashlib.sha256(inspect.getsource(expected_func).encode()).hexdigest()
+        if row.get("function_source_sha256") != expected_source_hash:
+            raise ValueError(f"Task072 reward term source hash drift: {name}")
         if float(row.get("weight")) != REWARD_V3_WEIGHTS[name]:
             raise ValueError(f"Task072 reward weight drift: {name}")
         if tuple(sorted(params)) != tuple(REWARD_V3_PARAM_KEYS[name]):
@@ -1130,7 +1138,10 @@ def task072_validate_reward_active_table(table: list[dict[str, Any]]) -> str:
     if double.get("period") != 0.8 or double.get("offsets") != [0.0, 0.5] or double.get("stance_fraction") != 0.55:
         raise ValueError("Task072 reward phase params drift")
     by_name = {row["name"]: row for row in table}
-    if by_name["height"]["params"].get("stance_payload_sha256") != by_name["pose_hip"]["params"].get("stance_payload_sha256"):
+    height = by_name["height"]["params"]
+    if abs(float(height.get("stance_height")) - float(stance["root_pose_eq"][2])) > STANCE_TOL:
+        raise ValueError("Task072 reward stance height drift")
+    if height.get("stance_payload_sha256") != stance_payload_sha:
         raise ValueError("Task072 reward stance payload SHA drift")
     for name in ("clearance", "touchdown_airtime", "soft_landing", "foot_slip"):
         params = by_name[name]["params"]
@@ -1154,8 +1165,17 @@ def task072_validate_reward_active_table(table: list[dict[str, Any]]) -> str:
         params = by_name[pose_name]["params"]
         if params.get("joint_ids") != joint_ids:
             raise ValueError(f"Task072 reward pose joint partition drift: {pose_name}")
+        expected_q_ref = [float(stance["joint_qpos"][semantic_names[index]]) for index in joint_ids]
         if len(params.get("q_ref", [])) != len(joint_ids):
             raise ValueError(f"Task072 reward pose q_ref size drift: {pose_name}")
+        if any(abs(float(actual) - expected) > STANCE_TOL for actual, expected in zip(params["q_ref"], expected_q_ref)):
+            raise ValueError(f"Task072 reward pose q_ref drift: {pose_name}")
+        if params.get("semantic_joint_names") != [semantic_names[index] for index in joint_ids]:
+            raise ValueError(f"Task072 reward pose semantic names drift: {pose_name}")
+        if params.get("anonymous_joint_names") != [anonymous_names[index] for index in joint_ids]:
+            raise ValueError(f"Task072 reward pose anonymous names drift: {pose_name}")
+        if params.get("stance_payload_sha256") != stance_payload_sha:
+            raise ValueError(f"Task072 reward pose stance payload SHA drift: {pose_name}")
     for name in ("joint_velocity", "joint_limit"):
         params = by_name[name]["params"]
         if params.get("joint_ids") != list(range(29)):
@@ -1165,6 +1185,8 @@ def task072_validate_reward_active_table(table: list[dict[str, Any]]) -> str:
     joint_limit = by_name["joint_limit"]["params"]
     if len(joint_limit.get("lower", [])) != 29 or len(joint_limit.get("upper", [])) != 29 or joint_limit.get("soft_fraction") != 0.9:
         raise ValueError("Task072 reward joint limit params drift")
+    if joint_limit.get("lower") != indices["joint_lower"] or joint_limit.get("upper") != indices["joint_upper"]:
+        raise ValueError("Task072 reward joint limit range drift")
     if by_name["action_magnitude"]["params"] != {"action_name": "joint_pos"}:
         raise ValueError("Task072 reward action magnitude params drift")
     if by_name["action_rate"]["params"] != {"action_name": "joint_pos", "previous_action_reset": 0.0}:
@@ -1515,6 +1537,12 @@ class Task072ClipLoggingVecEnvWrapper:
         self._max_abs_raw_action = 0.0
 
 
+def _task072_exact_int(value: Any, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"Task072 clip metric {label} must be an integer")
+    return value
+
+
 def validate_task072_clip_records(records: list[dict[str, Any]], *, expected_updates: int | None = None) -> list[dict[str, Any]]:
     if expected_updates is not None and len(records) != expected_updates:
         raise ValueError("Task072 clip metric update count mismatch")
@@ -1538,16 +1566,20 @@ def validate_task072_clip_records(records: list[dict[str, Any]], *, expected_upd
         missing = sorted(required - set(record))
         if missing:
             raise ValueError(f"Task072 clip metric missing fields: {missing}")
-        if int(record["update_index"]) != index:
+        if _task072_exact_int(record["update_index"], "update_index") != index:
             raise ValueError("Task072 clip metric update index mismatch")
-        if int(record["joint_count"]) != 29:
+        if _task072_exact_int(record["joint_count"], "joint_count") != 29:
             raise ValueError("Task072 clip metric joint count mismatch")
-        scalar_denominator = int(record["scalar_denominator"])
-        env_step_denominator = int(record["env_step_denominator"])
-        per_joint_denominator = int(record["per_joint_denominator"])
+        scalar_denominator = _task072_exact_int(record["scalar_denominator"], "scalar_denominator")
+        env_step_denominator = _task072_exact_int(record["env_step_denominator"], "env_step_denominator")
+        per_joint_denominator = _task072_exact_int(record["per_joint_denominator"], "per_joint_denominator")
         if scalar_denominator <= 0 or env_step_denominator <= 0 or per_joint_denominator <= 0:
             raise ValueError("Task072 clip metric denominator must be positive")
-        if env_step_denominator != int(record["num_envs"]) * int(record["rollout_steps"]):
+        expected_env_step_denominator = (
+            _task072_exact_int(record["num_envs"], "num_envs")
+            * _task072_exact_int(record["rollout_steps"], "rollout_steps")
+        )
+        if env_step_denominator != expected_env_step_denominator:
             raise ValueError("Task072 clip metric env-step denominator mismatch")
         if scalar_denominator != env_step_denominator * 29:
             raise ValueError("Task072 clip metric denominator mismatch")
@@ -1555,8 +1587,8 @@ def validate_task072_clip_records(records: list[dict[str, Any]], *, expected_upd
             raise ValueError("Task072 clip metric per-joint denominator mismatch")
         if len(record["per_joint_clip_fraction"]) != 29 or len(record["per_joint_clipped_scalars"]) != 29:
             raise ValueError("Task072 clip metric per-joint field count mismatch")
-        clipped_scalars = int(record["clipped_scalars"])
-        env_steps_with_any_clip = int(record["env_steps_with_any_clip"])
+        clipped_scalars = _task072_exact_int(record["clipped_scalars"], "clipped_scalars")
+        env_steps_with_any_clip = _task072_exact_int(record["env_steps_with_any_clip"], "env_steps_with_any_clip")
         if not 0 <= clipped_scalars <= scalar_denominator or not 0 <= env_steps_with_any_clip <= env_step_denominator:
             raise ValueError("Task072 clip metric count outside denominator")
         if not math.isclose(float(record["scalar_clip_fraction"]), clipped_scalars / scalar_denominator):
@@ -1565,7 +1597,7 @@ def validate_task072_clip_records(records: list[dict[str, Any]], *, expected_upd
             raise ValueError("Task072 clip metric env-step fraction mismatch")
         per_joint_total = 0
         for name, count in record["per_joint_clipped_scalars"].items():
-            count = int(count)
+            count = _task072_exact_int(count, f"per_joint_clipped_scalars.{name}")
             per_joint_total += count
             if not 0 <= count <= per_joint_denominator:
                 raise ValueError("Task072 clip metric per-joint count outside denominator")
@@ -1600,35 +1632,41 @@ def validate_task072_clip_summary(
     missing = sorted(required - set(summary))
     if missing:
         raise ValueError(f"Task072 clip summary missing fields: {missing}")
+    if not isinstance(summary["update_indices"], list) or any(
+        _task072_exact_int(value, "update_indices") != value for value in summary["update_indices"]
+    ):
+        raise ValueError("Task072 clip summary update indices must be integers")
     if expected_update_indices is not None and summary["update_indices"] != expected_update_indices:
         raise ValueError("Task072 clip summary update index mismatch")
-    scalar_denominator = int(summary["scalar_denominator"])
-    env_step_denominator = int(summary["env_step_denominator"])
-    per_joint_denominator = int(summary["per_joint_denominator"])
+    scalar_denominator = _task072_exact_int(summary["scalar_denominator"], "summary.scalar_denominator")
+    env_step_denominator = _task072_exact_int(summary["env_step_denominator"], "summary.env_step_denominator")
+    per_joint_denominator = _task072_exact_int(summary["per_joint_denominator"], "summary.per_joint_denominator")
     if scalar_denominator <= 0 or env_step_denominator <= 0 or per_joint_denominator <= 0:
         raise ValueError("Task072 clip summary denominator must be positive")
     if len(summary["per_joint_clip_fraction"]) != 29 or len(summary["per_joint_clipped_scalars"]) != 29:
         raise ValueError("Task072 clip summary per-joint field count mismatch")
     if scalar_denominator != env_step_denominator * 29:
         raise ValueError("Task072 clip summary denominator mismatch")
-    if not math.isclose(float(summary["scalar_clip_fraction"]), int(summary["clipped_scalars"]) / scalar_denominator):
+    clipped_scalars = _task072_exact_int(summary["clipped_scalars"], "summary.clipped_scalars")
+    env_steps_with_any_clip = _task072_exact_int(summary["env_steps_with_any_clip"], "summary.env_steps_with_any_clip")
+    if not math.isclose(float(summary["scalar_clip_fraction"]), clipped_scalars / scalar_denominator):
         raise ValueError("Task072 clip summary scalar fraction mismatch")
     if not math.isclose(
         float(summary["env_step_any_clip_fraction"]),
-        int(summary["env_steps_with_any_clip"]) / env_step_denominator,
+        env_steps_with_any_clip / env_step_denominator,
     ):
         raise ValueError("Task072 clip summary env-step fraction mismatch")
     if not math.isfinite(float(summary["max_abs_raw_action"])):
         raise ValueError("Task072 clip summary max raw action is non-finite")
     per_joint_total = 0
     for name, count in summary["per_joint_clipped_scalars"].items():
-        count = int(count)
+        count = _task072_exact_int(count, f"summary.per_joint_clipped_scalars.{name}")
         per_joint_total += count
         if not 0 <= count <= per_joint_denominator:
             raise ValueError("Task072 clip summary per-joint count outside denominator")
         if not math.isclose(float(summary["per_joint_clip_fraction"][name]), count / per_joint_denominator):
             raise ValueError("Task072 clip summary per-joint fraction mismatch")
-    if per_joint_total != int(summary["clipped_scalars"]):
+    if per_joint_total != clipped_scalars:
         raise ValueError("Task072 clip summary scalar/per-joint count mismatch")
     expected_checks = {
         "scalar_clip_fraction": float(summary["scalar_clip_fraction"]) <= TASK072_CLIP_THRESHOLDS["scalar_clip_fraction"],
@@ -2491,6 +2529,7 @@ def _validate_training_manifest_for_eval(payload: dict[str, Any]) -> None:
         and progression_path.exists()
         and sha256_path(progression_path) == progression_sha
     )
+    capacity_checks = payload.get("capacity_evidence", {}).get("consumption_checks", {})
     checks = {
         "schema": payload.get("schema_version") == 3,
         "subtask": payload.get("subtask") == "003i",
@@ -2511,7 +2550,7 @@ def _validate_training_manifest_for_eval(payload: dict[str, Any]) -> None:
         "external_passed": all(payload.get("external_mjlab_checks", {}).values()),
         "training_manifest_passed": payload.get("passed") is True,
         "training_complete": payload.get("training_execution_complete") is True,
-        "capacity_consumed": all(payload.get("capacity_evidence", {}).get("consumption_checks", {}).values()),
+        "capacity_consumed": bool(capacity_checks) and all(capacity_checks.values()),
         "action_clip_metrics": clip_ok,
         "progression_sha": progression_pointer_ok,
     }
@@ -2909,6 +2948,7 @@ def task072_pilot_continuation_gate(
         clip_checks_ok = clip_shape_ok and training_manifest.get("action_clip_last_7_summary") == clip_summary
     except Exception as exc:
         manifest_contract_error = manifest_contract_error or repr(exc)
+    capacity_checks = training_manifest.get("capacity_evidence", {}).get("consumption_checks", {})
 
     training_checks = record_checks(
         "training",
@@ -2926,6 +2966,7 @@ def task072_pilot_continuation_gate(
             "observed_transitions": training_manifest.get("observed_transitions") == TASK072_PILOT_TRANSITIONS,
             "checkpoint_updates": checkpoint_map_ok and all(update in checkpoint_updates for update in TASK072_PILOT_EVAL_UPDATES),
             "progression_sha": bool(training_manifest.get("progression", {}).get("sha256")),
+            "capacity_consumed": bool(capacity_checks) and all(capacity_checks.values()),
             "clip_update_records": len(clip_records) == TASK072_PILOT_UPDATES,
             "clip_record_shape": clip_shape_ok,
             "clip_last_7_indices": bool(clip_summary and clip_summary.get("update_indices") == clip_expected_indices),
