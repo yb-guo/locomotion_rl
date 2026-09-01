@@ -1,6 +1,6 @@
 # Task072 — Bound G1/Go2 nominal locomotion proof
 
-状态：**repair_ready / not_trained / not_passed**。
+状态：**003k_eval_failed / trained / not_passed**。
 
 ## 目标与边界
 
@@ -634,10 +634,22 @@ baseline、progression、SHA 或任一指标失败，均视为该 case 未通过
   记录 actual observation/termination manager gates、timeout-excluding terminal reward probe 和
   stage semantic payload SHA `583794cdd87155a4c78d665df1f37c6d75b9c2848998d5f094c49b7f964803cc`。
   未启动 GPU、training、eval、proof、video 或 freeze。
+- 2026-09-01：用户随后授权 003k GPU route。Fresh capacity smoke passed，required selected
+  `4096 x 24`，artifact SHA-256
+  `be6ba2c9f730313baff0f537e437e0be85182b9a07ae0a276db29a5a9e158f28`。Exact one-update passed，
+  manifest SHA-256 `e0d310112dfc64ca33325c27c69e15a78162387581bb02c73c39c1841ac07163`。Fresh
+  `4096 x 24 x 21` pilot training passed，manifest SHA-256
+  `fd13e01adeebd7e3f8b6053f5d8ace251c78d57d035df5565249f9e3af70d6ce`，observed transitions
+  `2,064,384`。Formal fixed-command eval stopped at required `model_0`: artifact
+  `003k_eval_pilot_model_0_fixed_vx0p5_seed720400.json` failed, SHA-256
+  `1eb35eed6567f19dd129a13d9fc569e46ea8cf444998362c256acde4658eb39c`; all `256/256` envs
+  terminated before 20 s, `zero_fall_ratio=0.0`, first-fall median `2.46 s`, common-prefix mean vx
+  `-0.3223 m/s`, median x displacement `-0.6732 m`. Per stage-fail stop, model `7/14/20` eval,
+  pilot gate, proof, video, freeze, 003l and Task073/Task074 were not run.
 
 ## Review
 
-状态：**repair_ready / not_trained / not_passed**。
+状态：**003k_eval_failed / trained / not_passed**。
 
 Task072 只有在 exact-bound G1 和 Go2 都在同一冻结 source commit/config contract 上满足全部数值、
 视频、baseline、checkpoint 与 verifier gate 后才能标记 passed。Task071 的 one-update PPO smoke、旧
@@ -663,9 +675,10 @@ GPU capacity passed，但 one-update action clip gate failed，未运行 fresh p
 gate scope，CPU/capacity/one-update 与 pilot training contract 均通过；fresh fixed-command eval 全部
 在 20 s 前跌倒，aggregate survival continuation gate failed。后验 cross-manager audit 已冻结为 003k：
 parent phase observation `0.6 s` 与 reward gait phase `0.8 s` 不一致，且实际 reward 无 terminal cost，
-产生 reward-up/survival-down termination exploit。003k implementation/CPU gate 已通过，现为
-`ready_for_authorized_gpu / not_trained / not_passed`；尚未授权新的 GPU run。G1/Go2 full proof
-仍未通过，Task072 继续保持 **not_passed**。
+产生 reward-up/survival-down termination exploit。003k implementation/CPU gate、fresh capacity、
+exact one-update 和 fresh 21-update pilot training 均已通过，但 formal eval 在 `model_0` 全量跌倒；
+后续 eval set 与 aggregate pilot gate 未运行。G1/Go2 full proof 仍未通过，Task072 继续保持
+**not_passed**。
 
 ## R2 single-variable recovery route
 

@@ -1,6 +1,6 @@
 # 003k — G1 MJLab task-owned semantic contract and survival closure
 
-状态：**ready_for_authorized_gpu / not_trained / not_passed**。
+状态：**eval_failed / trained / not_passed**。
 
 003k 是 003j pilot failure 之后的唯一活动修复任务。它不把失败归因于“训练轮数不够”，也不允许
 继续在 `Unitree-G1-Flat` 上逐个删除已知 parent 项。目标是一次性关闭 Task072 的完整训练语义：
@@ -628,9 +628,9 @@ checkpoint。stage failure 立即停止，保留 artifact，不继续下一个�
 
 ### Later GPU acceptance
 
-- [ ] fresh v4 capacity 和 one-update passed；
-- [ ] fresh 21-update pilot training contract passed；
-- [ ] model `0/7/14/20` exact eval set 完整且 semantic payload SHA 一致；
+- [x] fresh v4 capacity 和 one-update passed；
+- [x] fresh 21-update pilot training contract passed；
+- [ ] model `0/7/14/20` exact eval set 完整且 semantic payload SHA 一致；`model_0` 已 fail 后停止；
 - [ ] no `reward_up_survival_down`；
 - [ ] survival、forward、touchdown、双侧 single-support、alternation gates 全部 passed；
 - [ ] 未消费任何 v3 checkpoint；
@@ -659,15 +659,37 @@ checkpoint。stage failure 立即停止，保留 artifact，不继续下一个�
   actual observation/termination manager gate、timeout-excluding terminal reward probe、stage-specific
   semantic SHA 和 PPO fail-closed assert 均已补入 source/verifier。未启动 GPU、training、eval、proof、
   video 或 freeze。
+- 2026-09-01：用户随后明确授权执行 003k GPU route。先用父 Python 持有
+  `/home/admin1/workspace/run/.gpu.lock` 作为 CUDA 进程祖先；第一次 shell/flock 方式因 lock holder
+  非祖先进程被 fail-closed 拒绝，未进入 capacity。随后 fresh capacity smoke passed，artifact
+  `003k_capacity_smoke_2048_4096_6144.json` SHA-256
+  `be6ba2c9f730313baff0f537e437e0be85182b9a07ae0a276db29a5a9e158f28`，required selected
+  `4096 x 24` passed。Exact one-update passed，manifest SHA-256
+  `e0d310112dfc64ca33325c27c69e15a78162387581bb02c73c39c1841ac07163`，acceptance false checks
+  none。Fresh pilot `4096 x 24 x 21` passed training acceptance，run manifest SHA-256
+  `fd13e01adeebd7e3f8b6053f5d8ace251c78d57d035df5565249f9e3af70d6ce`，observed transitions
+  `2,064,384`，checkpoint set includes model `0/7/14/20`.
+- 2026-09-01：formal fixed-command eval then stopped at first required checkpoint `model_0` because
+  `003k_eval_pilot_model_0_fixed_vx0p5_seed720400.json` failed. Eval artifact SHA-256
+  `1eb35eed6567f19dd129a13d9fc569e46ea8cf444998362c256acde4658eb39c`; false checks:
+  `zero_fall_ratio`, `mean_forward_velocity`, `mean_x_displacement`, `planar_tracking_error`,
+  `yaw_error`, `gravity_xy`, `alternating`. All `256/256` envs terminated, no timeouts,
+  `zero_fall_ratio=0.0`, first-fall median `2.46 s`, common-prefix mean vx `-0.3223 m/s`,
+  median x displacement `-0.6732 m`, touchdown counts left/right `437/362`, single-support
+  counts left/right `871/127`, alternating touchdown transitions `3`. Per stage-fail rule,
+  model `7/14/20` evals, aggregate pilot gate, proof, video, freeze, 003l and Task073/Task074 were
+  not run.
 
 ## Review
 
-状态：**ready_for_authorized_gpu / not_trained / not_passed**。
+状态：**eval_failed / trained / not_passed**。
 
 003k implementation/CPU gate 已关闭：Task072 现在拥有 task-owned observations/actions/commands/events/
 rewards/terminations/curriculum/metrics/sensors/PPO runtime contract，actor/critic/reward phase 统一为
 `TASK072_GAIT_PERIOD_S=0.8`，RewardManager actual table 为 ordered 24 terms，`fall_terminated` 对
 non-timeout termination 的 dt contribution 为 `-6.0`，train/eval semantic diff 仅含冻结 allowlist。
 
-003k 未训练且仍 not_passed；GPU capacity、one-update、pilot、eval、proof、video、freeze 均未授权也未运行。
-下一步只能在用户另行明确授权后，从 fresh v4 capacity 开始。
+003k 已在后续用户授权下完成 fresh capacity、exact one-update 和 fresh 21-update pilot training，但
+formal fixed-command eval 在首个 required checkpoint `model_0` 即失败，且全部 256 个 env 在 20 s 前
+跌倒。003k 因此仍 not_passed；model `7/14/20` eval、aggregate pilot gate、proof、video、freeze、
+003l 和 Task073/Task074 均未运行。
