@@ -1,6 +1,6 @@
 # Task072 — Bound G1/Go2 nominal locomotion proof
 
-状态：**pilot_failed / trained / not_passed**。
+状态：**repair_ready / not_trained / not_passed**。
 
 ## 目标与边界
 
@@ -9,15 +9,17 @@
 reward；G1 通过后冻结全部代码、配置和资产 lineage，再在完全相同的 source commit 上重跑
 Go2、视频和 verifier。
 
-Task073 在 003j fresh pilot、后续 versioned G1 proof 与 004 freeze 完成前保持 blocked。本任务不扩展到其余 16 个构型，
+Task073 在 003k semantic/survival repair、后续 versioned G1 proof 与 004 freeze 完成前保持 blocked。本任务不扩展到其余 16 个构型，
 不启用质量、COM、摩擦、电机、push、sensor
 noise 或 terrain randomization，也不使用 command curriculum。Task048 checkpoint 与本地课程资料
 只能作为设计/预算参考，不得作为 Task072 初始化权重或 pass evidence。
 
-003b/003c/003d/003e/003f/003g 是旧 v3/v4 MJLab lineage 的历史路线。003g 已完成 single-ground
+003b/003c/003d/003e/003f/003g 是旧 MJLab lineage 的历史路线。003g 已完成 single-ground
 training/eval，但后验确认 training contract 仍继承 `Unitree-G1-Flat` 的随机 command、DR/curriculum、
 parent reward 和对称 action scale；因此 003g 只作为 failed evidence，不能作为可继续训练的父合同。
-当前唯一活动路线是 003j G1 MJLab action-clip gate scope repair；fixed-command/no-DR/no-curriculum 约束没有例外。
+003h/003i/003j 又依次关闭 runtime reward/eval 与 action-clip gate 问题，但 003j fresh pilot 暴露出
+observation/reward phase 分叉和无 terminal cost 的 termination exploit。当前唯一活动路线是 003k
+task-owned semantic contract and survival closure；fixed-command/no-DR/no-curriculum 约束没有例外。
 
 ### R1 diagnosis and reopen
 
@@ -100,6 +102,16 @@ untrained/zero baselines 直接比较，并无条件写 `paired_baselines_verifi
    - 003i 保持历史 `one_update_failed / smoke_trained / not_passed`；003j fresh pilot 才能继续既定
      survival/forward gate，禁止消费或续训 003i artifact。r2 pilot 已完成但 continuation gate
      failed；003j 结果为 `pilot_failed / trained / not_passed`。
+3k. `003k-g1-mjlab-semantic-contract-survival-closure.md`
+   - 将 observations/actions/commands/events/rewards/terminations/curriculum/metrics/sensors/PPO 从
+     partial parent override 改为 task-owned complete runtime tables，并生成 actual-manager-bound full
+     semantic payload/SHA；
+   - 统一 actor/critic phase 与 gait/clearance reward 的 `0.8 s` clock，保留全部 v3 gait reward，新增
+     dt-aware、timeout-excluding、数据推导的 `-6.0` terminal-step cost；
+   - 扩展现有 eval 为 per-env common-prefix touchdown/single-support/alternation gate，阻止
+     model7→model20 survival 回退；测试保持 focused，最多新增一个 cross-manager test；
+   - 初始只授权实现、CPU verifier 和 clean commit，禁止启动 GPU。CPU 通过后仍需用户单独授权 fresh
+     v4 capacity/one-update/pilot/eval；pilot 通过也只能新建 003l proof task，不能直接进入 004。
 4. `004-freeze-g1-passing-lineage.md`
    - 只有 G1 全 gate 通过后，冻结实现 commit、配置、descriptor、asset、checkpoint 与 verifier
      SHA；
@@ -228,11 +240,12 @@ pointer 和整份 action contract raw/payload SHA。每个 manifest/report 都�
 原始路线为 `001 -> 002 -> 003 -> 004 -> 005`；其失败证据保持不变。当前有效链路严格为
 `003b v1 geometry pass -> 003c rejected runtime binding mismatch -> 003d rejected double-ground ->
 003e rejected contaminated training -> 003f single-ground runtime repair -> 003g failed training evidence ->
-003h rejected diagnostic -> 003i rejected action-clip gate-scope diagnostic -> 003j action-clip gate-scope repair -> separately authorized capacity/pilot ->
-future versioned proof subtask -> 004 freeze -> Task073 asset migration ->
+003h rejected diagnostic -> 003i rejected action-clip gate-scope diagnostic -> 003j pilot failed on survival ->
+003k task-owned semantic/survival closure -> separately authorized fresh v4 capacity/pilot ->
+003l future versioned proof subtask -> 004 freeze -> Task073 asset migration ->
 Task074 18-case training`。
 003j implementation source 已提交且 CPU/capacity/one-update gates 通过；pilot continuation gate
-未通过，不得 freeze 或启动 Task073。
+未通过。003k 当前只授权 implementation/CPU gate，未授权 GPU；不得 freeze 或启动 Task073。
 004 必须绑定新的 contact/stance/asset lineage，不能
 复用旧 `official_sim_physics_overlay_v1` stance 或把旧失败 artifact 补判通过。任何阶段失败都保留完整失败 artifact，并停止向
 后续 gate 晋级；不得用缩短 horizon、改 command、启用 curriculum 或引入随机化来掩盖 nominal
@@ -601,10 +614,18 @@ baseline、progression、SHA 或任一指标失败，均视为该 case 未通过
   `c460a0d5095b88943c0550ec6bae6c35c373e718407e4d379029e8d057fce43f` failed closed only
   on the specified survival comparisons; training, exact eval set, clip and forward
   checks passed. Per stop rule no proof/video/freeze/Task073/Task074 was started.
+- 2026-09-01：对 003j source、parent `Unitree-G1-Flat` 和 pilot TensorBoard/eval 做跨 manager
+  root-cause closure。current reward gait/clearance period 为 `0.8 s`，但 actor/critic 继承的 phase
+  observation period 仍为 `0.6 s`；同时实际 23-term table 无 terminal cost，`nonfoot_contact` 在 21
+  updates 始终为零。updates `7/14/20` 的 mean episode reward 从 `-2.756772` 改善到
+  `-1.607051`，mean episode length 却从 `66.58` 降到 `54.82`，updates `7..20` correlation
+  `-0.957527`，确认 termination exploit。新建 003k，要求整表替换全部 task semantics、统一 phase、
+  保留 gait reward并加入 post-dt `-6.0` bounded fall cost、actual-manager semantic SHA 和 per-env gait/
+  survival gate。本轮仅写 task contract，未修改 source、未运行 CPU verifier 或 GPU。
 
 ## Review
 
-状态：**pilot_failed / trained / not_passed**。
+状态：**repair_ready / not_trained / not_passed**。
 
 Task072 只有在 exact-bound G1 和 Go2 都在同一冻结 source commit/config contract 上满足全部数值、
 视频、baseline、checkpoint 与 verifier gate 后才能标记 passed。Task071 的 one-update PPO smoke、旧
@@ -628,8 +649,11 @@ v3 capacity/training/eval/video。003g single-ground training/eval 已失败，�
 混淆 timeout/fall，全部降级为 rejected diagnostic。003i bounded repair 已完成并通过 CPU verifier；
 GPU capacity passed，但 one-update action clip gate failed，未运行 fresh pilot/eval/gate。003j 已修复
 gate scope，CPU/capacity/one-update 与 pilot training contract 均通过；fresh fixed-command eval 全部
-在 20 s 前跌倒，aggregate survival continuation gate failed。G1/Go2 full proof 仍未通过，Task072 继续
-保持 **not_passed**。
+在 20 s 前跌倒，aggregate survival continuation gate failed。后验 cross-manager audit 已冻结为 003k：
+parent phase observation `0.6 s` 与 reward gait phase `0.8 s` 不一致，且实际 reward 无 terminal cost，
+产生 reward-up/survival-down termination exploit。003k 现为
+`ready_for_implementation / not_trained / not_passed`，只授权完整 task-owned semantic closure 与 CPU
+验证；尚未授权新的 GPU run。G1/Go2 full proof 仍未通过，Task072 继续保持 **not_passed**。
 
 ## R2 single-variable recovery route
 
