@@ -1,6 +1,6 @@
 # 003i — G1 MJLab reward-v3、eval 语义与 survival repair
 
-状态：**pending / not_trained / not_passed**。
+状态：**awaiting_user_gpu_authorization / not_trained / not_passed**。
 
 003i 是 003h 后验审计后的唯一活动 subtask。它只关闭三个已经定位的合同错误：
 
@@ -417,19 +417,31 @@ versioned subtask 和既有正式 walking gate 执行。
 
 ## Log
 
-- 2026-09-01：建立 003i 详细合同；尚未改 runner/tests，未运行 CPU verifier、GPU capacity、
-  one-update、fresh pilot、proof、video 或 freeze。
+- 2026-09-01：完成 bounded 003i runner/test repair。Source commit
+  `a9bf70099d33661692e3e5953779728981564b80`；runner SHA
+  `c6eb40cf38180b1684d1ee9d43b7af62058e4e72b7eb43866075324c755b3e6c`；test SHA
+  `7411ba20f99954e88c7887a37f6c115327cff89c4de37907a04bfe04b40b5257`；actual
+  23-term manager active-table SHA `323feac6197abc6d706205f39d5f332b834e87332d453919ccfb1998f5eea7e2`；
+  reward payload SHA `ef8fe4b5c8f3edcbd293cc170b03ae99665e79f04d289105f57f04e19d617051`。
+  CPU verifier artifact
+  `artifacts/mjlab_runtime_binding/g1/mjlab_g1_7capsule_task_v3_single_ground/003i_reward_eval_contract_verifier.json`
+  SHA `11f3f05b8170f415d9493197765aad9347a4a7ff016e846afdf21600e749bf81` passed；checks
+  `reward_manager_api/train_active_table/eval_active_table/train_eval_reward_match/reward_payload/registration_active_sha/canonical_config/fixture_oracle/eval_schema/clip_schema/zero_action_sanity`
+  全部 true。验证：`py_compile` passed；scoped pytest
+  `tests/test_task072_locomotion_proof.py tests/test_whole_body_extended.py` returned
+  `78 passed, 35 warnings`；`git diff --check` passed。未运行 CUDA、capacity、one-update、pilot、
+  proof、video 或 freeze。
 
 ## Review
 
-- [ ] exact 23-term v3 已整体替换 parent reward；gait 保留且 centered velocity 使 static full reward
+- [x] exact 23-term v3 已整体替换 parent reward；gait 保留且 centered velocity 使 static full reward
   probe 非正，不存在 parent/alias term。
-- [ ] 真实 train/eval ManagerBasedRlEnv/RewardManager active table、callable、weight、params、phase、
+- [x] 真实 train/eval ManagerBasedRlEnv/RewardManager active table、callable、weight、params、phase、
   dt 与 canonical SHA 全部闭合，而非只检查版本字符串。
-- [ ] eval 分开统计 terminated/timeout，common-prefix、median first-fall 与 auto-reset exclusion 的
+- [x] eval 分开统计 terminated/timeout，common-prefix、median first-fall 与 auto-reset exclusion 的
   fake/runtime tests 通过。
-- [ ] action clip 每 update 的整数计数、四类输出、last-7 pooled gate 均可复算。
-- [ ] CPU matrix 与 source commit 已通过；若未取得单独 GPU 授权，状态停在
+- [x] action clip 每 update 的整数计数、四类输出、last-7 pooled gate 均可复算。
+- [x] CPU matrix 与 source commit 已通过；若未取得单独 GPU 授权，状态停在
   `awaiting_user_gpu_authorization / not_trained / not_passed`。
 - [ ] fresh-init pilot 通过 continuation gate 后也只允许新建 proof subtask；否则停止
   004/Task073/Task074。

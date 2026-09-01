@@ -1,6 +1,6 @@
 # Task072 — Bound G1/Go2 nominal locomotion proof
 
-状态：**003i_pending / not_trained / not_passed**。
+状态：**awaiting_user_gpu_authorization / not_trained / not_passed**。
 
 ## 目标与边界
 
@@ -538,11 +538,18 @@ baseline、progression、SHA 或任一指标失败，均视为该 case 未通过
 - 2026-09-01：后验审计确认 003h reward 只尝试删除错误 alias `feet_gait`，未实例化完整 reward v3；
   eval 又混淆 `reset_terminated` 与 `reset_time_outs`，且没有训练期 action clip 聚合和 model7->20
   survival non-regression gate。003h 的 model_20、manifest、eval 均降级为 `rejected_diagnostic`；
-  003i 新建为当前 pending route，004/Task073/Task074 继续 blocked。
+  003i repair 已完成并通过 CPU contract verifier。Source commit
+  `a9bf70099d33661692e3e5953779728981564b80`；actual 23-term active-table SHA
+  `323feac6197abc6d706205f39d5f332b834e87332d453919ccfb1998f5eea7e2`；reward payload SHA
+  `ef8fe4b5c8f3edcbd293cc170b03ae99665e79f04d289105f57f04e19d617051`；verifier artifact
+  `artifacts/mjlab_runtime_binding/g1/mjlab_g1_7capsule_task_v3_single_ground/003i_reward_eval_contract_verifier.json`
+  SHA `11f3f05b8170f415d9493197765aad9347a4a7ff016e846afdf21600e749bf81` passed；`py_compile`、
+  scoped pytest `78 passed, 35 warnings`、`git diff --check` passed。未运行 CUDA/capacity/one-update/
+  pilot/proof/video/freeze，004/Task073/Task074 继续 blocked。
 
 ## Review
 
-状态：**003i_pending / not_trained / not_passed**。
+状态：**awaiting_user_gpu_authorization / not_trained / not_passed**。
 
 Task072 只有在 exact-bound G1 和 Go2 都在同一冻结 source commit/config contract 上满足全部数值、
 视频、baseline、checkpoint 与 verifier gate 后才能标记 passed。Task071 的 one-update PPO smoke、旧
@@ -563,7 +570,7 @@ gate 已通过，R5 2.048M 也已执行，但 exact-init binding 和原 optimize
 正确 v2 binding 下的 walking failure。003f single-ground runtime no-update verifier 已通过，但未启动新的
 v3 capacity/training/eval/video。003g single-ground training/eval 已失败，且因 training contract 分叉不得
 继承；003h 虽完成用户授权的 capacity/one-update/pilot/eval，但后验确认 reward v3 未实例化且 eval
-混淆 timeout/fall，全部降级为 rejected diagnostic。003i 已建立为 pending repair；尚未修改代码或
+混淆 timeout/fall，全部降级为 rejected diagnostic。003i bounded repair 已完成并通过 CPU verifier；未
 运行 fresh pilot。G1/Go2 full proof 仍未通过，Task072 继续保持 **not_passed**。
 
 ## R2 single-variable recovery route
