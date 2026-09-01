@@ -70,6 +70,43 @@ EXPECTED_TASK072_REWARD_V3_ACTIVE_TABLE = (
     ("action_rate", "task072_reward_action_rate", 0.01),
     ("base_angvel_xy", "task072_reward_base_angvel_xy", 0.02),
 )
+EXPECTED_TASK072_REWARD_V3_PARAM_KEYS = {
+    "track_xy_centered": ("asset_name", "body_id", "body_name", "command_name", "denominator"),
+    "track_yaw": ("asset_name", "body_id", "body_name", "command_name", "denominator"),
+    "upright": ("asset_name", "body_id", "body_name"),
+    "tilt": ("asset_name", "body_id", "body_name"),
+    "height": ("asset_name", "body_id", "body_name", "stance_height", "stance_payload_sha256"),
+    "stand_support": ("command_name", "command_threshold", "sensor_name"),
+    "phase_gait": ("command_name", "command_threshold", "offsets", "period", "sensor_name", "stance_fraction"),
+    "out_of_phase_double_support": ("command_name", "command_threshold", "offsets", "period", "sensor_name", "stance_fraction"),
+    "clearance": ("clearance_height", "clearance_sigma", "command_name", "command_threshold", "offsets", "period", "sensor_name", "site_ids", "site_names", "stance_fraction"),
+    "touchdown_airtime": ("airtime_clip", "sensor_name", "site_ids", "site_names"),
+    "soft_landing": ("landing_velocity_sigma", "sensor_name", "site_ids", "site_names"),
+    "foot_slip": ("sensor_name", "site_ids", "site_names"),
+    "nonfoot_contact": ("body_ids", "body_names", "sensor_name", "terrain_name"),
+    "pose_hip": ("anonymous_joint_names", "asset_name", "joint_ids", "q_ref", "semantic_joint_names", "stance_payload_sha256"),
+    "pose_knee": ("anonymous_joint_names", "asset_name", "joint_ids", "q_ref", "semantic_joint_names", "stance_payload_sha256"),
+    "pose_ankle": ("anonymous_joint_names", "asset_name", "joint_ids", "q_ref", "semantic_joint_names", "stance_payload_sha256"),
+    "pose_waist": ("anonymous_joint_names", "asset_name", "joint_ids", "q_ref", "semantic_joint_names", "stance_payload_sha256"),
+    "pose_arm_wrist": ("anonymous_joint_names", "asset_name", "joint_ids", "q_ref", "semantic_joint_names", "stance_payload_sha256"),
+    "joint_velocity": ("anonymous_joint_names", "asset_name", "joint_ids", "semantic_joint_names"),
+    "joint_limit": ("anonymous_joint_names", "asset_name", "joint_ids", "lower", "semantic_joint_names", "soft_fraction", "upper"),
+    "action_magnitude": ("action_name",),
+    "action_rate": ("action_name", "previous_action_reset"),
+    "base_angvel_xy": ("asset_name", "body_id", "body_name"),
+}
+EXPECTED_TASK072_STANCE_SHA = "cc522b67380713954480c3e9781be01fc6ad96445fb133d410f213f551f5ce9a"
+EXPECTED_TASK072_FOOT_SITE_NAMES = ["anon_limb0_ankle_roll_link_foot", "anon_limb1_ankle_roll_link_foot"]
+EXPECTED_TASK072_NONFOOT_BODY_IDS = [0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+EXPECTED_TASK072_POSE_GROUP_IDS = {
+    "pose_hip": [0, 1, 2, 6, 7, 8],
+    "pose_knee": [3, 9],
+    "pose_ankle": [4, 5, 10, 11],
+    "pose_waist": [12, 13, 14],
+    "pose_arm_wrist": list(range(15, 29)),
+}
+EXPECTED_TASK072_JOINT_LIMIT_LOWER = [-2.5307, -0.5236, -2.7576, -0.087267, -0.87267, -0.2618, -2.5307, -2.9671, -2.7576, -0.087267, -0.87267, -0.2618, -2.618, -0.52, -0.52, -3.0892, -1.5882, -2.618, -1.0472, -1.97222, -1.61443, -1.61443, -3.0892, -2.2515, -2.618, -1.0472, -1.97222, -1.61443, -1.61443]
+EXPECTED_TASK072_JOINT_LIMIT_UPPER = [2.8798, 2.9671, 2.7576, 2.8798, 0.5236, 0.2618, 2.8798, 0.5236, 2.7576, 2.8798, 0.5236, 0.2618, 2.618, 0.52, 0.52, 2.6704, 2.2515, 2.618, 2.0944, 1.97222, 1.61443, 1.61443, 2.6704, 1.5882, 2.618, 2.0944, 1.97222, 1.61443, 1.61443]
 
 
 def test_task072_reward_v3_literal_has_exact_active_order() -> None:
@@ -85,7 +122,9 @@ def test_task072_reward_v3_literal_has_exact_active_order() -> None:
     assert env_cfg.episode_length_s == 10_000.0
     assert all(row["module"] == "task072_mjlab_contact_runner" for row in table)
     assert all("<locals>" not in row["qualname"] for row in table)
+    assert all(row["source_file"] == str(MJLAB_RUNNER_SCRIPT.resolve()) for row in table)
     assert all(json.loads(json.dumps(row["params"])) == row["params"] for row in table)
+    assert {row["name"]: tuple(sorted(row["params"])) for row in table} == EXPECTED_TASK072_REWARD_V3_PARAM_KEYS
 
     active_sha = MJLAB_RUNNER.task072_validate_reward_active_table(table)
     reward_payload = MJLAB_RUNNER.task072_canonical_reward_payload(table)
@@ -101,30 +140,53 @@ def test_task072_reward_v3_literal_has_exact_active_order() -> None:
     }
 
     by_name = {row["name"]: row for row in table}
+    for name in ("track_xy_centered", "track_yaw", "upright", "tilt", "height", "base_angvel_xy"):
+        assert by_name[name]["params"]["asset_name"] == "robot"
+        assert by_name[name]["params"]["body_name"] == "anon_waist_pitch_link"
+        assert by_name[name]["params"]["body_id"] == 16
+    for name in ("track_xy_centered", "track_yaw"):
+        assert by_name[name]["params"]["command_name"] == "twist"
+        assert by_name[name]["params"]["denominator"] == 0.25
+    assert by_name["height"]["params"]["stance_height"] == pytest.approx(0.8533691099183076)
+    assert by_name["height"]["params"]["stance_payload_sha256"] == EXPECTED_TASK072_STANCE_SHA
+    assert by_name["stand_support"]["params"] == {
+        "command_name": "twist",
+        "sensor_name": "feet_ground_contact",
+        "command_threshold": 0.1,
+    }
     for name in ("phase_gait", "out_of_phase_double_support", "clearance"):
         assert by_name[name]["params"]["period"] == 0.8
         assert by_name[name]["params"]["offsets"] == [0.0, 0.5]
         assert by_name[name]["params"]["stance_fraction"] == 0.55
+        assert by_name[name]["params"]["command_name"] == "twist"
+        assert by_name[name]["params"]["command_threshold"] == 0.1
     for name in ("clearance", "touchdown_airtime", "soft_landing", "foot_slip"):
         assert by_name[name]["params"]["site_ids"] == [8, 15]
+        assert by_name[name]["params"]["site_names"] == EXPECTED_TASK072_FOOT_SITE_NAMES
         assert by_name[name]["params"]["sensor_name"] == "feet_ground_contact"
-    assert len(by_name["nonfoot_contact"]["params"]["body_ids"]) == 29
+    assert by_name["clearance"]["params"]["clearance_height"] == 0.10
+    assert by_name["clearance"]["params"]["clearance_sigma"] == 0.05
+    assert by_name["touchdown_airtime"]["params"]["airtime_clip"] == 0.5
+    assert by_name["soft_landing"]["params"]["landing_velocity_sigma"] == 0.5
+    assert by_name["nonfoot_contact"]["params"]["body_ids"] == EXPECTED_TASK072_NONFOOT_BODY_IDS
+    assert set(by_name["nonfoot_contact"]["params"]["body_names"]).isdisjoint({
+        "anon_limb0_ankle_roll_link",
+        "anon_limb1_ankle_roll_link",
+    })
     assert by_name["nonfoot_contact"]["params"]["sensor_name"] == "nonfoot_ground_contact"
-    assert {name: len(by_name[name]["params"]["joint_ids"]) for name in (
-        "pose_hip",
-        "pose_knee",
-        "pose_ankle",
-        "pose_waist",
-        "pose_arm_wrist",
-    )} == {
-        "pose_hip": 6,
-        "pose_knee": 2,
-        "pose_ankle": 4,
-        "pose_waist": 3,
-        "pose_arm_wrist": 14,
-    }
-    assert len(by_name["joint_limit"]["params"]["lower"]) == 29
-    assert len(by_name["joint_limit"]["params"]["upper"]) == 29
+    assert by_name["nonfoot_contact"]["params"]["terrain_name"] == "terrain"
+    for name, expected_ids in EXPECTED_TASK072_POSE_GROUP_IDS.items():
+        assert by_name[name]["params"]["joint_ids"] == expected_ids
+        assert len(by_name[name]["params"]["q_ref"]) == len(expected_ids)
+        assert by_name[name]["params"]["stance_payload_sha256"] == EXPECTED_TASK072_STANCE_SHA
+    assert sorted(sum((row["params"]["joint_ids"] for row in (by_name[name] for name in EXPECTED_TASK072_POSE_GROUP_IDS)), [])) == list(range(29))
+    assert by_name["joint_velocity"]["params"]["joint_ids"] == list(range(29))
+    assert by_name["joint_limit"]["params"]["joint_ids"] == list(range(29))
+    assert by_name["joint_limit"]["params"]["lower"] == EXPECTED_TASK072_JOINT_LIMIT_LOWER
+    assert by_name["joint_limit"]["params"]["upper"] == EXPECTED_TASK072_JOINT_LIMIT_UPPER
+    assert by_name["joint_limit"]["params"]["soft_fraction"] == 0.9
+    assert by_name["action_magnitude"]["params"] == {"action_name": "joint_pos"}
+    assert by_name["action_rate"]["params"] == {"action_name": "joint_pos", "previous_action_reset": 0.0}
 
     missing = table[:-1]
     with pytest.raises(ValueError, match="wrong key/order/count"):
@@ -253,6 +315,221 @@ def test_task072_clip_logging_and_eval_cause_separation() -> None:
         MJLAB_RUNNER.task072_eval_cause_metrics([
             {"reset_terminated": [True], "reset_time_outs": [True], "done": [True], "x": [0.0], "vx": [0.0]},
         ], 1)
+
+
+def _task072_clip_record(
+    update_index: int,
+    *,
+    clipped_by_joint: dict[str, int] | None = None,
+    env_steps_with_any_clip: int = 0,
+    max_abs_raw_action: float = 0.0,
+) -> dict[str, object]:
+    names = list(MJLAB_RUNNER.SEMANTIC_TO_ANON_JOINT)
+    env_step_denominator = 4096 * 24
+    per_joint = {name: int((clipped_by_joint or {}).get(name, 0)) for name in names}
+    clipped_scalars = sum(per_joint.values())
+    return {
+        "update_index": update_index,
+        "num_envs": 4096,
+        "rollout_steps": 24,
+        "joint_count": 29,
+        "clipped_scalars": clipped_scalars,
+        "scalar_denominator": env_step_denominator * 29,
+        "scalar_clip_fraction": clipped_scalars / (env_step_denominator * 29),
+        "env_steps_with_any_clip": env_steps_with_any_clip,
+        "env_step_denominator": env_step_denominator,
+        "env_step_any_clip_fraction": env_steps_with_any_clip / env_step_denominator,
+        "per_joint_clipped_scalars": per_joint,
+        "per_joint_denominator": env_step_denominator,
+        "per_joint_clip_fraction": {name: value / env_step_denominator for name, value in per_joint.items()},
+        "max_abs_raw_action": max_abs_raw_action,
+    }
+
+
+def _task072_fake_training_manifest(tmp_path: Path, records: list[dict[str, object]] | None = None) -> dict[str, object]:
+    records = records or [_task072_clip_record(index) for index in range(MJLAB_RUNNER.TASK072_PILOT_UPDATES)]
+    summary = MJLAB_RUNNER.pool_task072_clip_records(records, last_n=7)
+    progression = tmp_path / "progression.json"
+    progression.write_text(json.dumps({"passed": all(summary["checks"].values())}), encoding="utf-8")
+    checkpoint_sha = {
+        str((tmp_path / f"model_{update}.pt").resolve()): f"{update:064x}"
+        for update in MJLAB_RUNNER.TASK072_PILOT_EVAL_UPDATES
+    }
+    return {
+        "schema_version": 3,
+        "subtask": "003i",
+        "lineage_id": MJLAB_RUNNER.LINEAGE_ID,
+        "runtime_lineage_id": MJLAB_RUNNER.LINEAGE_ID,
+        "seed": MJLAB_RUNNER.DEFAULT_SEED,
+        "num_envs": 4096,
+        "rollout_steps_per_env": 24,
+        "updates": 21,
+        "observed_transitions": 4096 * 24 * 21,
+        "checkpoint_sha256": checkpoint_sha,
+        "action_clip_update_records": records,
+        "action_clip_last_7_summary": summary,
+        "progression": {"path": str(progression), "sha256": MJLAB_RUNNER.sha256_path(progression)},
+        "capacity_evidence": {"consumption_checks": {"ok": True}},
+        "external_mjlab_checks": {"frame_local": True, "commit_pinned": True, "tracked_clean": True},
+        "training_execution_complete": True,
+        "passed": all(summary["checks"].values()),
+    }
+
+
+def _task072_fake_eval(
+    manifest: dict[str, object],
+    update: int,
+    *,
+    median_first_fall: float,
+    common_vx: float = 0.06,
+    common_x: float = 0.11,
+    timeouts: int = 0,
+    finite: bool = True,
+    manifest_sha: str | None = None,
+) -> dict[str, object]:
+    checkpoint_path = next(path for path in manifest["checkpoint_sha256"] if Path(path).stem == f"model_{update}")
+    return {
+        "schema_version": 3,
+        "subtask": "003i",
+        "lineage_id": MJLAB_RUNNER.LINEAGE_ID,
+        "checkpoint": {"path": checkpoint_path, "sha256": manifest["checkpoint_sha256"][checkpoint_path]},
+        "training_manifest": {"sha256": manifest_sha},
+        "metrics": {
+            "eval_seconds": 20.0,
+            "eval_envs": 256,
+            "fixed_command": {"vx": 0.5, "vy": 0.0, "yaw": 0.0},
+            "reward_finite": finite,
+            "obs_finite": finite,
+            "reset_time_outs": {"count": timeouts},
+            "first_fall_seconds": {"median": median_first_fall},
+            "common_prefix": {
+                "mean_vx": common_vx,
+                "median_x_displacement": common_x,
+            },
+        },
+        "passed": False,
+    }
+
+
+def test_task072_clip_summary_and_training_manifest_fail_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    records = [_task072_clip_record(index) for index in range(MJLAB_RUNNER.TASK072_PILOT_UPDATES)]
+    summary = MJLAB_RUNNER.pool_task072_clip_records(records, last_n=7)
+    assert MJLAB_RUNNER.validate_task072_clip_summary(summary, expected_update_indices=list(range(14, 21))) is summary
+
+    bad_fraction = copy.deepcopy(records[0])
+    bad_fraction["scalar_clip_fraction"] = 0.5
+    with pytest.raises(ValueError, match="scalar fraction mismatch"):
+        MJLAB_RUNNER.validate_task072_clip_records([bad_fraction])
+
+    names = list(MJLAB_RUNNER.SEMANTIC_TO_ANON_JOINT)
+    heavy = copy.deepcopy(records)
+    for update_index in range(14, 21):
+        heavy[update_index] = _task072_clip_record(
+            update_index,
+            clipped_by_joint={name: 24_576 for name in names[:12]},
+            env_steps_with_any_clip=1_000,
+            max_abs_raw_action=1.5,
+        )
+    heavy_summary = MJLAB_RUNNER.pool_task072_clip_records(heavy, last_n=7)
+    assert heavy_summary["checks"]["scalar_clip_fraction"] is False
+    with pytest.raises(ValueError, match="failed thresholds"):
+        MJLAB_RUNNER.validate_task072_clip_summary(heavy_summary, expected_update_indices=list(range(14, 21)))
+
+    current = {
+        "action_contract": {},
+        "reward_contract": {},
+        "canonical_train_eval_config": {"payload_sha256": "c" * 64, "passed": True},
+        "runner_source_sha256": "r" * 64,
+        "runtime_spec_sha256": "s" * 64,
+        "asset_xml": {"sha256": "a" * 64},
+        "contact_profile": {"payload_sha256": "p" * 64},
+        "stance": {"payload_sha256": "t" * 64},
+        "external_mjlab_checks": {"frame_local": True, "commit_pinned": True, "tracked_clean": True},
+    }
+    monkeypatch.setattr(MJLAB_RUNNER, "_common_manifest", lambda _args: current)
+    manifest = {
+        **current,
+        **_task072_fake_training_manifest(tmp_path, records),
+        "action_contract": current["action_contract"],
+        "reward_contract": current["reward_contract"],
+        "canonical_train_eval_config": current["canonical_train_eval_config"],
+    }
+    MJLAB_RUNNER._validate_training_manifest_for_eval(manifest)
+    forged = copy.deepcopy(manifest)
+    forged["action_clip_update_records"][0]["clipped_scalars"] = 1
+    with pytest.raises(ValueError, match="training manifest failed"):
+        MJLAB_RUNNER._validate_training_manifest_for_eval(forged)
+    over_threshold = {
+        **manifest,
+        "action_clip_update_records": heavy,
+        "action_clip_last_7_summary": heavy_summary,
+        "passed": True,
+    }
+    with pytest.raises(ValueError, match="training manifest failed"):
+        MJLAB_RUNNER._validate_training_manifest_for_eval(over_threshold)
+
+
+def test_task072_pilot_gate_requires_survival_non_regression_and_clip_updates(tmp_path: Path) -> None:
+    manifest = _task072_fake_training_manifest(tmp_path)
+    evals = [
+        _task072_fake_eval(manifest, 0, median_first_fall=1.4),
+        _task072_fake_eval(manifest, 7, median_first_fall=2.7),
+        _task072_fake_eval(manifest, 14, median_first_fall=2.5),
+        _task072_fake_eval(manifest, 20, median_first_fall=2.8),
+    ]
+    gate = MJLAB_RUNNER.task072_pilot_continuation_gate(manifest, evals)
+    assert gate["passed"] is True
+    assert gate["comparison_checks"] == {
+        "model20_median_first_fall_ge_2p5": True,
+        "model20_median_first_fall_ge_model0_plus_0p5": True,
+        "model14_median_first_fall_ge_model7_minus_0p25": True,
+        "model20_median_first_fall_ge_model7_minus_0p10": True,
+        "model20_median_first_fall_ge_model14_minus_0p25": True,
+        "model20_common_prefix_mean_vx_ge_0p05": True,
+        "model20_common_prefix_median_x_ge_0p10": True,
+    }
+
+    regressed = copy.deepcopy(evals)
+    regressed[3]["metrics"]["first_fall_seconds"]["median"] = 2.4
+    gate = MJLAB_RUNNER.task072_pilot_continuation_gate(manifest, regressed)
+    assert gate["passed"] is False
+    assert "continuation.model20_median_first_fall_ge_2p5" in gate["failure_reasons"]
+
+    timeout = copy.deepcopy(evals)
+    timeout[1]["metrics"]["reset_time_outs"]["count"] = 1
+    gate = MJLAB_RUNNER.task072_pilot_continuation_gate(manifest, timeout)
+    assert gate["passed"] is False
+    assert "eval.model_7.no_time_outs" in gate["failure_reasons"]
+
+    low_forward = copy.deepcopy(evals)
+    low_forward[3]["metrics"]["common_prefix"]["mean_vx"] = 0.049
+    gate = MJLAB_RUNNER.task072_pilot_continuation_gate(manifest, low_forward)
+    assert gate["passed"] is False
+    assert "continuation.model20_common_prefix_mean_vx_ge_0p05" in gate["failure_reasons"]
+
+    missing_eval = MJLAB_RUNNER.task072_pilot_continuation_gate(manifest, evals[:3])
+    assert missing_eval["passed"] is False
+    assert "eval_set.exact_updates" in missing_eval["failure_reasons"]
+
+    names = list(MJLAB_RUNNER.SEMANTIC_TO_ANON_JOINT)
+    heavy_records = [_task072_clip_record(index) for index in range(MJLAB_RUNNER.TASK072_PILOT_UPDATES)]
+    for update_index in range(14, 21):
+        heavy_records[update_index] = _task072_clip_record(
+            update_index,
+            clipped_by_joint={name: 24_576 for name in names[:12]},
+            env_steps_with_any_clip=1_000,
+            max_abs_raw_action=1.5,
+        )
+    bad_manifest = _task072_fake_training_manifest(tmp_path, heavy_records)
+    bad_manifest["passed"] = True
+    gate = MJLAB_RUNNER.task072_pilot_continuation_gate(bad_manifest, [
+        _task072_fake_eval(bad_manifest, 0, median_first_fall=1.4),
+        _task072_fake_eval(bad_manifest, 7, median_first_fall=2.7),
+        _task072_fake_eval(bad_manifest, 14, median_first_fall=2.5),
+        _task072_fake_eval(bad_manifest, 20, median_first_fall=2.8),
+    ])
+    assert gate["passed"] is False
+    assert "training.clip_last_7_thresholds" in gate["failure_reasons"]
 
 
 def _passing_gate_metrics() -> dict[str, object]:
@@ -456,6 +733,14 @@ def test_mjlab_runtime_defaults_are_v3_single_ground_paths() -> None:
     assert MJLAB_RUNNER.parse_args(["r0-smoke"]).output.is_relative_to(MJLAB_RUNNER.RUNTIME_BINDING_ROOT)
     assert MJLAB_RUNNER.parse_args(["capacity-smoke"]).output.is_relative_to(MJLAB_RUNNER.RUNTIME_BINDING_ROOT)
     assert MJLAB_RUNNER.parse_args(["one-update-train"]).run_dir.is_relative_to(MJLAB_RUNNER.RUNTIME_BINDING_ROOT)
+    pilot_gate = MJLAB_RUNNER.parse_args(["pilot-gate"])
+    assert pilot_gate.output == MJLAB_RUNNER.RUNTIME_BINDING_ROOT / "003i_pilot_gate.json"
+    assert [path.name for path in pilot_gate.eval] == [
+        "003i_eval_pilot_model_0_fixed_vx0p5_seed720400.json",
+        "003i_eval_pilot_model_7_fixed_vx0p5_seed720400.json",
+        "003i_eval_pilot_model_14_fixed_vx0p5_seed720400.json",
+        "003i_eval_pilot_model_20_fixed_vx0p5_seed720400.json",
+    ]
 
 
 def test_mjlab_capacity_evidence_is_fail_closed(tmp_path: Path) -> None:

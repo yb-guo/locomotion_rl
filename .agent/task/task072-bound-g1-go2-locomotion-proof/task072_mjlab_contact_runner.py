@@ -53,6 +53,14 @@ DEFAULT_SEED = 720301
 REQUIRED_CAPACITY_NUM_ENVS = 4096
 REQUIRED_ROLLOUT_STEPS = 24
 REQUIRED_TRANSITIONS_PER_UPDATE = REQUIRED_CAPACITY_NUM_ENVS * REQUIRED_ROLLOUT_STEPS
+TASK072_CLIP_THRESHOLDS = {
+    "scalar_clip_fraction": 0.10,
+    "env_step_any_clip_fraction": 0.50,
+    "per_joint_clip_fraction": 0.25,
+}
+TASK072_PILOT_UPDATES = 21
+TASK072_PILOT_EVAL_UPDATES = (0, 7, 14, 20)
+TASK072_PILOT_TRANSITIONS = REQUIRED_TRANSITIONS_PER_UPDATE * TASK072_PILOT_UPDATES
 RUNTIME_BINDING_ROOT = TASK_DIR / "artifacts/mjlab_runtime_binding/g1" / LINEAGE_ID
 DEFAULT_OUTPUT_ROOT = RUNTIME_BINDING_ROOT
 FOOT_SITES = (
@@ -152,6 +160,42 @@ REWARD_V3_WEIGHTS = {
 }
 REWARD_V3_ORDER = tuple(REWARD_V3_WEIGHTS)
 REWARD_V3_PHASE = {"period": 0.8, "offsets": [0.0, 0.5], "stance_fraction": 0.55}
+REWARD_V3_PARAM_KEYS = {
+    "track_xy_centered": ("asset_name", "body_id", "body_name", "command_name", "denominator"),
+    "track_yaw": ("asset_name", "body_id", "body_name", "command_name", "denominator"),
+    "upright": ("asset_name", "body_id", "body_name"),
+    "tilt": ("asset_name", "body_id", "body_name"),
+    "height": ("asset_name", "body_id", "body_name", "stance_height", "stance_payload_sha256"),
+    "stand_support": ("command_name", "command_threshold", "sensor_name"),
+    "phase_gait": ("command_name", "command_threshold", "offsets", "period", "sensor_name", "stance_fraction"),
+    "out_of_phase_double_support": ("command_name", "command_threshold", "offsets", "period", "sensor_name", "stance_fraction"),
+    "clearance": (
+        "clearance_height",
+        "clearance_sigma",
+        "command_name",
+        "command_threshold",
+        "offsets",
+        "period",
+        "sensor_name",
+        "site_ids",
+        "site_names",
+        "stance_fraction",
+    ),
+    "touchdown_airtime": ("airtime_clip", "sensor_name", "site_ids", "site_names"),
+    "soft_landing": ("landing_velocity_sigma", "sensor_name", "site_ids", "site_names"),
+    "foot_slip": ("sensor_name", "site_ids", "site_names"),
+    "nonfoot_contact": ("body_ids", "body_names", "sensor_name", "terrain_name"),
+    "pose_hip": ("anonymous_joint_names", "asset_name", "joint_ids", "q_ref", "semantic_joint_names", "stance_payload_sha256"),
+    "pose_knee": ("anonymous_joint_names", "asset_name", "joint_ids", "q_ref", "semantic_joint_names", "stance_payload_sha256"),
+    "pose_ankle": ("anonymous_joint_names", "asset_name", "joint_ids", "q_ref", "semantic_joint_names", "stance_payload_sha256"),
+    "pose_waist": ("anonymous_joint_names", "asset_name", "joint_ids", "q_ref", "semantic_joint_names", "stance_payload_sha256"),
+    "pose_arm_wrist": ("anonymous_joint_names", "asset_name", "joint_ids", "q_ref", "semantic_joint_names", "stance_payload_sha256"),
+    "joint_velocity": ("anonymous_joint_names", "asset_name", "joint_ids", "semantic_joint_names"),
+    "joint_limit": ("anonymous_joint_names", "asset_name", "joint_ids", "lower", "semantic_joint_names", "soft_fraction", "upper"),
+    "action_magnitude": ("action_name",),
+    "action_rate": ("action_name", "previous_action_reset"),
+    "base_angvel_xy": ("asset_name", "body_id", "body_name"),
+}
 REWARD_V3_ORACLE_EXPECTED = {
     "static_both": -0.5542411176571156,
     "ideal_phase_matched": 1.7,
@@ -1044,9 +1088,17 @@ def task072_validate_reward_active_table(table: list[dict[str, Any]]) -> str:
     forbidden = {"foot_gait", "feet_gait", "is_terminated"}
     if forbidden & {str(row.get("name")) for row in table}:
         raise ValueError("Task072 reward active table contains forbidden parent reward")
+    source_file = str(Path(__file__).resolve())
+    indices = _runtime_entity_indices()
+    expected_foot_site_ids = [int(indices["site_ids"][name]) for name in FOOT_SITES]
+    expected_torso_body_id = int(indices["body_ids"][TORSO_BODY])
+    semantic_names = list(SEMANTIC_TO_ANON_JOINT)
+    anonymous_names = [SEMANTIC_TO_ANON_JOINT[name] for name in semantic_names]
+    expected_groups = _task072_pose_groups(semantic_names)
     seen: set[str] = set()
     for row in table:
         name = str(row["name"])
+        params = row.get("params", {})
         if name in seen:
             raise ValueError(f"Task072 reward active table contains duplicate term {name}")
         seen.add(name)
@@ -1054,14 +1106,69 @@ def task072_validate_reward_active_table(table: list[dict[str, Any]]) -> str:
             raise ValueError(f"Task072 reward term uses parent or alias callable: {name}")
         if "<locals>" in str(row.get("qualname")):
             raise ValueError(f"Task072 reward term is nested: {name}")
+        if row.get("source_file") != source_file:
+            raise ValueError(f"Task072 reward term source file drift: {name}")
         if float(row.get("weight")) != REWARD_V3_WEIGHTS[name]:
             raise ValueError(f"Task072 reward weight drift: {name}")
+        if tuple(sorted(params)) != tuple(REWARD_V3_PARAM_KEYS[name]):
+            raise ValueError(f"Task072 reward param keys drift: {name}")
+        if json.loads(json.dumps(params, sort_keys=True)) != params:
+            raise ValueError(f"Task072 reward params are not JSON-native: {name}")
+        if name in ("track_xy_centered", "track_yaw", "upright", "tilt", "height", "base_angvel_xy"):
+            if params.get("asset_name") != "robot" or params.get("body_name") != TORSO_BODY or params.get("body_id") != expected_torso_body_id:
+                raise ValueError(f"Task072 reward torso body binding drift: {name}")
+        if name in ("track_xy_centered", "track_yaw"):
+            if params.get("command_name") != "twist" or params.get("denominator") != 0.25:
+                raise ValueError(f"Task072 reward command tracking params drift: {name}")
+        if name == "stand_support":
+            if params != {"command_name": "twist", "sensor_name": "feet_ground_contact", "command_threshold": 0.1}:
+                raise ValueError("Task072 stand support params drift")
     phase = table[list(REWARD_V3_ORDER).index("phase_gait")]["params"]
     if phase.get("period") != 0.8 or phase.get("offsets") != [0.0, 0.5] or phase.get("stance_fraction") != 0.55:
         raise ValueError("Task072 reward phase params drift")
     double = table[list(REWARD_V3_ORDER).index("out_of_phase_double_support")]["params"]
     if double.get("period") != 0.8 or double.get("offsets") != [0.0, 0.5] or double.get("stance_fraction") != 0.55:
         raise ValueError("Task072 reward phase params drift")
+    by_name = {row["name"]: row for row in table}
+    if by_name["height"]["params"].get("stance_payload_sha256") != by_name["pose_hip"]["params"].get("stance_payload_sha256"):
+        raise ValueError("Task072 reward stance payload SHA drift")
+    for name in ("clearance", "touchdown_airtime", "soft_landing", "foot_slip"):
+        params = by_name[name]["params"]
+        if params.get("site_names") != list(FOOT_SITES) or params.get("site_ids") != expected_foot_site_ids:
+            raise ValueError(f"Task072 reward foot site binding drift: {name}")
+        if params.get("sensor_name") != "feet_ground_contact":
+            raise ValueError(f"Task072 reward foot sensor drift: {name}")
+    clearance = by_name["clearance"]["params"]
+    if clearance.get("clearance_height") != 0.10 or clearance.get("clearance_sigma") != 0.05:
+        raise ValueError("Task072 reward clearance params drift")
+    if by_name["touchdown_airtime"]["params"].get("airtime_clip") != 0.5:
+        raise ValueError("Task072 reward touchdown airtime params drift")
+    if by_name["soft_landing"]["params"].get("landing_velocity_sigma") != 0.5:
+        raise ValueError("Task072 reward soft landing params drift")
+    nonfoot = by_name["nonfoot_contact"]["params"]
+    if nonfoot.get("sensor_name") != "nonfoot_ground_contact" or nonfoot.get("terrain_name") != "terrain":
+        raise ValueError("Task072 nonfoot contact sensor drift")
+    if len(nonfoot.get("body_ids", [])) != 29 or set(nonfoot.get("body_names", [])) & set(FOOT_BODIES):
+        raise ValueError("Task072 nonfoot contact body binding drift")
+    for pose_name, joint_ids in expected_groups.items():
+        params = by_name[pose_name]["params"]
+        if params.get("joint_ids") != joint_ids:
+            raise ValueError(f"Task072 reward pose joint partition drift: {pose_name}")
+        if len(params.get("q_ref", [])) != len(joint_ids):
+            raise ValueError(f"Task072 reward pose q_ref size drift: {pose_name}")
+    for name in ("joint_velocity", "joint_limit"):
+        params = by_name[name]["params"]
+        if params.get("joint_ids") != list(range(29)):
+            raise ValueError(f"Task072 reward 29-joint binding drift: {name}")
+        if params.get("semantic_joint_names") != semantic_names or params.get("anonymous_joint_names") != anonymous_names:
+            raise ValueError(f"Task072 reward joint names drift: {name}")
+    joint_limit = by_name["joint_limit"]["params"]
+    if len(joint_limit.get("lower", [])) != 29 or len(joint_limit.get("upper", [])) != 29 or joint_limit.get("soft_fraction") != 0.9:
+        raise ValueError("Task072 reward joint limit params drift")
+    if by_name["action_magnitude"]["params"] != {"action_name": "joint_pos"}:
+        raise ValueError("Task072 reward action magnitude params drift")
+    if by_name["action_rate"]["params"] != {"action_name": "joint_pos", "previous_action_reset": 0.0}:
+        raise ValueError("Task072 reward action rate params drift")
     return payload_sha256(table)
 
 
@@ -1435,13 +1542,105 @@ def validate_task072_clip_records(records: list[dict[str, Any]], *, expected_upd
             raise ValueError("Task072 clip metric update index mismatch")
         if int(record["joint_count"]) != 29:
             raise ValueError("Task072 clip metric joint count mismatch")
-        if int(record["scalar_denominator"]) != int(record["env_step_denominator"]) * 29:
+        scalar_denominator = int(record["scalar_denominator"])
+        env_step_denominator = int(record["env_step_denominator"])
+        per_joint_denominator = int(record["per_joint_denominator"])
+        if scalar_denominator <= 0 or env_step_denominator <= 0 or per_joint_denominator <= 0:
+            raise ValueError("Task072 clip metric denominator must be positive")
+        if env_step_denominator != int(record["num_envs"]) * int(record["rollout_steps"]):
+            raise ValueError("Task072 clip metric env-step denominator mismatch")
+        if scalar_denominator != env_step_denominator * 29:
             raise ValueError("Task072 clip metric denominator mismatch")
+        if per_joint_denominator != env_step_denominator:
+            raise ValueError("Task072 clip metric per-joint denominator mismatch")
         if len(record["per_joint_clip_fraction"]) != 29 or len(record["per_joint_clipped_scalars"]) != 29:
             raise ValueError("Task072 clip metric per-joint field count mismatch")
+        clipped_scalars = int(record["clipped_scalars"])
+        env_steps_with_any_clip = int(record["env_steps_with_any_clip"])
+        if not 0 <= clipped_scalars <= scalar_denominator or not 0 <= env_steps_with_any_clip <= env_step_denominator:
+            raise ValueError("Task072 clip metric count outside denominator")
+        if not math.isclose(float(record["scalar_clip_fraction"]), clipped_scalars / scalar_denominator):
+            raise ValueError("Task072 clip metric scalar fraction mismatch")
+        if not math.isclose(float(record["env_step_any_clip_fraction"]), env_steps_with_any_clip / env_step_denominator):
+            raise ValueError("Task072 clip metric env-step fraction mismatch")
+        per_joint_total = 0
+        for name, count in record["per_joint_clipped_scalars"].items():
+            count = int(count)
+            per_joint_total += count
+            if not 0 <= count <= per_joint_denominator:
+                raise ValueError("Task072 clip metric per-joint count outside denominator")
+            if not math.isclose(float(record["per_joint_clip_fraction"][name]), count / per_joint_denominator):
+                raise ValueError("Task072 clip metric per-joint fraction mismatch")
+        if per_joint_total != clipped_scalars:
+            raise ValueError("Task072 clip metric scalar/per-joint count mismatch")
         if not math.isfinite(float(record["max_abs_raw_action"])):
             raise ValueError("Task072 clip metric max raw action is non-finite")
     return records
+
+
+def validate_task072_clip_summary(
+    summary: dict[str, Any],
+    *,
+    expected_update_indices: list[int] | None = None,
+) -> dict[str, Any]:
+    required = {
+        "update_indices",
+        "clipped_scalars",
+        "scalar_denominator",
+        "scalar_clip_fraction",
+        "env_steps_with_any_clip",
+        "env_step_denominator",
+        "env_step_any_clip_fraction",
+        "per_joint_clipped_scalars",
+        "per_joint_denominator",
+        "per_joint_clip_fraction",
+        "max_abs_raw_action",
+        "checks",
+    }
+    missing = sorted(required - set(summary))
+    if missing:
+        raise ValueError(f"Task072 clip summary missing fields: {missing}")
+    if expected_update_indices is not None and summary["update_indices"] != expected_update_indices:
+        raise ValueError("Task072 clip summary update index mismatch")
+    scalar_denominator = int(summary["scalar_denominator"])
+    env_step_denominator = int(summary["env_step_denominator"])
+    per_joint_denominator = int(summary["per_joint_denominator"])
+    if scalar_denominator <= 0 or env_step_denominator <= 0 or per_joint_denominator <= 0:
+        raise ValueError("Task072 clip summary denominator must be positive")
+    if len(summary["per_joint_clip_fraction"]) != 29 or len(summary["per_joint_clipped_scalars"]) != 29:
+        raise ValueError("Task072 clip summary per-joint field count mismatch")
+    if scalar_denominator != env_step_denominator * 29:
+        raise ValueError("Task072 clip summary denominator mismatch")
+    if not math.isclose(float(summary["scalar_clip_fraction"]), int(summary["clipped_scalars"]) / scalar_denominator):
+        raise ValueError("Task072 clip summary scalar fraction mismatch")
+    if not math.isclose(
+        float(summary["env_step_any_clip_fraction"]),
+        int(summary["env_steps_with_any_clip"]) / env_step_denominator,
+    ):
+        raise ValueError("Task072 clip summary env-step fraction mismatch")
+    if not math.isfinite(float(summary["max_abs_raw_action"])):
+        raise ValueError("Task072 clip summary max raw action is non-finite")
+    per_joint_total = 0
+    for name, count in summary["per_joint_clipped_scalars"].items():
+        count = int(count)
+        per_joint_total += count
+        if not 0 <= count <= per_joint_denominator:
+            raise ValueError("Task072 clip summary per-joint count outside denominator")
+        if not math.isclose(float(summary["per_joint_clip_fraction"][name]), count / per_joint_denominator):
+            raise ValueError("Task072 clip summary per-joint fraction mismatch")
+    if per_joint_total != int(summary["clipped_scalars"]):
+        raise ValueError("Task072 clip summary scalar/per-joint count mismatch")
+    expected_checks = {
+        "scalar_clip_fraction": float(summary["scalar_clip_fraction"]) <= TASK072_CLIP_THRESHOLDS["scalar_clip_fraction"],
+        "env_step_any_clip_fraction": float(summary["env_step_any_clip_fraction"]) <= TASK072_CLIP_THRESHOLDS["env_step_any_clip_fraction"],
+        "per_joint_clip_fraction": max(float(value) for value in summary["per_joint_clip_fraction"].values())
+        <= TASK072_CLIP_THRESHOLDS["per_joint_clip_fraction"],
+    }
+    if summary["checks"] != expected_checks:
+        raise ValueError("Task072 clip summary checks do not match metric thresholds")
+    if not all(expected_checks.values()):
+        raise ValueError(f"Task072 clip summary failed thresholds: {expected_checks}")
+    return summary
 
 
 def pool_task072_clip_records(records: list[dict[str, Any]], *, last_n: int = 7) -> dict[str, Any]:
@@ -1475,9 +1674,9 @@ def pool_task072_clip_records(records: list[dict[str, Any]], *, last_n: int = 7)
         "per_joint_clip_fraction": per_joint_fraction,
         "max_abs_raw_action": max(float(record["max_abs_raw_action"]) for record in selected),
         "checks": {
-            "scalar_clip_fraction": clipped_scalars / scalar_denominator <= 0.10,
-            "env_step_any_clip_fraction": env_steps_with_any_clip / env_step_denominator <= 0.50,
-            "per_joint_clip_fraction": max(per_joint_fraction.values()) <= 0.25,
+            "scalar_clip_fraction": clipped_scalars / scalar_denominator <= TASK072_CLIP_THRESHOLDS["scalar_clip_fraction"],
+            "env_step_any_clip_fraction": env_steps_with_any_clip / env_step_denominator <= TASK072_CLIP_THRESHOLDS["env_step_any_clip_fraction"],
+            "per_joint_clip_fraction": max(per_joint_fraction.values()) <= TASK072_CLIP_THRESHOLDS["per_joint_clip_fraction"],
         },
     }
 
@@ -2269,11 +2468,29 @@ def _load_capacity_evidence(path: Path, *, num_envs: int, rollout_steps: int) ->
 def _validate_training_manifest_for_eval(payload: dict[str, Any]) -> None:
     current = _common_manifest(argparse.Namespace(command="evaluate-manifest-check", seed=DEFAULT_SEED + 99))
     clip_records = payload.get("action_clip_update_records", [])
+    clip_summary = None
     try:
         validate_task072_clip_records(clip_records, expected_updates=payload.get("updates"))
-        clip_ok = bool(clip_records)
+        clip_summary = pool_task072_clip_records(clip_records, last_n=min(7, len(clip_records)))
+        validate_task072_clip_summary(clip_summary)
+        clip_shape_ok = all(
+            record.get("num_envs") == payload.get("num_envs")
+            and record.get("rollout_steps") == payload.get("rollout_steps_per_env")
+            for record in clip_records
+        )
+        clip_ok = bool(clip_records) and clip_shape_ok and payload.get("action_clip_last_7_summary") == clip_summary
     except Exception:
         clip_ok = False
+    progression = payload.get("progression", {})
+    progression_path_text = progression.get("path")
+    progression_path = Path(progression_path_text) if progression_path_text else None
+    progression_sha = progression.get("sha256")
+    progression_pointer_ok = bool(
+        progression_sha
+        and progression_path
+        and progression_path.exists()
+        and sha256_path(progression_path) == progression_sha
+    )
     checks = {
         "schema": payload.get("schema_version") == 3,
         "subtask": payload.get("subtask") == "003i",
@@ -2292,10 +2509,11 @@ def _validate_training_manifest_for_eval(payload: dict[str, Any]) -> None:
         "stance": payload.get("stance", {}).get("payload_sha256") == current["stance"]["payload_sha256"],
         "external": payload.get("external_mjlab_checks") == current["external_mjlab_checks"],
         "external_passed": all(payload.get("external_mjlab_checks", {}).values()),
+        "training_manifest_passed": payload.get("passed") is True,
         "training_complete": payload.get("training_execution_complete") is True,
         "capacity_consumed": all(payload.get("capacity_evidence", {}).get("consumption_checks", {}).values()),
         "action_clip_metrics": clip_ok,
-        "progression_sha": bool(payload.get("progression", {}).get("sha256")),
+        "progression_sha": progression_pointer_ok,
     }
     if not all(checks.values()):
         raise ValueError(f"training manifest failed Task072 eval lineage checks: {checks}")
@@ -2362,13 +2580,14 @@ def one_update_train(args: argparse.Namespace) -> int:
         if env.steps_in_update != 0:
             raise ValueError("Task072 clip logging update did not reset at learn drain")
         clip_summary = pool_task072_clip_records(clip_records, last_n=min(7, len(clip_records)))
+        clip_gate_passed = all(clip_summary["checks"].values())
         _write_task072_clip_tensorboard(log_dir, clip_records)
         progression = {
             "schema_version": 1,
             "lineage_id": LINEAGE_ID,
             "action_clip_update_records": clip_records,
             "action_clip_last_7_summary": clip_summary,
-            "passed": True,
+            "passed": clip_gate_passed,
         }
         progression_path = log_dir / "progression.json"
         write_json(progression_path, progression)
@@ -2377,6 +2596,7 @@ def one_update_train(args: argparse.Namespace) -> int:
     checkpoints = sorted(log_dir.glob("model_*.pt"))
     progression_path = log_dir / "progression.json"
     clip_summary = pool_task072_clip_records(clip_records, last_n=min(7, len(clip_records))) if clip_records else None
+    clip_gate_passed = bool(clip_summary and all(clip_summary["checks"].values()))
     payload = {
         **_common_manifest(args),
         "task_id": registration["task_id"],
@@ -2405,7 +2625,7 @@ def one_update_train(args: argparse.Namespace) -> int:
         },
         "wall_time_s": time.time() - start,
         "training_execution_complete": len(checkpoints) > 0,
-        "passed": len(checkpoints) > 0 and len(clip_records) == int(args.updates),
+        "passed": len(checkpoints) > 0 and len(clip_records) == int(args.updates) and clip_gate_passed,
     }
     write_json(log_dir / "task072_mjlab_one_update_smoke.json", payload)
     write_json(log_dir / "run_manifest.json", payload)
@@ -2429,6 +2649,33 @@ def _metric_ge(value: Any, threshold: float) -> bool:
 
 def _metric_le(value: Any, threshold: float) -> bool:
     return value is not None and math.isfinite(float(value)) and float(value) <= threshold
+
+
+def _checkpoint_update_from_path(path: str | Path) -> int:
+    stem = Path(str(path)).stem
+    if not stem.startswith("model_"):
+        raise ValueError(f"Task072 checkpoint path does not contain model update: {path}")
+    return int(stem.removeprefix("model_"))
+
+
+def _manifest_checkpoint_updates(payload: dict[str, Any]) -> dict[int, dict[str, str]]:
+    checkpoints: dict[int, dict[str, str]] = {}
+    for path, sha in payload.get("checkpoint_sha256", {}).items():
+        update = _checkpoint_update_from_path(path)
+        if update in checkpoints:
+            raise ValueError(f"Task072 training manifest has duplicate checkpoint update {update}")
+        checkpoints[update] = {"path": str(Path(path).resolve()), "sha256": str(sha)}
+    return checkpoints
+
+
+def _finite_metric(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
 
 
 def evaluate_checkpoint(args: argparse.Namespace) -> int:
@@ -2616,6 +2863,226 @@ def evaluate_checkpoint(args: argparse.Namespace) -> int:
     write_json(args.output.resolve(), result)
     print(json.dumps({"passed": result["passed"], "output": str(args.output.resolve())}), flush=True)
     return 0 if result["passed"] else 1
+
+
+def task072_pilot_continuation_gate(
+    training_manifest: dict[str, Any],
+    eval_payloads: list[dict[str, Any]],
+    *,
+    training_manifest_path: Path | None = None,
+    training_manifest_sha256: str | None = None,
+    eval_paths: list[Path] | None = None,
+    manifest_contract_ok: bool = True,
+    manifest_contract_error: str | None = None,
+) -> dict[str, Any]:
+    """Fail-closed JSON gate for the 003i 21-update pilot continuation decision."""
+    failure_reasons: list[str] = []
+
+    def record_checks(prefix: str, checks: dict[str, bool]) -> dict[str, bool]:
+        for name, passed in checks.items():
+            if not passed:
+                failure_reasons.append(f"{prefix}.{name}")
+        return checks
+
+    checkpoint_updates: dict[int, dict[str, str]] = {}
+    try:
+        checkpoint_updates = _manifest_checkpoint_updates(training_manifest)
+        checkpoint_map_ok = True
+    except Exception as exc:
+        checkpoint_map_ok = False
+        manifest_contract_error = manifest_contract_error or repr(exc)
+
+    clip_records = training_manifest.get("action_clip_update_records", [])
+    clip_summary = None
+    clip_shape_ok = False
+    clip_checks_ok = False
+    clip_expected_indices = list(range(TASK072_PILOT_UPDATES - 7, TASK072_PILOT_UPDATES))
+    try:
+        validate_task072_clip_records(clip_records, expected_updates=TASK072_PILOT_UPDATES)
+        clip_shape_ok = all(
+            record.get("num_envs") == REQUIRED_CAPACITY_NUM_ENVS
+            and record.get("rollout_steps") == REQUIRED_ROLLOUT_STEPS
+            for record in clip_records
+        )
+        clip_summary = pool_task072_clip_records(clip_records, last_n=7)
+        validate_task072_clip_summary(clip_summary, expected_update_indices=clip_expected_indices)
+        clip_checks_ok = clip_shape_ok and training_manifest.get("action_clip_last_7_summary") == clip_summary
+    except Exception as exc:
+        manifest_contract_error = manifest_contract_error or repr(exc)
+
+    training_checks = record_checks(
+        "training",
+        {
+            "manifest_contract": manifest_contract_ok,
+            "schema": training_manifest.get("schema_version") == 3,
+            "subtask": training_manifest.get("subtask") == "003i",
+            "lineage": training_manifest.get("lineage_id") == LINEAGE_ID,
+            "manifest_passed": training_manifest.get("passed") is True,
+            "training_complete": training_manifest.get("training_execution_complete") is True,
+            "seed": training_manifest.get("seed") == DEFAULT_SEED,
+            "num_envs": training_manifest.get("num_envs") == REQUIRED_CAPACITY_NUM_ENVS,
+            "rollout_steps": training_manifest.get("rollout_steps_per_env") == REQUIRED_ROLLOUT_STEPS,
+            "updates": training_manifest.get("updates") == TASK072_PILOT_UPDATES,
+            "observed_transitions": training_manifest.get("observed_transitions") == TASK072_PILOT_TRANSITIONS,
+            "checkpoint_updates": checkpoint_map_ok and all(update in checkpoint_updates for update in TASK072_PILOT_EVAL_UPDATES),
+            "progression_sha": bool(training_manifest.get("progression", {}).get("sha256")),
+            "clip_update_records": len(clip_records) == TASK072_PILOT_UPDATES,
+            "clip_record_shape": clip_shape_ok,
+            "clip_last_7_indices": bool(clip_summary and clip_summary.get("update_indices") == clip_expected_indices),
+            "clip_last_7_thresholds": clip_checks_ok,
+        },
+    )
+
+    eval_by_update: dict[int, dict[str, Any]] = {}
+    eval_inputs = list(zip(eval_payloads, eval_paths or [None] * len(eval_payloads)))
+    for payload, path in eval_inputs:
+        try:
+            update = _checkpoint_update_from_path(payload.get("checkpoint", {}).get("path", ""))
+        except Exception:
+            failure_reasons.append("eval.unparseable_checkpoint_update")
+            continue
+        if update in eval_by_update:
+            failure_reasons.append(f"eval.model_{update}.duplicate")
+            continue
+        eval_by_update[update] = {"payload": payload, "path": path}
+
+    eval_update_set = sorted(eval_by_update)
+    eval_set_checks = record_checks(
+        "eval_set",
+        {
+            "exact_updates": eval_update_set == list(TASK072_PILOT_EVAL_UPDATES),
+            "exact_count": len(eval_payloads) == len(TASK072_PILOT_EVAL_UPDATES),
+        },
+    )
+    eval_checks: dict[str, dict[str, bool]] = {}
+    eval_metrics: dict[int, dict[str, Any]] = {}
+    for update in TASK072_PILOT_EVAL_UPDATES:
+        item = eval_by_update.get(update)
+        payload = item["payload"] if item else {}
+        metrics = payload.get("metrics", {})
+        checkpoint = payload.get("checkpoint", {})
+        manifest_checkpoint = checkpoint_updates.get(update, {})
+        fixed_command = metrics.get("fixed_command", {})
+        first_fall_median = _finite_metric(metrics.get("first_fall_seconds", {}).get("median"))
+        common_prefix = metrics.get("common_prefix", {})
+        common_mean_vx = _finite_metric(common_prefix.get("mean_vx"))
+        common_median_x = _finite_metric(common_prefix.get("median_x_displacement"))
+        eval_metrics[update] = {
+            "first_fall_median_s": first_fall_median,
+            "common_prefix_mean_vx": common_mean_vx,
+            "common_prefix_median_x_displacement": common_median_x,
+            "passed_full_eval_gate": payload.get("passed") is True,
+        }
+        eval_checks[f"model_{update}"] = record_checks(
+            f"eval.model_{update}",
+            {
+                "present": item is not None,
+                "schema": payload.get("schema_version") == 3,
+                "subtask": payload.get("subtask") == "003i",
+                "lineage": payload.get("lineage_id") == LINEAGE_ID,
+                "checkpoint_sha": bool(manifest_checkpoint)
+                and checkpoint.get("sha256") == manifest_checkpoint.get("sha256"),
+                "training_manifest_sha": training_manifest_sha256 is None
+                or payload.get("training_manifest", {}).get("sha256") == training_manifest_sha256,
+                "eval_seconds": _finite_metric(metrics.get("eval_seconds")) == 20.0,
+                "eval_envs": metrics.get("eval_envs") == 256,
+                "fixed_command": fixed_command == {"vx": 0.5, "vy": 0.0, "yaw": 0.0},
+                "finite": metrics.get("reward_finite") is True and metrics.get("obs_finite") is True,
+                "no_time_outs": metrics.get("reset_time_outs", {}).get("count") == 0,
+                "first_fall_median_finite": first_fall_median is not None,
+                "common_prefix_mean_vx_finite": common_mean_vx is not None,
+                "common_prefix_median_x_finite": common_median_x is not None,
+            },
+        )
+
+    m0 = eval_metrics.get(0, {}).get("first_fall_median_s")
+    m7 = eval_metrics.get(7, {}).get("first_fall_median_s")
+    m14 = eval_metrics.get(14, {}).get("first_fall_median_s")
+    m20 = eval_metrics.get(20, {}).get("first_fall_median_s")
+    model20_vx = eval_metrics.get(20, {}).get("common_prefix_mean_vx")
+    model20_x = eval_metrics.get(20, {}).get("common_prefix_median_x_displacement")
+    comparison_checks = record_checks(
+        "continuation",
+        {
+            "model20_median_first_fall_ge_2p5": _metric_ge(m20, 2.5),
+            "model20_median_first_fall_ge_model0_plus_0p5": m20 is not None and m0 is not None and m20 >= m0 + 0.5,
+            "model14_median_first_fall_ge_model7_minus_0p25": m14 is not None and m7 is not None and m14 >= m7 - 0.25,
+            "model20_median_first_fall_ge_model7_minus_0p10": m20 is not None and m7 is not None and m20 >= m7 - 0.10,
+            "model20_median_first_fall_ge_model14_minus_0p25": m20 is not None and m14 is not None and m20 >= m14 - 0.25,
+            "model20_common_prefix_mean_vx_ge_0p05": _metric_ge(model20_vx, 0.05),
+            "model20_common_prefix_median_x_ge_0p10": _metric_ge(model20_x, 0.10),
+        },
+    )
+    passed = (
+        all(training_checks.values())
+        and all(eval_set_checks.values())
+        and all(all(checks.values()) for checks in eval_checks.values())
+        and all(comparison_checks.values())
+    )
+    return {
+        "schema_version": 1,
+        "schema_kind": "003i_pilot_continuation_gate",
+        "lineage_id": LINEAGE_ID,
+        "required_training": {
+            "num_envs": REQUIRED_CAPACITY_NUM_ENVS,
+            "rollout_steps_per_env": REQUIRED_ROLLOUT_STEPS,
+            "updates": TASK072_PILOT_UPDATES,
+            "transitions": TASK072_PILOT_TRANSITIONS,
+            "seed": DEFAULT_SEED,
+        },
+        "required_eval_updates": list(TASK072_PILOT_EVAL_UPDATES),
+        "training_manifest": {
+            "path": str(training_manifest_path.resolve()) if training_manifest_path else None,
+            "sha256": training_manifest_sha256,
+        },
+        "training_checks": training_checks,
+        "eval_set_checks": eval_set_checks,
+        "eval_checks": eval_checks,
+        "eval_metrics": {f"model_{key}": value for key, value in eval_metrics.items()},
+        "comparison_checks": comparison_checks,
+        "action_clip_last_7_summary": clip_summary,
+        "failure_reasons": failure_reasons,
+        "manifest_contract_error": manifest_contract_error,
+        "status_if_passed": "ready_for_separately_authorized_proof / pilot_passed / not_passed",
+        "status_if_failed": "pilot_failed / trained / not_passed",
+        "passed": passed,
+    }
+
+
+def pilot_gate_command(args: argparse.Namespace) -> int:
+    start = time.time()
+    manifest_path = args.run_manifest.resolve()
+    eval_paths = [path.resolve() for path in args.eval]
+    manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    eval_payloads = [json.loads(path.read_text(encoding="utf-8")) for path in eval_paths]
+    manifest_contract_ok = True
+    manifest_contract_error = None
+    try:
+        _validate_training_manifest_for_eval(manifest_payload)
+    except Exception as exc:
+        manifest_contract_ok = False
+        manifest_contract_error = repr(exc)
+    gate = task072_pilot_continuation_gate(
+        manifest_payload,
+        eval_payloads,
+        training_manifest_path=manifest_path,
+        training_manifest_sha256=sha256_path(manifest_path),
+        eval_paths=eval_paths,
+        manifest_contract_ok=manifest_contract_ok,
+        manifest_contract_error=manifest_contract_error,
+    )
+    payload = {
+        **_common_manifest(args),
+        **gate,
+        "eval_inputs": [
+            {"path": str(path), "sha256": sha256_path(path)}
+            for path in eval_paths
+        ],
+        "wall_time_s": time.time() - start,
+    }
+    write_json(args.output.resolve(), payload)
+    print(json.dumps({"passed": payload["passed"], "output": str(args.output.resolve())}), flush=True)
+    return 0 if payload["passed"] else 1
 
 
 def _load_passing_json(path: Path, label: str) -> dict[str, Any]:
@@ -3209,6 +3676,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     evaluate.add_argument("--seed", type=int, default=DEFAULT_SEED + 99)
     evaluate.add_argument("--device", default="cuda:0")
     evaluate.set_defaults(func=evaluate_checkpoint)
+    pilot_gate = sub.add_parser("pilot-gate")
+    pilot_gate.add_argument("--run-manifest", type=Path, default=DEFAULT_OUTPUT_ROOT / "003i_pilot_4096x24x21_seed720301/run_manifest.json")
+    pilot_gate.add_argument(
+        "--eval",
+        type=Path,
+        nargs=4,
+        default=[
+            DEFAULT_OUTPUT_ROOT / f"003i_eval_pilot_model_{update}_fixed_vx0p5_seed720400.json"
+            for update in TASK072_PILOT_EVAL_UPDATES
+        ],
+    )
+    pilot_gate.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_ROOT / "003i_pilot_gate.json")
+    pilot_gate.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    pilot_gate.set_defaults(func=pilot_gate_command)
     verify = sub.add_parser("verify-runtime-binding")
     verify.add_argument("--output", type=Path, required=True)
     verify.add_argument("--seed", type=int, default=DEFAULT_SEED)
