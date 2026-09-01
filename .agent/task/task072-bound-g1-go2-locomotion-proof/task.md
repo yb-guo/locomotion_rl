@@ -539,13 +539,14 @@ baseline、progression、SHA 或任一指标失败，均视为该 case 未通过
   eval 又混淆 `reset_terminated` 与 `reset_time_outs`，且没有训练期 action clip 聚合和 model7->20
   survival non-regression gate。003h 的 model_20、manifest、eval 均降级为 `rejected_diagnostic`；
   003i repair 已完成并通过 CPU contract verifier。Source commit
-  `a9bf70099d33661692e3e5953779728981564b80`；actual 23-term active-table SHA
+  `15c51951b6fe6c2ba505788ee750b7cf65b5416c`；actual 23-term active-table SHA
   `323feac6197abc6d706205f39d5f332b834e87332d453919ccfb1998f5eea7e2`；reward payload SHA
   `ef8fe4b5c8f3edcbd293cc170b03ae99665e79f04d289105f57f04e19d617051`；verifier artifact
   `artifacts/mjlab_runtime_binding/g1/mjlab_g1_7capsule_task_v3_single_ground/003i_reward_eval_contract_verifier.json`
-  SHA `11f3f05b8170f415d9493197765aad9347a4a7ff016e846afdf21600e749bf81` passed；`py_compile`、
-  scoped pytest `78 passed, 35 warnings`、`git diff --check` passed。未运行 CUDA/capacity/one-update/
-  pilot/proof/video/freeze，004/Task073/Task074 继续 blocked。
+  SHA `6aacd7f62083a85bba613897b571bbb7c2c15831972740cb8954713defb4879b` passed；新增
+  `pilot-gate` continuation reducer 和 action-clip fail-closed manifest validation；`py_compile`、
+  scoped pytest `80 passed, 35 warnings`、`git diff --check` passed。未运行 CUDA/capacity/
+  one-update/pilot/proof/video/freeze，004/Task073/Task074 继续 blocked。
 
 ## Review
 

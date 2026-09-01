@@ -418,18 +418,20 @@ versioned subtask 和既有正式 walking gate 执行。
 ## Log
 
 - 2026-09-01：完成 bounded 003i runner/test repair。Source commit
-  `a9bf70099d33661692e3e5953779728981564b80`；runner SHA
-  `c6eb40cf38180b1684d1ee9d43b7af62058e4e72b7eb43866075324c755b3e6c`；test SHA
-  `7411ba20f99954e88c7887a37f6c115327cff89c4de37907a04bfe04b40b5257`；actual
+  `15c51951b6fe6c2ba505788ee750b7cf65b5416c`；runner SHA
+  `1cc6dcd6233225cb42dedb97bc5b4399723eeb1c2f5b1379ac32f8897e709f41`；test SHA
+  `50f09a5c5e79aa53a34b943cf186c1e2af5fe1d22deefdc813df93bf1389b94b`；actual
   23-term manager active-table SHA `323feac6197abc6d706205f39d5f332b834e87332d453919ccfb1998f5eea7e2`；
   reward payload SHA `ef8fe4b5c8f3edcbd293cc170b03ae99665e79f04d289105f57f04e19d617051`。
   CPU verifier artifact
   `artifacts/mjlab_runtime_binding/g1/mjlab_g1_7capsule_task_v3_single_ground/003i_reward_eval_contract_verifier.json`
-  SHA `11f3f05b8170f415d9493197765aad9347a4a7ff016e846afdf21600e749bf81` passed；checks
+  SHA `6aacd7f62083a85bba613897b571bbb7c2c15831972740cb8954713defb4879b` passed；checks
   `reward_manager_api/train_active_table/eval_active_table/train_eval_reward_match/reward_payload/registration_active_sha/canonical_config/fixture_oracle/eval_schema/clip_schema/zero_action_sanity`
-  全部 true。验证：`py_compile` passed；scoped pytest
+  全部 true。新增 `pilot-gate` JSON reducer，强制 model0/7/14/20 continuation gate 和 updates
+  14..20 action-clip pooled thresholds；training/eval manifest 对 clip schema、分数、阈值和 progression
+  SHA fail closed。验证：`py_compile` passed；scoped pytest
   `tests/test_task072_locomotion_proof.py tests/test_whole_body_extended.py` returned
-  `78 passed, 35 warnings`；`git diff --check` passed。未运行 CUDA、capacity、one-update、pilot、
+  `80 passed, 35 warnings`；`git diff --check` passed。未运行 CUDA、capacity、one-update、pilot、
   proof、video 或 freeze。
 
 ## Review
