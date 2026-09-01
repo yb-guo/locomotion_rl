@@ -93,6 +93,12 @@ untrained/zero baselines 直接比较，并无条件写 `paired_baselines_verifi
      versioned proof subtask，不能直接进入 004。004/Task073/074 继续 blocked。
    - 2026-09-01 授权后 003i capacity smoke passed；exact `4096x24x1` one-update 因 action clip
      scalar/env-step/per-joint gates 失败而停止，fresh pilot、eval、pilot gate 未运行。
+3j. `003j-g1-mjlab-action-clip-gate-scope-repair.md`
+   - 003i 的 action-clip gate-scope mismatch repair；one-update 只要求 clip schema/count/finite/算术
+     证据，并新增实际 optimizer steps、actor+critic parameter delta、真实 losses、23-term runtime
+     reward table/SHA、check_for_nan 与 finite rollout evidence。
+   - 003i 保持历史 `one_update_failed / smoke_trained / not_passed`；003j fresh pilot 才能继续既定
+     survival/forward gate，禁止消费或续训 003i artifact。
 4. `004-freeze-g1-passing-lineage.md`
    - 只有 G1 全 gate 通过后，冻结实现 commit、配置、descriptor、asset、checkpoint 与 verifier
      SHA；

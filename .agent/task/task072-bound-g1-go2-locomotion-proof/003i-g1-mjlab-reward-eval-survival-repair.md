@@ -2,7 +2,8 @@
 
 状态：**one_update_failed / smoke_trained / not_passed**。
 
-003i 是 003h 后验审计后的唯一活动 subtask。它只关闭三个已经定位的合同错误：
+003i 是 003h 后验审计后的历史失败 subtask，已被 003j 以 gate-scope mismatch supersede。
+它只关闭三个已经定位的合同错误：
 
 1. `task072_mjlab_biped_phase_contact_v3` 只被写成 version 字符串，真实
    `RewardManager` 仍保留 parent `foot_gait`；
@@ -17,10 +18,10 @@ versioned proof subtask，并再次取得正式训练授权。
 
 ## Route
 
-`003h rejected_diagnostic -> 003i CPU implementation/tests -> user-authorized capacity/one-update ->
-fresh pilot -> pilot continuation gate -> future versioned proof subtask -> 004`。
+`003h rejected_diagnostic -> 003i rejected action-clip diagnostic -> 003j CPU implementation/tests ->
+user-authorized capacity/one-update -> fresh pilot -> pilot continuation gate -> future versioned proof subtask -> 004`。
 
-003i pending、CPU gate 失败、未获 GPU 授权、one-update gate 失败或 pilot gate 失败时，
+003i 的 pending、CPU gate、GPU 授权与 one-update 结果均为历史记录；003i one-update gate 失败后，
 004、Task073、Task074 全部保持 blocked。2026-09-01 GPU 授权已执行到 one-update；one-update
 clip gate 失败后已停止，未运行 fresh pilot、eval、pilot gate、proof、video 或 freeze。
 
