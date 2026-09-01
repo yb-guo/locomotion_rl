@@ -1,6 +1,6 @@
 # 003k — G1 MJLab task-owned semantic contract and survival closure
 
-状态：**ready_for_implementation / not_trained / not_passed**。
+状态：**ready_for_authorized_gpu / not_trained / not_passed**。
 
 003k 是 003j pilot failure 之后的唯一活动修复任务。它不把失败归因于“训练轮数不够”，也不允许
 继续在 `Unitree-G1-Flat` 上逐个删除已知 parent 项。目标是一次性关闭 Task072 的完整训练语义：
@@ -614,17 +614,17 @@ checkpoint。stage failure 立即停止，保留 artifact，不继续下一个�
 
 ### Implementation/CPU acceptance
 
-- [ ] complete task-owned manager tables replace partial parent cleanup；
-- [ ] actor、critic、三个 reward phase consumers 使用 exact `0.8 s` shared clock；
-- [ ] v3 全部 gait terms 保留，active reward exact 24 terms；
-- [ ] `fall_terminated` 只惩罚 non-timeout termination，dt contribution exact `-6.0`；
-- [ ] actual observation/reward/termination manager tables 与 independent expected contract 一致；
-- [ ] full JSON-native semantic payload/SHA 覆盖全部 task behavior；
-- [ ] train/eval semantic diff 只含 frozen allowlist；
-- [ ] existing evaluator 保持 terminated/timeout/common-prefix 正确性并增加 per-env gait metrics；
-- [ ] action/PPO/asset/stance/physics 未被顺带调参；
-- [ ] focused tests、CPU verifier、`py_compile`、`git diff --check` passed；
-- [ ] clean source commit 已记录，GPU 未启动。
+- [x] complete task-owned manager tables replace partial parent cleanup；
+- [x] actor、critic、三个 reward phase consumers 使用 exact `0.8 s` shared clock；
+- [x] v3 全部 gait terms 保留，active reward exact 24 terms；
+- [x] `fall_terminated` 只惩罚 non-timeout termination，dt contribution exact `-6.0`；
+- [x] actual observation/reward/termination manager tables 与 independent expected contract 一致；
+- [x] full JSON-native semantic payload/SHA 覆盖全部 task behavior；
+- [x] train/eval semantic diff 只含 frozen allowlist；
+- [x] existing evaluator 保持 terminated/timeout/common-prefix 正确性并增加 per-env gait metrics；
+- [x] action/PPO/asset/stance/physics 未被顺带调参；
+- [x] focused tests、CPU verifier、`py_compile`、`git diff --check` passed；
+- [x] clean source commit 已记录，GPU 未启动。
 
 ### Later GPU acceptance
 
@@ -645,15 +645,25 @@ checkpoint。stage failure 立即停止，保留 artifact，不继续下一个�
 - 2026-09-01：实现 bounded CPU slice：切换 003k/v4 lineage/output root，统一 reward/phase period，
   保留 v3 reward 并追加 `fall_terminated` 的 raw `-1`、weight `300.0`，扩展 fixture oracle 覆盖
   normal/fell-over/timeout。未运行 GPU、training、eval、proof、video 或 freeze。
+- 2026-09-01：完成 003k CPU closure source commit
+  `d169a90ac59b34a8282bca51108c199e622531ab`。从 clean source HEAD 重跑：
+  `py_compile` passed；targeted pytest
+  `tests/test_task072_locomotion_proof.py -k 'reward or v4_cross_manager or common_prefix or pilot_gate or semantic_contract'`
+  为 `7 passed, 59 deselected`；`git diff --check` passed。随后运行 CPU-only
+  `verify-reward-eval-contract`，产物
+  `artifacts/mjlab_runtime_binding/g1/mjlab_g1_7capsule_task_v4_semantic_closed/003k_v4_semantic_reward_eval_contract_verifier.json`
+  passed，raw SHA-256
+  `fa28bab4c8800d49c9e91ead8f38fa39092187f6b993dd2a301190aac37ffb7f`，其
+  `source_commit` 为同一 clean source commit。未启动 GPU、training、eval、proof、video 或 freeze。
 
 ## Review
 
-状态：**implementation_partial / cpu_validation_pending / not_passed**。
+状态：**ready_for_authorized_gpu / not_trained / not_passed**。
 
-本轮未完成 observations/actions/commands/events/terminations/metrics 的整表替换及 actual-manager
-semantic payload SHA 接线；剩余 owner 是 `build_task_cfg()` 的 parent-derived manager tables 与
-`verify_reward_eval_contract()` 的 full runtime payload consumption。
+003k implementation/CPU gate 已关闭：Task072 现在拥有 task-owned observations/actions/commands/events/
+rewards/terminations/curriculum/metrics/sensors/PPO runtime contract，actor/critic/reward phase 统一为
+`TASK072_GAIT_PERIOD_S=0.8`，RewardManager actual table 为 ordered 24 terms，`fall_terminated` 对
+non-timeout termination 的 dt contribution 为 `-6.0`，train/eval semantic diff 仅含冻结 allowlist。
 
-003k 的通过条件不是“新增测试通过”或“reward 数字变好”，而是 actual runtime managers 闭合、CPU
-semantic verifier 通过，并在后续单独授权的 fresh pilot 中同时满足 survival、forward 和真实双侧交替
-步态 gate。在这些证据出现前，Task072、004、Task073 和 Task074 继续 blocked。
+003k 未训练且仍 not_passed；GPU capacity、one-update、pilot、eval、proof、video、freeze 均未授权也未运行。
+下一步只能在用户另行明确授权后，从 fresh v4 capacity 开始。

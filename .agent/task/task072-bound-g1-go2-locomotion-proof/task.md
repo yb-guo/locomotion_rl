@@ -622,9 +622,16 @@ baseline、progression、SHA 或任一指标失败，均视为该 case 未通过
   `-0.957527`，确认 termination exploit。新建 003k，要求整表替换全部 task semantics、统一 phase、
   保留 gait reward并加入 post-dt `-6.0` bounded fall cost、actual-manager semantic SHA 和 per-env gait/
   survival gate。本轮仅写 task contract，未修改 source、未运行 CPU verifier 或 GPU。
-- 2026-09-01：003k implementation slice 切换 v4 root/lineage，统一 `TASK072_GAIT_PERIOD_S`，追加
-  24th `fall_terminated` reward 与 normal/fell-over/timeout fixture probe；未启动 GPU、training、eval、
-  proof、video 或 freeze。完整 task-owned manager-table replacement 尚未完成。
+- 2026-09-01：003k implementation/CPU closure 已完成，source commit
+  `d169a90ac59b34a8282bca51108c199e622531ab`。实现切换 v4 root/lineage，整表替换
+  observations/actions/commands/events/rewards/terminations/curriculum/metrics/sensors/PPO contract，
+  统一 `TASK072_GAIT_PERIOD_S=0.8`，追加 24th `fall_terminated` reward 与
+  normal/fell-over/timeout fixture probe，并接入 full JSON-native semantic payload/SHA。从 clean
+  source HEAD 重跑 `py_compile`、targeted pytest 与 `git diff --check` 均通过；CPU-only
+  `verify-reward-eval-contract` 通过并生成
+  `artifacts/mjlab_runtime_binding/g1/mjlab_g1_7capsule_task_v4_semantic_closed/003k_v4_semantic_reward_eval_contract_verifier.json`
+  raw SHA-256 `fa28bab4c8800d49c9e91ead8f38fa39092187f6b993dd2a301190aac37ffb7f`。未启动
+  GPU、training、eval、proof、video 或 freeze。
 
 ## Review
 
@@ -654,10 +661,9 @@ GPU capacity passed，但 one-update action clip gate failed，未运行 fresh p
 gate scope，CPU/capacity/one-update 与 pilot training contract 均通过；fresh fixed-command eval 全部
 在 20 s 前跌倒，aggregate survival continuation gate failed。后验 cross-manager audit 已冻结为 003k：
 parent phase observation `0.6 s` 与 reward gait phase `0.8 s` 不一致，且实际 reward 无 terminal cost，
-产生 reward-up/survival-down termination exploit。003k 现为
-`implementation_partial / cpu_validation_pending / not_passed`；本轮只完成 bounded reward/phase slice，
-完整 task-owned manager-table replacement 与 verifier payload consumption 仍待后续实现。尚未授权新的
-GPU run。G1/Go2 full proof 仍未通过，Task072 继续保持 **not_passed**。
+产生 reward-up/survival-down termination exploit。003k implementation/CPU gate 已通过，现为
+`ready_for_authorized_gpu / not_trained / not_passed`；尚未授权新的 GPU run。G1/Go2 full proof
+仍未通过，Task072 继续保持 **not_passed**。
 
 ## R2 single-variable recovery route
 
