@@ -1,6 +1,6 @@
 # 003h — G1 MJLab contract-closure repair
 
-状态：**ready_for_authorized_pilot / not_trained / not_passed**。
+状态：**pilot_eval_failed / trained / not_passed**。
 
 003h 是 003g 失败后的 versioned repair。003g 仅保留为 single-ground failed walking evidence；其
 training contract 继承了 `Unitree-G1-Flat` 的 command randomization、domain randomization、curriculum、
@@ -38,9 +38,23 @@ capacity/one-update/pilot only after this source commit is selected。
   在 numeric eval、video、independent verifier 未通过前不会生成 passing freeze。
 - 2026-08-31：CPU scoped tests：`tests/test_task072_locomotion_proof.py tests/test_whole_body_extended.py`
   为 `75 passed`。未运行 GPU capacity、one-update、pilot、proof training、passing video 或 freeze。
+- 2026-09-01：收到用户授权后，在 repair commit
+  `49a15b816b03378dc7a48e51726e0051a0de8a6b` 下执行 003h GPU route。Capacity smoke passed，
+  artifact SHA `214524c37b9bb2c079292dc189b96b0555e08137c70236d1b775c476a81bcd5e`，selected
+  `4096 x 24 = 98,304` transitions/update，highest passed `6144` envs，记录
+  `gpu_lock.held_by_ancestor=true`。Capacity-consuming one-update smoke passed，manifest SHA
+  `68806a6f706983f149a41d8fab0eb47487d6d5afdff698f37fe7c11f710aa21d`。随后执行 21-update pilot
+  `4096 x 24 x 21 = 2,064,384` transitions，随机初始化 seed `720301`，manifest SHA
+  `ef75777584f7a3a3b8a622ef120d7ec677c38477cdb5dcb8a893fe10f90c7231`，最终 checkpoint
+  `model_20.pt` SHA `08a700768ce8310fe20dcb87e96653bd450ada22475fabbf9e8765533b4a17b9`。
+  Manifest-bound 20 s fixed-command eval on `model_20.pt` failed walking gate，eval SHA
+  `59f614ea2e0e4c5414f543bc6696cb582ad075338620cd6183a199accfa47fb0`；checks failed
+  `mean_forward_velocity`、`mean_x_displacement`、`planar_tracking_error`、`yaw_error`、
+  `gravity_xy`、`zero_fall_ratio`。未运行 proof training、passing video 或 freeze。
 
 ## Review
 
-状态：**ready_for_authorized_pilot / not_trained / not_passed**。003h 已关闭 training/eval/action/reward/
-runtime/provenance 的主要合同分叉，并以 CPU tests 证明 fail-closed 行为。下一步训练 agent 只有在用户
-授权 GPU capacity 与 pilot 后，才能从本 repair commit 重新开始；不得复用 003g checkpoint。
+状态：**pilot_eval_failed / trained / not_passed**。003h 已关闭 training/eval/action/reward/runtime/
+provenance 的主要合同分叉，并以 CPU tests、GPU capacity、one-update、21-update pilot 和
+manifest-bound eval 证明新路线可执行但仍未过 walking gate。不得复用 003g checkpoint；不得生成 passing
+video 或 freeze。

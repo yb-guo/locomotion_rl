@@ -1,6 +1,6 @@
 # Task072 — Bound G1/Go2 nominal locomotion proof
 
-状态：**ready_for_authorized_pilot / not_trained / not_passed**。
+状态：**pilot_eval_failed / trained / not_passed**。
 
 ## 目标与边界
 
@@ -80,8 +80,10 @@ untrained/zero baselines 直接比较，并无条件写 `paired_baselines_verifi
    - walking numeric gate 未通过不得生成伪 passing video、不得 freeze、不得调 reward 或参数搜索。
 3h. `003h-g1-mjlab-contract-closure-repair.md`
    - 建立新的 MJLab fixed-command/action/reward/train-eval/runtime/provenance 合同；
-   - 状态只能为 `ready_for_authorized_pilot / not_trained / not_passed`，禁止复用 003g checkpoint；
-   - 本 subtask 只实现 CPU/negative gates，不启动 GPU capacity、one-update、pilot 或 proof training。
+   - 初始状态只能为 `ready_for_authorized_pilot / not_trained / not_passed`，禁止复用 003g checkpoint；
+   - 初始 repair subtask 只实现 CPU/negative gates；2026-09-01 用户授权后已执行 003h GPU
+     capacity、one-update、21-update pilot 和 manifest-bound eval，pilot eval failed，仍不得启动
+     proof training、passing video 或 freeze。
 4. `004-freeze-g1-passing-lineage.md`
    - 只有 G1 全 gate 通过后，冻结实现 commit、配置、descriptor、asset、checkpoint 与 verifier
      SHA；
@@ -514,10 +516,20 @@ baseline、progression、SHA 或任一指标失败，均视为该 case 未通过
   fixed-command/no-DR canonical config, signed headroom action contract, v3 reward lineage and frame-local
   external pin; historical E3/003g drift remains rejected. CPU scoped pytest
   `tests/test_task072_locomotion_proof.py tests/test_whole_body_extended.py` passed `75 passed`.
+- 2026-09-01：用户授权后执行 003h GPU route on commit
+  `49a15b816b03378dc7a48e51726e0051a0de8a6b`。Capacity smoke passed，artifact SHA
+  `214524c37b9bb2c079292dc189b96b0555e08137c70236d1b775c476a81bcd5e`，selected
+  `4096 x 24 = 98,304` transitions/update，highest passed `6144` envs。Capacity-consuming one-update
+  smoke passed，manifest SHA `68806a6f706983f149a41d8fab0eb47487d6d5afdff698f37fe7c11f710aa21d`。
+  21-update pilot completed `2,064,384` transitions from random init，manifest SHA
+  `ef75777584f7a3a3b8a622ef120d7ec677c38477cdb5dcb8a893fe10f90c7231`。Manifest-bound fixed-command
+  eval of `model_20.pt` failed walking gate，eval SHA
+  `59f614ea2e0e4c5414f543bc6696cb582ad075338620cd6183a199accfa47fb0`，mean vx `0`、+x `0`、
+  zero-fall ratio `0`。No proof training、passing video 或 freeze was run.
 
 ## Review
 
-状态：**ready_for_authorized_pilot / not_trained / not_passed**。
+状态：**pilot_eval_failed / trained / not_passed**。
 
 Task072 只有在 exact-bound G1 和 Go2 都在同一冻结 source commit/config contract 上满足全部数值、
 视频、baseline、checkpoint 与 verifier gate 后才能标记 passed。Task071 的 one-update PPO smoke、旧
@@ -537,8 +549,8 @@ gate 已通过，R5 2.048M 也已执行，但 exact-init binding 和原 optimize
 `4096 x 24 x 650` 跑满 `63,897,600` transitions，但同样受 double-ground 污染，已 rejected，不能再称为
 正确 v2 binding 下的 walking failure。003f single-ground runtime no-update verifier 已通过，但未启动新的
 v3 capacity/training/eval/video。003g single-ground training/eval 已失败，且因 training contract 分叉不得
-继承；003h 已修复合同闭合与 CPU fail-closed gates。G1/Go2 full proof 仍未通过，Task072 继续保持
-**not_passed**，仅为 **ready_for_authorized_pilot**。
+继承；003h 已修复合同闭合并完成用户授权的 capacity/one-update/pilot/eval。003h pilot 训练可执行，
+但固定命令 20 s eval 未过 walking gate。G1/Go2 full proof 仍未通过，Task072 继续保持 **not_passed**。
 
 ## R2 single-variable recovery route
 
