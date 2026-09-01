@@ -623,15 +623,17 @@ baseline、progression、SHA 或任一指标失败，均视为该 case 未通过
   保留 gait reward并加入 post-dt `-6.0` bounded fall cost、actual-manager semantic SHA 和 per-env gait/
   survival gate。本轮仅写 task contract，未修改 source、未运行 CPU verifier 或 GPU。
 - 2026-09-01：003k implementation/CPU closure 已完成，source commit
-  `d169a90ac59b34a8282bca51108c199e622531ab`。实现切换 v4 root/lineage，整表替换
+  `68195b5d8c4df14691835d181000ded8df5ba4a7`。实现切换 v4 root/lineage，整表替换
   observations/actions/commands/events/rewards/terminations/curriculum/metrics/sensors/PPO contract，
   统一 `TASK072_GAIT_PERIOD_S=0.8`，追加 24th `fall_terminated` reward 与
   normal/fell-over/timeout fixture probe，并接入 full JSON-native semantic payload/SHA。从 clean
   source HEAD 重跑 `py_compile`、targeted pytest 与 `git diff --check` 均通过；CPU-only
   `verify-reward-eval-contract` 通过并生成
   `artifacts/mjlab_runtime_binding/g1/mjlab_g1_7capsule_task_v4_semantic_closed/003k_v4_semantic_reward_eval_contract_verifier.json`
-  raw SHA-256 `fa28bab4c8800d49c9e91ead8f38fa39092187f6b993dd2a301190aac37ffb7f`。未启动
-  GPU、training、eval、proof、video 或 freeze。
+  raw SHA-256 `99883e9c38a9cf4db081437d7bd8cb537d311c0ec386cbee8d18e5f46041b2bd`。该 verifier
+  记录 actual observation/termination manager gates、timeout-excluding terminal reward probe 和
+  stage semantic payload SHA `583794cdd87155a4c78d665df1f37c6d75b9c2848998d5f094c49b7f964803cc`。
+  未启动 GPU、training、eval、proof、video 或 freeze。
 
 ## Review
 

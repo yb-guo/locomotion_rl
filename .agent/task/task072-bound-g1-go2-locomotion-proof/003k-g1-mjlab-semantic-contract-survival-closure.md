@@ -646,15 +646,19 @@ checkpoint。stage failure 立即停止，保留 artifact，不继续下一个�
   保留 v3 reward 并追加 `fall_terminated` 的 raw `-1`、weight `300.0`，扩展 fixture oracle 覆盖
   normal/fell-over/timeout。未运行 GPU、training、eval、proof、video 或 freeze。
 - 2026-09-01：完成 003k CPU closure source commit
-  `d169a90ac59b34a8282bca51108c199e622531ab`。从 clean source HEAD 重跑：
+  `68195b5d8c4df14691835d181000ded8df5ba4a7`。从 clean source HEAD 重跑：
   `py_compile` passed；targeted pytest
   `tests/test_task072_locomotion_proof.py -k 'reward or v4_cross_manager or common_prefix or pilot_gate or semantic_contract'`
   为 `7 passed, 59 deselected`；`git diff --check` passed。随后运行 CPU-only
   `verify-reward-eval-contract`，产物
   `artifacts/mjlab_runtime_binding/g1/mjlab_g1_7capsule_task_v4_semantic_closed/003k_v4_semantic_reward_eval_contract_verifier.json`
   passed，raw SHA-256
-  `fa28bab4c8800d49c9e91ead8f38fa39092187f6b993dd2a301190aac37ffb7f`，其
-  `source_commit` 为同一 clean source commit。未启动 GPU、training、eval、proof、video 或 freeze。
+  `99883e9c38a9cf4db081437d7bd8cb537d311c0ec386cbee8d18e5f46041b2bd`，其
+  `source_commit` 为同一 clean source commit；stage semantic payload SHA 为
+  `583794cdd87155a4c78d665df1f37c6d75b9c2848998d5f094c49b7f964803cc`。Reviewer 指出的
+  actual observation/termination manager gate、timeout-excluding terminal reward probe、stage-specific
+  semantic SHA 和 PPO fail-closed assert 均已补入 source/verifier。未启动 GPU、training、eval、proof、
+  video 或 freeze。
 
 ## Review
 
