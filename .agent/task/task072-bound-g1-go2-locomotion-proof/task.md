@@ -1,6 +1,6 @@
 # Task072 — Bound G1/Go2 nominal locomotion proof
 
-状态：**one_update_failed / smoke_trained / not_passed**。
+状态：**pilot_failed / trained / not_passed**。
 
 ## 目标与边界
 
@@ -98,7 +98,8 @@ untrained/zero baselines 直接比较，并无条件写 `paired_baselines_verifi
      证据，并新增实际 optimizer steps、actor+critic parameter delta、真实 losses、23-term runtime
      reward table/SHA、check_for_nan 与 finite rollout evidence。
    - 003i 保持历史 `one_update_failed / smoke_trained / not_passed`；003j fresh pilot 才能继续既定
-     survival/forward gate，禁止消费或续训 003i artifact。
+     survival/forward gate，禁止消费或续训 003i artifact。r2 pilot 已完成但 continuation gate
+     failed；003j 结果为 `pilot_failed / trained / not_passed`。
 4. `004-freeze-g1-passing-lineage.md`
    - 只有 G1 全 gate 通过后，冻结实现 commit、配置、descriptor、asset、checkpoint 与 verifier
      SHA；
@@ -230,7 +231,7 @@ pointer 和整份 action contract raw/payload SHA。每个 manifest/report 都�
 003h rejected diagnostic -> 003i rejected action-clip gate-scope diagnostic -> 003j action-clip gate-scope repair -> separately authorized capacity/pilot ->
 future versioned proof subtask -> 004 freeze -> Task073 asset migration ->
 Task074 18-case training`。
-003j implementation source 未提交、CPU gates 未通过、新 authorized pilot 未通过或后续 formal proof
+003j implementation source 已提交且 CPU/capacity/one-update gates 通过；pilot continuation gate
 未通过，不得 freeze 或启动 Task073。
 004 必须绑定新的 contact/stance/asset lineage，不能
 复用旧 `official_sim_physics_overlay_v1` stance 或把旧失败 artifact 补判通过。任何阶段失败都保留完整失败 artifact，并停止向
@@ -574,10 +575,36 @@ baseline、progression、SHA 或任一指标失败，均视为该 case 未通过
   `3a6d4dc656eac3e3d126e729dc14056bf2e85f05f0f801d2591589d62baaa598`。按 stop rule 未运行
   fresh pilot、model `0/7/14/20` eval、`003i_pilot_gate.json`、proof、video 或 freeze；
   004/Task073/Task074 继续 blocked。
+- 2026-09-01：003j action-clip gate-scope repair source commit
+  `f799115a5575d5c492c834467ec4ad35ad816750`，runner SHA
+  `4b0612ab88cd1c60701ac354a46b5573196ebcf988bf4c3511ce2fcc16a9c4e8`；CPU
+  `003j_r2_reward_eval_contract_verifier.json` passed，artifact SHA
+  `6ddffb76ec98ee08b2a27358813da4989a1d7242254eabac160dcf09a9a321ff`。在 inherited
+  GPU lock 下 r2 capacity passed，selected `4096 x 24`，artifact SHA
+  `21890c28dcaf5dc22d78abc1e765fbacf426fc9e51ea546345ff78fd9323fb0b`；fresh one-update
+  passed with exact `20/20` actual optimizer steps, positive finite actor+critic delta,
+  finite losses, exact 23-term runtime reward table/SHA and enabled NaN/finite rollout
+  evidence；manifest SHA `5d4ce6e8d278600aaf3de54b8a9c62336de8fe9d266428358c993e5e0b45486d`。
+  One-update clip fractions (`0.319579/0.999990`, max raw `5.651526`) were evidence only,
+  with no `.10/.50/.25` gate. Fresh 21-update pilot passed training acceptance and completed
+  `2,064,384` transitions; manifest SHA
+  `d2dd617050b5ecfdf11a6456769ed50ad0de5e978abf10dac5ec89bb959041b0`，checkpoint model
+  `0/7/14/20` SHA respectively
+  `80357096fa668eb0659e4e5b229302bc83e9a541ff6fd871a9f3b346135a8fd6` /
+  `0d87c3f180ed16f510ecdf782274ec75a1b22c2e6526ef9b616c1597ba29c95e` /
+  `c9451fb351ea426a71ab14d8a66974ca19c61916410fb283990d22f324c5f970` /
+  `84cd5dae651821b00d67525deda164453d031b791d859b1ba8666195af3a7c22`。四个 fixed-vx
+  eval 均 finite、无 timeout，但 `zero_fall_ratio=0`，median first-fall 为 model
+  `0/7/14/20 = 2.44/2.68/1.42/1.14 s`，对应 common-prefix mean vx
+  `-0.3204/0.2865/0.4085/0.4628`、median x
+  `-0.6655/0.7245/0.5495/0.5006`。Aggregate pilot gate SHA
+  `c460a0d5095b88943c0550ec6bae6c35c373e718407e4d379029e8d057fce43f` failed closed only
+  on the specified survival comparisons; training, exact eval set, clip and forward
+  checks passed. Per stop rule no proof/video/freeze/Task073/Task074 was started.
 
 ## Review
 
-状态：**one_update_failed / smoke_trained / not_passed**。
+状态：**pilot_failed / trained / not_passed**。
 
 Task072 只有在 exact-bound G1 和 Go2 都在同一冻结 source commit/config contract 上满足全部数值、
 视频、baseline、checkpoint 与 verifier gate 后才能标记 passed。Task071 的 one-update PPO smoke、旧
@@ -599,8 +626,10 @@ gate 已通过，R5 2.048M 也已执行，但 exact-init binding 和原 optimize
 v3 capacity/training/eval/video。003g single-ground training/eval 已失败，且因 training contract 分叉不得
 继承；003h 虽完成用户授权的 capacity/one-update/pilot/eval，但后验确认 reward v3 未实例化且 eval
 混淆 timeout/fall，全部降级为 rejected diagnostic。003i bounded repair 已完成并通过 CPU verifier；
-GPU capacity passed，但 one-update action clip gate failed，未运行 fresh pilot/eval/gate。
-G1/Go2 full proof 仍未通过，Task072 继续保持 **not_passed**。
+GPU capacity passed，但 one-update action clip gate failed，未运行 fresh pilot/eval/gate。003j 已修复
+gate scope，CPU/capacity/one-update 与 pilot training contract 均通过；fresh fixed-command eval 全部
+在 20 s 前跌倒，aggregate survival continuation gate failed。G1/Go2 full proof 仍未通过，Task072 继续
+保持 **not_passed**。
 
 ## R2 single-variable recovery route
 
