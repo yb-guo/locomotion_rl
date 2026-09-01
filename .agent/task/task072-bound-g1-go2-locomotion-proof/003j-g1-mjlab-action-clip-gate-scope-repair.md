@@ -1,6 +1,6 @@
 # 003j — G1 MJLab action-clip gate scope repair
 
-状态：**in_progress / not_trained / not_passed**。
+状态：**gpu_pending / not_trained / not_passed**。
 
 003j supersedes 003i only for the gate-scope mismatch. The 003i one-update run,
 manifest, model and diagnostics remain rejected evidence and must not be
@@ -22,6 +22,12 @@ baseline is `59e45c7d5bb707af8d8803a2950316e701afba9b` in recovery frame
   stage-scope leakage: one-update `passed` depended on pilot-only absolute clip
   thresholds (`.10/.50/.25`).
 - 2026-09-01：CPU implementation and regression coverage are in progress.
+- 2026-09-01：CPU `py_compile`、聚焦 clip/one-update/pilot tests、`git diff --check` 与
+  `003j_reward_eval_contract_verifier.json` 均通过；verifier 已绑定 source commit
+  `bc10d887c2b426806b515da92d768838e7b5a7ea`。
+- 2026-09-01：003j GPU capacity 未启动；`flock -n /home/admin1/workspace/run/.gpu.lock`
+  返回 busy，holder 为其他 EmbodiedGen GPU 任务（PID 49088/49099）。按 stop rule 标记
+  `gpu_pending`，不等待、不轮询，不运行 capacity、one-update、pilot 或 eval。
 
 ## Review
 
