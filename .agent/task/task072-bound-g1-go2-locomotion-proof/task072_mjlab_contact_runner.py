@@ -1274,23 +1274,71 @@ def _manager_cfg_table(cfg: dict[str, Any], extra_fields: tuple[str, ...] = ()) 
     return rows
 
 
+def _observation_term_row(name: str, term: Any) -> dict[str, Any]:
+    return {
+        "name": name,
+        "callable": _callable_id(term.func),
+        "params": _json_native(term.params),
+        "noise": _json_native(term.noise),
+        "scale": _json_native(term.scale),
+        "history_length": int(term.history_length),
+    }
+
+
 def _observation_group_payload(group: Any) -> dict[str, Any]:
     return {
         "concatenate_terms": bool(group.concatenate_terms),
         "enable_corruption": bool(group.enable_corruption),
         "history_length": int(group.history_length),
-        "terms": [
-            {
-                "name": name,
-                "callable": _callable_id(term.func),
-                "params": _json_native(term.params),
-                "noise": _json_native(term.noise),
-                "scale": _json_native(term.scale),
-                "history_length": int(term.history_length),
-            }
-            for name, term in group.terms.items()
-        ],
+        "terms": [_observation_term_row(name, term) for name, term in group.terms.items()],
     }
+
+
+def task072_observation_active_table_from_manager(manager: Any) -> dict[str, list[dict[str, Any]]]:
+    return {
+        group: [
+            _observation_term_row(name, term)
+            for name, term in zip(manager.active_terms[group], manager._group_obs_term_cfgs[group])
+        ]
+        for group in ("actor", "critic")
+    }
+
+
+def task072_termination_active_table_from_manager(manager: Any) -> list[dict[str, Any]]:
+    return _manager_cfg_table({name: manager.get_term_cfg(name) for name in manager.active_terms}, ("time_out",))
+
+
+def task072_validate_cross_manager_phase_and_termination(
+    observation_table: dict[str, list[dict[str, Any]]],
+    reward_table: list[dict[str, Any]],
+    termination_table: list[dict[str, Any]],
+) -> dict[str, Any]:
+    reward_by_name = {row["name"]: row for row in reward_table}
+    actor_phase = observation_table["actor"][list(EXPECTED_ACTOR_TERMS).index("phase")]
+    critic_phase = observation_table["critic"][list(EXPECTED_CRITIC_TERMS).index("phase")]
+    phase_periods = {
+        "actor_observation": actor_phase["params"].get("period"),
+        "critic_observation": critic_phase["params"].get("period"),
+        "reward_phase_gait": reward_by_name["phase_gait"]["params"].get("period"),
+        "reward_out_of_phase_double_support": reward_by_name["out_of_phase_double_support"]["params"].get("period"),
+        "reward_clearance": reward_by_name["clearance"]["params"].get("period"),
+    }
+    checks = {
+        "actor_terms": [row["name"] for row in observation_table["actor"]] == list(EXPECTED_ACTOR_TERMS),
+        "critic_terms": [row["name"] for row in observation_table["critic"]] == list(EXPECTED_CRITIC_TERMS),
+        "actor_phase_callable": actor_phase["callable"] == "src.tasks.velocity.mdp.observations.phase",
+        "critic_phase_callable": critic_phase["callable"] == "src.tasks.velocity.mdp.observations.phase",
+        "phase_periods": all(value == TASK072_GAIT_PERIOD_S for value in phase_periods.values()),
+        "observation_uncorrupted": all(
+            row["noise"] is None and row["scale"] is None
+            for table in observation_table.values()
+            for row in table
+        ),
+        "termination_terms": [row["name"] for row in termination_table] == ["time_out", "fell_over"],
+        "termination_timeout_flags": [row["time_out"] for row in termination_table] == [True, False],
+        "fell_over_angle": termination_table[1]["params"] == {"limit_angle": 1.2217304763960306},
+    }
+    return {"phase_periods": phase_periods, "termination_table": termination_table, "checks": checks, "passed": all(checks.values())}
 
 
 def task072_runtime_semantic_payload(
@@ -1409,6 +1457,93 @@ def task072_runtime_semantic_payload(
         },
         "render_mode": render_mode,
     }
+
+
+def task072_stage_semantic_contract(
+    *,
+    num_envs: int,
+    rollout_steps: int,
+    seed: int,
+    max_iterations: int,
+    fixed_command: bool,
+    render_mode: str | None,
+) -> dict[str, Any]:
+    env_cfg, agent_cfg, _runner_cls, registration = build_task_cfg(
+        int(num_envs),
+        int(rollout_steps),
+        int(seed),
+        int(max_iterations),
+        fixed_command=bool(fixed_command),
+    )
+    payload = task072_runtime_semantic_payload(env_cfg, agent_cfg, registration, render_mode=render_mode)
+    return {"payload": payload, "payload_sha256": payload_sha256(payload)}
+
+
+def task072_assert_agent_ppo_contract(agent_cfg: Any) -> dict[str, Any]:
+    actor = agent_cfg.actor
+    critic = agent_cfg.critic
+    algorithm = agent_cfg.algorithm
+    distribution = actor.distribution_cfg
+    payload = {
+        "actor_hidden_dims": list(actor.hidden_dims),
+        "actor_activation": actor.activation,
+        "actor_obs_normalization": bool(actor.obs_normalization),
+        "actor_distribution": _json_native(distribution),
+        "critic_hidden_dims": list(critic.hidden_dims),
+        "critic_activation": critic.activation,
+        "critic_obs_normalization": bool(critic.obs_normalization),
+        "value_loss_coef": float(algorithm.value_loss_coef),
+        "use_clipped_value_loss": bool(algorithm.use_clipped_value_loss),
+        "clip_param": float(algorithm.clip_param),
+        "entropy_coef": float(algorithm.entropy_coef),
+        "num_learning_epochs": int(algorithm.num_learning_epochs),
+        "num_mini_batches": int(algorithm.num_mini_batches),
+        "learning_rate": float(algorithm.learning_rate),
+        "schedule": algorithm.schedule,
+        "gamma": float(algorithm.gamma),
+        "lam": float(algorithm.lam),
+        "desired_kl": float(algorithm.desired_kl),
+        "max_grad_norm": float(algorithm.max_grad_norm),
+        "optimizer": algorithm.optimizer,
+        "num_steps_per_env": int(agent_cfg.num_steps_per_env),
+        "resume": bool(agent_cfg.resume),
+        "upload_model": bool(agent_cfg.upload_model),
+        "logger": agent_cfg.logger,
+    }
+    expected = {
+        "actor_hidden_dims": [512, 256, 128],
+        "actor_activation": "elu",
+        "actor_obs_normalization": True,
+        "actor_distribution": {
+            "class_name": "GaussianDistribution",
+            "init_std": 1.0,
+            "std_type": "scalar",
+        },
+        "critic_hidden_dims": [512, 256, 128],
+        "critic_activation": "elu",
+        "critic_obs_normalization": True,
+        "value_loss_coef": 1.0,
+        "use_clipped_value_loss": True,
+        "clip_param": 0.2,
+        "entropy_coef": 0.01,
+        "num_learning_epochs": 5,
+        "num_mini_batches": 4,
+        "learning_rate": 0.001,
+        "schedule": "adaptive",
+        "gamma": 0.99,
+        "lam": 0.95,
+        "desired_kl": 0.01,
+        "max_grad_norm": 1.0,
+        "optimizer": "adam",
+        "num_steps_per_env": REQUIRED_ROLLOUT_STEPS,
+        "resume": False,
+        "upload_model": False,
+        "logger": "tensorboard",
+    }
+    drift = {key: {"actual": payload[key], "expected": value} for key, value in expected.items() if payload[key] != value}
+    if drift:
+        raise ValueError(f"Task072 PPO contract drift: {drift}")
+    return payload
 
 
 def task072_reward_v3_oracle_pre_dt_means() -> dict[str, float]:
@@ -2325,6 +2460,7 @@ def build_task_cfg(
     agent_cfg.resume = False
     agent_cfg.run_name = LINEAGE_ID
     agent_cfg.experiment_name = LINEAGE_ID
+    ppo_contract = task072_assert_agent_ppo_contract(agent_cfg)
     registration = {
         "task_id": task_id,
         "parent_task": MJLAB_PARENT_TASK,
@@ -2346,6 +2482,7 @@ def build_task_cfg(
         "action_scale_sha256": payload_sha256({"negative": negative_scale, "positive": positive_scale}),
         "policy_action_domain": dict(POLICY_ACTION_DOMAIN),
         "reward_contract_version": REWARD_CONTRACT_VERSION,
+        "ppo_contract": ppo_contract,
         "lineage_id": LINEAGE_ID,
         "joint_mapping": mapping_table,
         "semantic_to_anonymous_joint": semantic_to_joint,
@@ -3000,6 +3137,21 @@ def _validate_training_manifest_for_eval(payload: dict[str, Any]) -> None:
         and progression_path.exists()
         and sha256_path(progression_path) == progression_sha
     )
+    try:
+        expected_stage_semantic = task072_stage_semantic_contract(
+            num_envs=int(payload.get("num_envs", -1)),
+            rollout_steps=int(payload.get("rollout_steps_per_env", -1)),
+            seed=int(payload.get("seed", -1)),
+            max_iterations=int(payload.get("updates", -1)),
+            fixed_command=False,
+            render_mode=None,
+        )
+        stage_semantic_ok = (
+            isinstance(payload.get("stage_semantic_contract"), dict)
+            and payload["stage_semantic_contract"].get("payload_sha256") == expected_stage_semantic["payload_sha256"]
+        )
+    except Exception:
+        stage_semantic_ok = False
     capacity_checks = payload.get("capacity_evidence", {}).get("consumption_checks", {})
     checks = {
         "schema": payload.get("schema_version") == 3,
@@ -3011,6 +3163,7 @@ def _validate_training_manifest_for_eval(payload: dict[str, Any]) -> None:
         "canonical_config": payload.get("canonical_train_eval_config", {}).get("payload_sha256")
         == current["canonical_train_eval_config"]["payload_sha256"],
         "canonical_config_passed": payload.get("canonical_train_eval_config", {}).get("passed") is True,
+        "stage_semantic_contract": stage_semantic_ok,
         "runner_source": payload.get("runner_source_sha256") == current["runner_source_sha256"],
         "runtime_spec": payload.get("runtime_spec_sha256") == current["runtime_spec_sha256"],
         "asset_xml": payload.get("asset_xml", {}).get("sha256") == current["asset_xml"]["sha256"],
@@ -4153,9 +4306,23 @@ def verify_reward_eval_contract(args: argparse.Namespace) -> int:
         eval_outer = ManagerBasedRlEnv(cfg=eval_cfg, device="cpu", render_mode=None)
         train_table = task072_reward_active_table_from_manager(train_outer.reward_manager)
         eval_table = task072_reward_active_table_from_manager(eval_outer.reward_manager)
+        train_observation_table = task072_observation_active_table_from_manager(train_outer.observation_manager)
+        eval_observation_table = task072_observation_active_table_from_manager(eval_outer.observation_manager)
+        train_termination_table = task072_termination_active_table_from_manager(train_outer.termination_manager)
+        eval_termination_table = task072_termination_active_table_from_manager(eval_outer.termination_manager)
         train_active_sha = task072_validate_reward_active_table(train_table)
         eval_active_sha = task072_validate_reward_active_table(eval_table)
         task072_require_train_eval_reward_match(train_active_sha, eval_active_sha)
+        train_cross_manager = task072_validate_cross_manager_phase_and_termination(
+            train_observation_table,
+            train_table,
+            train_termination_table,
+        )
+        eval_cross_manager = task072_validate_cross_manager_phase_and_termination(
+            eval_observation_table,
+            eval_table,
+            eval_termination_table,
+        )
         reward_payload = task072_canonical_reward_payload(train_table)
         fixture_probe = task072_reward_fixture_probe(
             {name: train_outer.reward_manager.get_term_cfg(name) for name in train_outer.reward_manager.active_terms}
@@ -4171,6 +4338,24 @@ def verify_reward_eval_contract(args: argparse.Namespace) -> int:
             "first_step_phase": None,
             "reset_episode_length_buf": None,
             "finite": True,
+        }
+        termination_buffers = {
+            "terminated_attr_exists": hasattr(train_outer.termination_manager, "terminated"),
+            "time_outs_attr_exists": hasattr(train_outer.termination_manager, "time_outs"),
+            "terminated_is_not_time_outs": getattr(train_outer.termination_manager, "terminated", None)
+            is not getattr(train_outer.termination_manager, "time_outs", None),
+        }
+        train_outer.termination_manager._truncated_buf[:] = True
+        train_outer.termination_manager._terminated_buf[:] = False
+        timeout_only_fall_raw = float(task072_reward_fall_terminated(train_outer)[0].detach().cpu())
+        train_outer.termination_manager._truncated_buf[:] = False
+        train_outer.termination_manager._terminated_buf[:] = True
+        terminated_only_fall_raw = float(task072_reward_fall_terminated(train_outer)[0].detach().cpu())
+        train_outer.termination_manager._terminated_buf[:] = False
+        termination_reward_probe = {
+            "timeout_only_fall_raw": timeout_only_fall_raw,
+            "terminated_only_fall_raw": terminated_only_fall_raw,
+            "passed": timeout_only_fall_raw == 0.0 and terminated_only_fall_raw == -1.0,
         }
         base_env = RslRlVecEnvWrapper(train_outer, clip_actions=train_agent.clip_actions)
         try:
@@ -4189,7 +4374,8 @@ def verify_reward_eval_contract(args: argparse.Namespace) -> int:
                     abs(float(reward[0].detach().cpu()) - terms_total * float(train_outer.step_dt)),
                 )
                 if step_index == 1:
-                    phase_values = _task072_phase(train_outer, 0.8, [0.0, 0.5])[0].detach().cpu().tolist()
+                    phase_period = train_observation_table["actor"][list(EXPECTED_ACTOR_TERMS).index("phase")]["params"]["period"]
+                    phase_values = _task072_phase(train_outer, phase_period, [0.0, 0.5])[0].detach().cpu().tolist()
                     zero_action["first_step_phase"] = [float(value) for value in phase_values]
                 zero_action["finite"] = bool(
                     zero_action["finite"]
@@ -4211,6 +4397,10 @@ def verify_reward_eval_contract(args: argparse.Namespace) -> int:
             "train_active_table": bool(train_active_sha),
             "eval_active_table": bool(eval_active_sha),
             "train_eval_reward_match": train_active_sha == eval_active_sha,
+            "train_actual_cross_manager": train_cross_manager["passed"],
+            "eval_actual_cross_manager": eval_cross_manager["passed"],
+            "actual_termination_buffers_separate": all(termination_buffers.values()),
+            "actual_terminal_reward_timeout_excluded": termination_reward_probe["passed"],
             "reward_payload": reward_payload["payload_sha256"] == train_registration["reward_payload_sha256"],
             "registration_active_sha": train_active_sha == train_registration["reward_active_table_sha256"]
             == eval_registration["reward_active_table_sha256"],
@@ -4243,6 +4433,14 @@ def verify_reward_eval_contract(args: argparse.Namespace) -> int:
                 "actual_manager_active_table_sha256": train_active_sha,
                 "train_reward_active_table": train_table,
                 "eval_reward_active_table": eval_table,
+                "train_observation_active_table": train_observation_table,
+                "eval_observation_active_table": eval_observation_table,
+                "train_termination_active_table": train_termination_table,
+                "eval_termination_active_table": eval_termination_table,
+                "train_cross_manager_contract": train_cross_manager,
+                "eval_cross_manager_contract": eval_cross_manager,
+                "termination_buffer_evidence": termination_buffers,
+                "termination_reward_probe": termination_reward_probe,
                 "reward_manager_api": manager_api,
                 "reward_fixture_probe": fixture_probe,
                 "eval_schema_self_check": eval_schema,
@@ -4277,6 +4475,28 @@ def _common_manifest(args: argparse.Namespace) -> dict[str, Any]:
     reward_active_table = task072_reward_active_table_from_cfg(reward_cfg)
     reward_payload = task072_canonical_reward_payload(reward_active_table)
     manifest_subtask = "003f" if getattr(args, "command", None) == "verify-runtime-binding" else TASK072_ACTIVE_SUBTASK
+    if getattr(args, "command", None) in {"evaluate", "verify-reward-eval-contract"}:
+        semantic_num_envs = int(getattr(args, "eval_envs", 1))
+        semantic_seed = int(getattr(args, "seed", DEFAULT_SEED + 99))
+        semantic_fixed = True
+    else:
+        semantic_num_envs = int(getattr(args, "num_envs", REQUIRED_CAPACITY_NUM_ENVS))
+        semantic_seed = int(getattr(args, "seed", DEFAULT_SEED))
+        semantic_fixed = False
+    semantic_rollout_steps = int(getattr(args, "rollout_steps", REQUIRED_ROLLOUT_STEPS))
+    semantic_max_iterations = int(getattr(args, "updates", getattr(args, "max_iterations", 1)))
+    stage_semantic = (
+        None
+        if manifest_subtask == "003f"
+        else task072_stage_semantic_contract(
+            num_envs=semantic_num_envs,
+            rollout_steps=semantic_rollout_steps,
+            seed=semantic_seed,
+            max_iterations=semantic_max_iterations,
+            fixed_command=semantic_fixed,
+            render_mode=None,
+        )
+    )
     return {
         "schema_version": 3,
         "task": "task072-bound-g1-go2-locomotion-proof",
@@ -4314,6 +4534,7 @@ def _common_manifest(args: argparse.Namespace) -> dict[str, Any]:
             "non_allowlisted_diff": canonical["non_allowlisted_diff"],
             "passed": canonical["passed"],
         },
+        "stage_semantic_contract": stage_semantic,
         "external_mjlab_checks": {
             "frame_local": EXTERNAL_MJLAB.is_relative_to(ROOT),
             "commit_pinned": external["actual_commit"] == external["expected_commit"],

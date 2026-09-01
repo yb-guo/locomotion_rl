@@ -242,10 +242,16 @@ def test_task072_reward_v4_oracle_and_manager_fixture_probe() -> None:
 
 
 def test_task072_v4_cross_manager_contract_closes_phase_and_fall() -> None:
+    torch = pytest.importorskip("torch")
+    from mjlab.envs import ManagerBasedRlEnv
+
     env_cfg, agent_cfg, _runner_cls, registration = MJLAB_RUNNER.build_task_cfg(1, 24, MJLAB_RUNNER.DEFAULT_SEED, 1)
     table = MJLAB_RUNNER.task072_reward_active_table_from_cfg(env_cfg.rewards)
     by_name = {row["name"]: row for row in table}
+    assert env_cfg.observations["actor"].terms["phase"].params["period"] == MJLAB_RUNNER.TASK072_GAIT_PERIOD_S
+    assert env_cfg.observations["critic"].terms["phase"].params["period"] == MJLAB_RUNNER.TASK072_GAIT_PERIOD_S
     assert by_name["phase_gait"]["params"]["period"] == MJLAB_RUNNER.TASK072_GAIT_PERIOD_S
+    assert by_name["out_of_phase_double_support"]["params"]["period"] == MJLAB_RUNNER.TASK072_GAIT_PERIOD_S
     assert by_name["clearance"]["params"]["period"] == MJLAB_RUNNER.TASK072_GAIT_PERIOD_S
     assert table[-1]["name"] == "fall_terminated"
     assert table[-1]["params"] == {}
@@ -256,6 +262,25 @@ def test_task072_v4_cross_manager_contract_closes_phase_and_fall() -> None:
     assert semantic["lineage_id"] == MJLAB_RUNNER.LINEAGE_ID
     assert semantic["episode"]["episode_length_s"] == 10_000.0
     assert semantic["rewards"][-1]["name"] == "fall_terminated"
+    outer = None
+    try:
+        torch.set_grad_enabled(False)
+        outer = ManagerBasedRlEnv(cfg=env_cfg, device="cpu", render_mode=None)
+        actual_obs = MJLAB_RUNNER.task072_observation_active_table_from_manager(outer.observation_manager)
+        actual_rewards = MJLAB_RUNNER.task072_reward_active_table_from_manager(outer.reward_manager)
+        actual_terminations = MJLAB_RUNNER.task072_termination_active_table_from_manager(outer.termination_manager)
+        cross = MJLAB_RUNNER.task072_validate_cross_manager_phase_and_termination(
+            actual_obs,
+            actual_rewards,
+            actual_terminations,
+        )
+        assert cross["passed"] is True
+        assert all(value == MJLAB_RUNNER.TASK072_GAIT_PERIOD_S for value in cross["phase_periods"].values())
+        assert [row["name"] for row in actual_terminations] == ["time_out", "fell_over"]
+        assert [row["time_out"] for row in actual_terminations] == [True, False]
+    finally:
+        if outer is not None:
+            outer.close()
 
 
 def test_task072_clip_logging_and_eval_cause_separation() -> None:
@@ -393,6 +418,14 @@ def _task072_fake_training_manifest(tmp_path: Path, records: list[dict[str, obje
         1, 24, MJLAB_RUNNER.DEFAULT_SEED, 1
     )
     runtime_table = MJLAB_RUNNER.task072_reward_active_table_from_cfg(env_cfg.rewards)
+    stage_semantic = MJLAB_RUNNER.task072_stage_semantic_contract(
+        num_envs=4096,
+        rollout_steps=24,
+        seed=MJLAB_RUNNER.DEFAULT_SEED,
+        max_iterations=21,
+        fixed_command=False,
+        render_mode=None,
+    )
     losses = [{"value": 0.1 + update * 0.001} for update in range(MJLAB_RUNNER.TASK072_PILOT_UPDATES)]
     update_reports = [
         {
@@ -408,6 +441,7 @@ def _task072_fake_training_manifest(tmp_path: Path, records: list[dict[str, obje
         "subtask": MJLAB_RUNNER.TASK072_ACTIVE_SUBTASK,
         "lineage_id": MJLAB_RUNNER.LINEAGE_ID,
         "runtime_lineage_id": MJLAB_RUNNER.LINEAGE_ID,
+        "stage_semantic_contract": stage_semantic,
         "seed": MJLAB_RUNNER.DEFAULT_SEED,
         "num_envs": 4096,
         "rollout_steps_per_env": 24,
