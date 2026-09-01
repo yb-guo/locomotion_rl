@@ -45,7 +45,7 @@ MJLAB_RUNNER = importlib.util.module_from_spec(MJLAB_RUNNER_SPEC)
 MJLAB_RUNNER_SPEC.loader.exec_module(MJLAB_RUNNER)
 
 # Independent audit literal: never generated from the runner's table builder.
-EXPECTED_TASK072_REWARD_V3_ACTIVE_TABLE = (
+EXPECTED_TASK072_REWARD_V4_ACTIVE_TABLE = (
     ("track_xy_centered", "task072_reward_track_xy_centered", 2.0),
     ("track_yaw", "task072_reward_track_yaw", 0.50),
     ("upright", "task072_reward_upright", 0.25),
@@ -69,8 +69,9 @@ EXPECTED_TASK072_REWARD_V3_ACTIVE_TABLE = (
     ("action_magnitude", "task072_reward_action_magnitude", 0.01),
     ("action_rate", "task072_reward_action_rate", 0.01),
     ("base_angvel_xy", "task072_reward_base_angvel_xy", 0.02),
+    ("fall_terminated", "task072_reward_fall_terminated", 300.0),
 )
-EXPECTED_TASK072_REWARD_V3_PARAM_KEYS = {
+EXPECTED_TASK072_REWARD_V4_PARAM_KEYS = {
     "track_xy_centered": ("asset_name", "body_id", "body_name", "command_name", "denominator"),
     "track_yaw": ("asset_name", "body_id", "body_name", "command_name", "denominator"),
     "upright": ("asset_name", "body_id", "body_name"),
@@ -94,6 +95,7 @@ EXPECTED_TASK072_REWARD_V3_PARAM_KEYS = {
     "action_magnitude": ("action_name",),
     "action_rate": ("action_name", "previous_action_reset"),
     "base_angvel_xy": ("asset_name", "body_id", "body_name"),
+    "fall_terminated": (),
 }
 EXPECTED_TASK072_STANCE_SHA = "cc522b67380713954480c3e9781be01fc6ad96445fb133d410f213f551f5ce9a"
 EXPECTED_TASK072_FOOT_SITE_NAMES = ["anon_limb0_ankle_roll_link_foot", "anon_limb1_ankle_roll_link_foot"]
@@ -109,22 +111,22 @@ EXPECTED_TASK072_JOINT_LIMIT_LOWER = [-2.5307, -0.5236, -2.7576, -0.087267, -0.8
 EXPECTED_TASK072_JOINT_LIMIT_UPPER = [2.8798, 2.9671, 2.7576, 2.8798, 0.5236, 0.2618, 2.8798, 0.5236, 2.7576, 2.8798, 0.5236, 0.2618, 2.618, 0.52, 0.52, 2.6704, 2.2515, 2.618, 2.0944, 1.97222, 1.61443, 1.61443, 2.6704, 1.5882, 2.618, 2.0944, 1.97222, 1.61443, 1.61443]
 
 
-def test_task072_reward_v3_literal_has_exact_active_order() -> None:
+def test_task072_reward_v4_literal_has_exact_active_order() -> None:
     env_cfg, _agent_cfg, _runner_cls, registration = MJLAB_RUNNER.build_task_cfg(1, 24, MJLAB_RUNNER.DEFAULT_SEED, 1)
     table = MJLAB_RUNNER.task072_reward_active_table_from_cfg(env_cfg.rewards)
     actual = tuple((row["name"], row["qualname"], row["weight"]) for row in table)
 
-    assert actual == EXPECTED_TASK072_REWARD_V3_ACTIVE_TABLE
-    assert len(table) == 23
-    assert registration["reward_terms"] == [row[0] for row in EXPECTED_TASK072_REWARD_V3_ACTIVE_TABLE]
-    assert set(env_cfg.rewards) == {row[0] for row in EXPECTED_TASK072_REWARD_V3_ACTIVE_TABLE}
+    assert actual == EXPECTED_TASK072_REWARD_V4_ACTIVE_TABLE
+    assert len(table) == 24
+    assert registration["reward_terms"] == [row[0] for row in EXPECTED_TASK072_REWARD_V4_ACTIVE_TABLE]
+    assert set(env_cfg.rewards) == {row[0] for row in EXPECTED_TASK072_REWARD_V4_ACTIVE_TABLE}
     assert {"foot_gait", "feet_gait", "is_terminated"}.isdisjoint(env_cfg.rewards)
     assert env_cfg.episode_length_s == 10_000.0
     assert all(row["module"] == "task072_mjlab_contact_runner" for row in table)
     assert all("<locals>" not in row["qualname"] for row in table)
     assert all(row["source_file"] == str(MJLAB_RUNNER_SCRIPT.resolve()) for row in table)
     assert all(json.loads(json.dumps(row["params"])) == row["params"] for row in table)
-    assert {row["name"]: tuple(sorted(row["params"])) for row in table} == EXPECTED_TASK072_REWARD_V3_PARAM_KEYS
+    assert {row["name"]: tuple(sorted(row["params"])) for row in table} == EXPECTED_TASK072_REWARD_V4_PARAM_KEYS
 
     active_sha = MJLAB_RUNNER.task072_validate_reward_active_table(table)
     reward_payload = MJLAB_RUNNER.task072_canonical_reward_payload(table)
@@ -134,7 +136,7 @@ def test_task072_reward_v3_literal_has_exact_active_order() -> None:
         "clock": "episode_length_buf",
         "first_action_k": 1,
         "reset_k": 0,
-        "period": 0.8,
+        "period": MJLAB_RUNNER.TASK072_GAIT_PERIOD_S,
         "offsets": [0.0, 0.5],
         "stance_fraction": 0.55,
     }
@@ -215,7 +217,7 @@ def test_task072_reward_v3_literal_has_exact_active_order() -> None:
         MJLAB_RUNNER.task072_require_train_eval_reward_match("a" * 64, "b" * 64)
 
 
-def test_task072_reward_v3_oracle_and_manager_fixture_probe() -> None:
+def test_task072_reward_v4_oracle_and_manager_fixture_probe() -> None:
     env_cfg, _agent_cfg, _runner_cls, _registration = MJLAB_RUNNER.build_task_cfg(1, 24, MJLAB_RUNNER.DEFAULT_SEED, 1)
     oracle = MJLAB_RUNNER.task072_reward_v3_oracle_pre_dt_means()
     assert oracle == {
@@ -231,6 +233,29 @@ def test_task072_reward_v3_oracle_and_manager_fixture_probe() -> None:
         assert probe[key]["dt_contribution_mean"] == pytest.approx(oracle[key] * 0.02, abs=1.0e-6)
         assert probe[key]["iterable_abs_diff_max"] <= 1.0e-6
     assert probe["ideal_static_margin"] == pytest.approx(oracle["ideal_static_margin"], abs=1.0e-6)
+    assert probe["terminal"]["normal"]["fall_raw"] == 0.0
+    assert probe["terminal"]["fell_over"]["fall_raw"] == -1.0
+    assert probe["terminal"]["fell_over"]["pre_dt"] == -300.0
+    assert probe["terminal"]["fell_over"]["dt_contribution"] == -6.0
+    assert probe["terminal"]["timeout"]["fall_raw"] == 0.0
+    assert probe["terminal"]["passed"] is True
+
+
+def test_task072_v4_cross_manager_contract_closes_phase_and_fall() -> None:
+    env_cfg, agent_cfg, _runner_cls, registration = MJLAB_RUNNER.build_task_cfg(1, 24, MJLAB_RUNNER.DEFAULT_SEED, 1)
+    table = MJLAB_RUNNER.task072_reward_active_table_from_cfg(env_cfg.rewards)
+    by_name = {row["name"]: row for row in table}
+    assert by_name["phase_gait"]["params"]["period"] == MJLAB_RUNNER.TASK072_GAIT_PERIOD_S
+    assert by_name["clearance"]["params"]["period"] == MJLAB_RUNNER.TASK072_GAIT_PERIOD_S
+    assert table[-1]["name"] == "fall_terminated"
+    assert table[-1]["params"] == {}
+    assert table[-1]["weight"] == 300.0
+    assert registration["reward_terms"][-1] == "fall_terminated"
+    semantic = MJLAB_RUNNER.task072_runtime_semantic_payload(env_cfg, agent_cfg, registration, render_mode=None)
+    assert semantic["active_subtask"] == "003k"
+    assert semantic["lineage_id"] == MJLAB_RUNNER.LINEAGE_ID
+    assert semantic["episode"]["episode_length_s"] == 10_000.0
+    assert semantic["rewards"][-1]["name"] == "fall_terminated"
 
 
 def test_task072_clip_logging_and_eval_cause_separation() -> None:
@@ -689,7 +714,7 @@ def test_mjlab_runtime_binding_uses_explicit_29_joint_mapping() -> None:
 
 
 def test_mjlab_runtime_binding_material_contract_matches_unitree_g1_flat() -> None:
-    assert MJLAB_RUNNER.LINEAGE_ID == "mjlab_g1_7capsule_task_v3_single_ground"
+    assert MJLAB_RUNNER.LINEAGE_ID == "mjlab_g1_7capsule_task_v4_semantic_closed"
     assert MJLAB_RUNNER.CONTACT_PROFILE_ID == "mjlab_g1_7capsule_task_v2"
     assert MJLAB_RUNNER._runtime_material_contract() == {
         "foot": {
@@ -742,11 +767,11 @@ def test_mjlab_runner_capacity_defaults_require_4096_equivalence() -> None:
     train = MJLAB_RUNNER.parse_args(["one-update-train", "--run-dir", "run"])
     assert train.num_envs == 4096
     assert train.rollout_steps == 24
-    assert train.capacity_artifact == MJLAB_RUNNER.RUNTIME_BINDING_ROOT / "003j_capacity_smoke_2048_4096_6144.json"
+    assert train.capacity_artifact == MJLAB_RUNNER.RUNTIME_BINDING_ROOT / "003k_capacity_smoke_2048_4096_6144.json"
     assert MJLAB_RUNNER.REQUIRED_TRANSITIONS_PER_UPDATE == 4096 * 24
 
 
-def test_mjlab_runner_records_003f_only_for_runtime_verifier_then_003j(tmp_path: Path) -> None:
+def test_mjlab_runner_records_003f_only_for_runtime_verifier_then_003k(tmp_path: Path) -> None:
     verify = MJLAB_RUNNER.parse_args(["verify-runtime-binding", "--output", "verify.json"])
     capacity = MJLAB_RUNNER.parse_args(["capacity-smoke", "--output", "capacity.json"])
     one_update = MJLAB_RUNNER.parse_args(["one-update-train", "--run-dir", "run"])
@@ -831,21 +856,21 @@ def test_mjlab_runner_records_003f_only_for_runtime_verifier_then_003j(tmp_path:
         MJLAB_RUNNER.ensure_v2_artifacts = original_ensure
 
 
-def test_mjlab_runtime_defaults_are_v3_single_ground_paths() -> None:
+def test_mjlab_runtime_defaults_are_v4_semantic_closed_paths() -> None:
     assert MJLAB_RUNNER.DEFAULT_OUTPUT_ROOT == MJLAB_RUNNER.RUNTIME_BINDING_ROOT
     assert MJLAB_RUNNER.DEFAULT_OUTPUT_ROOT.is_relative_to(MJLAB_RUNNER.RUNTIME_BINDING_ROOT)
-    assert MJLAB_RUNNER.RUNTIME_BINDING_ROOT.name == "mjlab_g1_7capsule_task_v3_single_ground"
+    assert MJLAB_RUNNER.RUNTIME_BINDING_ROOT.name == "mjlab_g1_7capsule_task_v4_semantic_closed"
     assert "mjlab_contact_training/g1" not in str(MJLAB_RUNNER.DEFAULT_OUTPUT_ROOT)
     assert MJLAB_RUNNER.parse_args(["r0-smoke"]).output.is_relative_to(MJLAB_RUNNER.RUNTIME_BINDING_ROOT)
     assert MJLAB_RUNNER.parse_args(["capacity-smoke"]).output.is_relative_to(MJLAB_RUNNER.RUNTIME_BINDING_ROOT)
     assert MJLAB_RUNNER.parse_args(["one-update-train"]).run_dir.is_relative_to(MJLAB_RUNNER.RUNTIME_BINDING_ROOT)
     pilot_gate = MJLAB_RUNNER.parse_args(["pilot-gate"])
-    assert pilot_gate.output == MJLAB_RUNNER.RUNTIME_BINDING_ROOT / "003j_pilot_gate.json"
+    assert pilot_gate.output == MJLAB_RUNNER.RUNTIME_BINDING_ROOT / "003k_pilot_gate.json"
     assert [path.name for path in pilot_gate.eval] == [
-        "003j_eval_pilot_model_0_fixed_vx0p5_seed720400.json",
-        "003j_eval_pilot_model_7_fixed_vx0p5_seed720400.json",
-        "003j_eval_pilot_model_14_fixed_vx0p5_seed720400.json",
-        "003j_eval_pilot_model_20_fixed_vx0p5_seed720400.json",
+        "003k_eval_pilot_model_0_fixed_vx0p5_seed720400.json",
+        "003k_eval_pilot_model_7_fixed_vx0p5_seed720400.json",
+        "003k_eval_pilot_model_14_fixed_vx0p5_seed720400.json",
+        "003k_eval_pilot_model_20_fixed_vx0p5_seed720400.json",
     ]
 
 

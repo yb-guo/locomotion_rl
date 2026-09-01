@@ -642,10 +642,17 @@ checkpoint。stage failure 立即停止，保留 artifact，不继续下一个�
   observation phase `0.6 s` 与 reward phase `0.8 s` 分叉，以及无 terminal cost 导致的
   reward-up/survival-down exploit。本次只建立详细实现合同，未修改 source、未运行 CPU verifier 或
   GPU。
+- 2026-09-01：实现 bounded CPU slice：切换 003k/v4 lineage/output root，统一 reward/phase period，
+  保留 v3 reward 并追加 `fall_terminated` 的 raw `-1`、weight `300.0`，扩展 fixture oracle 覆盖
+  normal/fell-over/timeout。未运行 GPU、training、eval、proof、video 或 freeze。
 
 ## Review
 
-状态：**ready_for_implementation / not_trained / not_passed**。
+状态：**implementation_partial / cpu_validation_pending / not_passed**。
+
+本轮未完成 observations/actions/commands/events/terminations/metrics 的整表替换及 actual-manager
+semantic payload SHA 接线；剩余 owner 是 `build_task_cfg()` 的 parent-derived manager tables 与
+`verify_reward_eval_contract()` 的 full runtime payload consumption。
 
 003k 的通过条件不是“新增测试通过”或“reward 数字变好”，而是 actual runtime managers 闭合、CPU
 semantic verifier 通过，并在后续单独授权的 fresh pilot 中同时满足 survival、forward 和真实双侧交替

@@ -30,30 +30,36 @@ STANCE = CONTACT_ROOT / "stance_solution.json"
 EXTERNAL_MJLAB = ROOT / ".external/unitree_rl_mjlab"
 GPU_LOCK = Path("/home/admin1/workspace/run/.gpu.lock")
 TASK_ID = "Task072-G1-MJLab-7Capsule-SingleGround-Flat"
-LINEAGE_ID = "mjlab_g1_7capsule_task_v3_single_ground"
+LINEAGE_ID = "mjlab_g1_7capsule_task_v4_semantic_closed"
 MJLAB_PARENT_TASK = "Unitree-G1-Flat"
 EXPECTED_MJLAB_COMMIT = "1425b15f73bd4095f0df53709d7c389c3eb9e790"
 ACTION_CONTRACT_VERSION = "task072_mjlab_signed_headroom_v1"
-REWARD_CONTRACT_VERSION = "task072_mjlab_biped_phase_contact_v3"
+REWARD_CONTRACT_VERSION = "task072_mjlab_biped_phase_contact_survival_v4"
 POLICY_ACTION_DOMAIN = {"transform": "clip", "lower": -1.0, "upper": 1.0}
 EVAL_CONFIG_DIFF_ALLOWLIST = {
     "env.scene.num_envs",
     "env.seed",
-    "env.episode_length_s",
     "env.render_mode",
     "agent.seed",
+    "agent.max_iterations",
+    "agent.save_interval",
     "registration.num_envs",
-    "registration.seed",
     "registration.max_iterations",
     "registration.task_id",
     "registration.transitions_per_update",
+    "semantic_contract.agent.seed",
+    "semantic_contract.registration.num_envs",
+    "semantic_contract.registration.task_id",
+    "semantic_contract.registration.transitions_per_update",
+    "semantic_contract.scene.num_envs",
 }
 MAX_TRANSITIONS = 63_897_600
 DEFAULT_SEED = 720301
 REQUIRED_CAPACITY_NUM_ENVS = 4096
 REQUIRED_ROLLOUT_STEPS = 24
 REQUIRED_TRANSITIONS_PER_UPDATE = REQUIRED_CAPACITY_NUM_ENVS * REQUIRED_ROLLOUT_STEPS
-TASK072_ACTIVE_SUBTASK = "003j"
+TASK072_ACTIVE_SUBTASK = "003k"
+TASK072_GAIT_PERIOD_S = 0.8
 TASK072_ACCEPTANCE_CHECK_NAMES = (
     "exact_shape",
     "capacity_consumed",
@@ -71,7 +77,7 @@ TASK072_ACCEPTANCE_CHECK_NAMES = (
 TASK072_PILOT_UPDATES = 21
 TASK072_PILOT_EVAL_UPDATES = (0, 7, 14, 20)
 TASK072_PILOT_TRANSITIONS = REQUIRED_TRANSITIONS_PER_UPDATE * TASK072_PILOT_UPDATES
-RUNTIME_BINDING_ROOT = TASK_DIR / "artifacts/mjlab_runtime_binding/g1" / LINEAGE_ID
+RUNTIME_BINDING_ROOT = ROOT / "artifacts/mjlab_runtime_binding/g1" / LINEAGE_ID
 DEFAULT_OUTPUT_ROOT = RUNTIME_BINDING_ROOT
 FOOT_SITES = (
     "anon_limb0_ankle_roll_link_foot",
@@ -169,7 +175,7 @@ REWARD_V3_WEIGHTS = {
     "base_angvel_xy": 0.02,
 }
 REWARD_V3_ORDER = tuple(REWARD_V3_WEIGHTS)
-REWARD_V3_PHASE = {"period": 0.8, "offsets": [0.0, 0.5], "stance_fraction": 0.55}
+REWARD_V3_PHASE = {"period": TASK072_GAIT_PERIOD_S, "offsets": [0.0, 0.5], "stance_fraction": 0.55}
 REWARD_V3_PARAM_KEYS = {
     "track_xy_centered": ("asset_name", "body_id", "body_name", "command_name", "denominator"),
     "track_yaw": ("asset_name", "body_id", "body_name", "command_name", "denominator"),
@@ -212,6 +218,9 @@ REWARD_V3_ORACLE_EXPECTED = {
     "persistent_left_only": -0.26012009890715004,
     "ideal_static_margin": 2.2542411176571155,
 }
+REWARD_V4_WEIGHTS = {**REWARD_V3_WEIGHTS, "fall_terminated": 300.0}
+REWARD_V4_ORDER = (*REWARD_V3_ORDER, "fall_terminated")
+REWARD_V4_PARAM_KEYS = {**REWARD_V3_PARAM_KEYS, "fall_terminated": ()}
 
 
 def _task072_command(env: Any) -> Any:
@@ -432,7 +441,13 @@ def task072_reward_base_angvel_xy(env: Any, **_: Any) -> Any:
     return -_task072_robot(env).root_link_ang_vel_b[:, :2].square().sum(dim=1)
 
 
-for _reward_name in REWARD_V3_ORDER:
+def task072_reward_fall_terminated(env: Any) -> Any:
+    import torch
+
+    return -env.termination_manager.terminated.to(dtype=torch.float32)
+
+
+for _reward_name in REWARD_V4_ORDER:
     globals()[f"task072_reward_{_reward_name}"].__module__ = "task072_mjlab_contact_runner"
 del _reward_name
 
@@ -954,8 +969,8 @@ def _task072_pose_groups(semantic_joint_names: list[str]) -> dict[str, list[int]
     return groups
 
 
-def task072_reward_v3_table(stance: dict[str, Any]) -> dict[str, Any]:
-    """Return the complete, ordered, JSON-native v3 RewardTermCfg table."""
+def task072_reward_v4_table(stance: dict[str, Any]) -> dict[str, Any]:
+    """Return the complete, ordered, JSON-native v4 RewardTermCfg table."""
     from mjlab.managers.reward_manager import RewardTermCfg
 
     indices = _runtime_entity_indices()
@@ -972,10 +987,12 @@ def task072_reward_v3_table(stance: dict[str, Any]) -> dict[str, Any]:
     nonfoot_body_ids = [int(indices["body_ids"][name]) for name in nonfoot_body_names]
     common = {"asset_name": "robot", "body_name": TORSO_BODY, "body_id": torso_body_id}
     terms: dict[str, Any] = {}
-    funcs = {name: globals()[f"task072_reward_{name}"] for name in REWARD_V3_ORDER}
-    for name in REWARD_V3_ORDER:
+    funcs = {name: globals()[f"task072_reward_{name}"] for name in REWARD_V4_ORDER}
+    for name in REWARD_V4_ORDER:
         params: dict[str, Any] = dict(common)
-        if name in ("track_xy_centered", "track_yaw"):
+        if name == "fall_terminated":
+            params = {}
+        elif name in ("track_xy_centered", "track_yaw"):
             params.update(command_name="twist", denominator=0.25)
         elif name == "height":
             params.update(stance_height=float(stance["root_pose_eq"][2]), stance_payload_sha256=stance_payload_sha)
@@ -1045,8 +1062,11 @@ def task072_reward_v3_table(stance: dict[str, Any]) -> dict[str, Any]:
             params = {"action_name": "joint_pos"}
             if name == "action_rate":
                 params["previous_action_reset"] = 0.0
-        terms[name] = RewardTermCfg(func=funcs[name], weight=REWARD_V3_WEIGHTS[name], params=params)
+        terms[name] = RewardTermCfg(func=funcs[name], weight=REWARD_V4_WEIGHTS[name], params=params)
     return terms
+
+
+task072_reward_v3_table = task072_reward_v4_table
 
 
 def task072_reward_active_table_from_cfg(cfg: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1095,7 +1115,7 @@ def task072_canonical_reward_payload(active_table: list[dict[str, Any]]) -> dict
 def task072_validate_reward_active_table(table: list[dict[str, Any]]) -> str:
     import inspect
 
-    if [row.get("name") for row in table] != list(REWARD_V3_ORDER):
+    if [row.get("name") for row in table] != list(REWARD_V4_ORDER):
         raise ValueError("Task072 reward active table has wrong key/order/count")
     forbidden = {"foot_gait", "feet_gait", "is_terminated"}
     if forbidden & {str(row.get("name")) for row in table}:
@@ -1126,9 +1146,9 @@ def task072_validate_reward_active_table(table: list[dict[str, Any]]) -> str:
         expected_source_hash = hashlib.sha256(inspect.getsource(expected_func).encode()).hexdigest()
         if row.get("function_source_sha256") != expected_source_hash:
             raise ValueError(f"Task072 reward term source hash drift: {name}")
-        if float(row.get("weight")) != REWARD_V3_WEIGHTS[name]:
+        if float(row.get("weight")) != REWARD_V4_WEIGHTS[name]:
             raise ValueError(f"Task072 reward weight drift: {name}")
-        if tuple(sorted(params)) != tuple(REWARD_V3_PARAM_KEYS[name]):
+        if tuple(sorted(params)) != tuple(REWARD_V4_PARAM_KEYS[name]):
             raise ValueError(f"Task072 reward param keys drift: {name}")
         if json.loads(json.dumps(params, sort_keys=True)) != params:
             raise ValueError(f"Task072 reward params are not JSON-native: {name}")
@@ -1141,11 +1161,11 @@ def task072_validate_reward_active_table(table: list[dict[str, Any]]) -> str:
         if name == "stand_support":
             if params != {"command_name": "twist", "sensor_name": "feet_ground_contact", "command_threshold": 0.1}:
                 raise ValueError("Task072 stand support params drift")
-    phase = table[list(REWARD_V3_ORDER).index("phase_gait")]["params"]
-    if phase.get("period") != 0.8 or phase.get("offsets") != [0.0, 0.5] or phase.get("stance_fraction") != 0.55:
+    phase = table[list(REWARD_V4_ORDER).index("phase_gait")]["params"]
+    if phase.get("period") != TASK072_GAIT_PERIOD_S or phase.get("offsets") != [0.0, 0.5] or phase.get("stance_fraction") != 0.55:
         raise ValueError("Task072 reward phase params drift")
-    double = table[list(REWARD_V3_ORDER).index("out_of_phase_double_support")]["params"]
-    if double.get("period") != 0.8 or double.get("offsets") != [0.0, 0.5] or double.get("stance_fraction") != 0.55:
+    double = table[list(REWARD_V4_ORDER).index("out_of_phase_double_support")]["params"]
+    if double.get("period") != TASK072_GAIT_PERIOD_S or double.get("offsets") != [0.0, 0.5] or double.get("stance_fraction") != 0.55:
         raise ValueError("Task072 reward phase params drift")
     by_name = {row["name"]: row for row in table}
     height = by_name["height"]["params"]
@@ -1201,12 +1221,194 @@ def task072_validate_reward_active_table(table: list[dict[str, Any]]) -> str:
         raise ValueError("Task072 reward action magnitude params drift")
     if by_name["action_rate"]["params"] != {"action_name": "joint_pos", "previous_action_reset": 0.0}:
         raise ValueError("Task072 reward action rate params drift")
+    if by_name["fall_terminated"]["params"] != {} or float(by_name["fall_terminated"]["weight"]) != 300.0:
+        raise ValueError("Task072 fall termination reward params drift")
     return payload_sha256(table)
 
 
 def task072_require_train_eval_reward_match(train_sha256: str, eval_sha256: str) -> None:
     if train_sha256 != eval_sha256:
         raise ValueError("Task072 train/eval reward active-table SHA drift")
+
+
+def _callable_id(func: Any) -> str:
+    return f"{getattr(func, '__module__', type(func).__module__)}.{getattr(func, '__qualname__', type(func).__qualname__)}"
+
+
+def _json_native(value: Any) -> Any:
+    if callable(value):
+        return _callable_id(value)
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _json_native(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_native(item) for item in value]
+    if isinstance(value, slice):
+        return {"slice": [value.start, value.stop, value.step]}
+    if hasattr(value, "item") and callable(value.item):
+        try:
+            return value.item()
+        except Exception:
+            pass
+    if hasattr(value, "__dataclass_fields__"):
+        return _json_native(asdict(value))
+    if hasattr(value, "value") and type(value).__module__ == "enum":
+        return value.value
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    raise TypeError(f"Task072 semantic payload cannot encode {type(value).__name__}")
+
+
+def _manager_cfg_table(cfg: dict[str, Any], extra_fields: tuple[str, ...] = ()) -> list[dict[str, Any]]:
+    rows = []
+    for name, term in cfg.items():
+        row = {
+            "name": name,
+            "callable": _callable_id(term.func),
+            "params": _json_native(getattr(term, "params", {})),
+        }
+        for field in extra_fields:
+            row[field] = _json_native(getattr(term, field))
+        rows.append(row)
+    return rows
+
+
+def _observation_group_payload(group: Any) -> dict[str, Any]:
+    return {
+        "concatenate_terms": bool(group.concatenate_terms),
+        "enable_corruption": bool(group.enable_corruption),
+        "history_length": int(group.history_length),
+        "terms": [
+            {
+                "name": name,
+                "callable": _callable_id(term.func),
+                "params": _json_native(term.params),
+                "noise": _json_native(term.noise),
+                "scale": _json_native(term.scale),
+                "history_length": int(term.history_length),
+            }
+            for name, term in group.terms.items()
+        ],
+    }
+
+
+def task072_runtime_semantic_payload(
+    env_cfg: Any,
+    agent_cfg: Any,
+    registration: dict[str, Any],
+    *,
+    render_mode: str | None,
+) -> dict[str, Any]:
+    """Extract the task-owned v4 runtime contract from resolved configs only."""
+    action_cfg = env_cfg.actions["joint_pos"]
+    twist = env_cfg.commands["twist"]
+    algorithm_cfg = agent_cfg.algorithm
+    distribution_cfg = agent_cfg.actor.distribution_cfg
+    reward_table = task072_reward_active_table_from_cfg(env_cfg.rewards)
+    active_sha = task072_validate_reward_active_table(reward_table)
+    command_payload = {
+        "entity_name": twist.entity_name,
+        "heading_command": bool(twist.heading_command),
+        "heading_control_stiffness": float(twist.heading_control_stiffness),
+        "rel_standing_envs": float(twist.rel_standing_envs),
+        "rel_heading_envs": float(twist.rel_heading_envs),
+        "init_velocity_prob": float(twist.init_velocity_prob),
+        "resampling_time_range": list(twist.resampling_time_range),
+        "ranges": {
+            "lin_vel_x": list(twist.ranges.lin_vel_x),
+            "lin_vel_y": list(twist.ranges.lin_vel_y),
+            "ang_vel_z": list(twist.ranges.ang_vel_z),
+            "heading": _json_native(twist.ranges.heading),
+        },
+        "debug_vis": bool(twist.debug_vis),
+    }
+    return {
+        "schema_version": 1,
+        "active_subtask": TASK072_ACTIVE_SUBTASK,
+        "lineage_id": LINEAGE_ID,
+        "source_commit": subprocess.run(
+            ["git", "-C", str(ROOT), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip(),
+        "external_mjlab_commit": _external_mjlab_status()["actual_commit"],
+        "asset": {
+            "contact_profile_id": CONTACT_PROFILE_ID,
+            "xml_path": str(ASSET_XML.resolve()),
+            "xml_sha256": sha256_path(ASSET_XML),
+            "contact_profile_sha256": sha256_path(CONTACT_PROFILE),
+            "stance_sha256": sha256_path(STANCE),
+            "stance_payload_sha256": payload_sha256(_stance_dict()),
+            "runtime_spec_sha256": registration["runtime_spec_sha256"],
+        },
+        "sim": {
+            "timestep": float(env_cfg.sim.mujoco.timestep),
+            "decimation": int(env_cfg.decimation),
+            "step_dt": float(env_cfg.sim.mujoco.timestep) * int(env_cfg.decimation),
+            "iterations": int(env_cfg.sim.mujoco.iterations),
+            "ls_iterations": int(env_cfg.sim.mujoco.ls_iterations),
+            "ccd_iterations": int(env_cfg.sim.mujoco.ccd_iterations),
+            "contact_sensor_maxmatch": int(env_cfg.sim.contact_sensor_maxmatch),
+            "njmax": int(env_cfg.sim.njmax),
+            "nconmax": int(env_cfg.sim.nconmax),
+        },
+        "episode": {"episode_length_s": float(env_cfg.episode_length_s)},
+        "scene": {
+            "num_envs": int(env_cfg.scene.num_envs),
+            "sensors": [_json_native(sensor) for sensor in env_cfg.scene.sensors],
+            "robot_init": _json_native(env_cfg.scene.entities["robot"].init_state),
+        },
+        "observations": {
+            "actor": _observation_group_payload(env_cfg.observations["actor"]),
+            "critic": _observation_group_payload(env_cfg.observations["critic"]),
+        },
+        "actions": {
+            "terms": [
+                {
+                    "name": "joint_pos",
+                    "target_names": list(action_cfg.actuator_names),
+                    "offset": _json_native(action_cfg.offset),
+                    "negative_scale": _json_native(action_cfg.task072_negative_scale),
+                    "positive_scale": _json_native(action_cfg.task072_positive_scale),
+                    "policy_action_domain": dict(POLICY_ACTION_DOMAIN),
+                    "action_contract_sha256": registration["action_contract_sha256"],
+                }
+            ],
+        },
+        "commands": {"twist": command_payload},
+        "events": _manager_cfg_table(env_cfg.events, ("mode", "interval_range_s")),
+        "rewards": reward_table,
+        "reward_active_table_sha256": active_sha,
+        "reward_payload_sha256": task072_canonical_reward_payload(reward_table)["payload_sha256"],
+        "terminations": _manager_cfg_table(env_cfg.terminations, ("time_out",)),
+        "curriculum": _json_native(env_cfg.curriculum),
+        "metrics": _manager_cfg_table(env_cfg.metrics),
+        "agent": {
+            "seed": int(agent_cfg.seed),
+            "num_steps_per_env": int(agent_cfg.num_steps_per_env),
+            "max_iterations": int(agent_cfg.max_iterations),
+            "save_interval": int(agent_cfg.save_interval),
+            "resume": bool(agent_cfg.resume),
+            "upload_model": bool(agent_cfg.upload_model),
+            "logger": agent_cfg.logger,
+            "clip_actions": float(agent_cfg.clip_actions),
+            "actor": _json_native(agent_cfg.actor),
+            "critic": _json_native(agent_cfg.critic),
+            "distribution": _json_native(distribution_cfg),
+            "ppo": _json_native(algorithm_cfg),
+            "optimizer_runtime_class": "torch.optim.Adam",
+        },
+        "registration": _json_native(registration),
+        "fixed_command_assertion": command_payload["ranges"] == {
+            "lin_vel_x": [0.5, 0.5],
+            "lin_vel_y": [0.0, 0.0],
+            "ang_vel_z": [0.0, 0.0],
+            "heading": None,
+        },
+        "render_mode": render_mode,
+    }
 
 
 def task072_reward_v3_oracle_pre_dt_means() -> dict[str, float]:
@@ -1260,6 +1462,7 @@ class Task072RewardFixtureAdapter:
         self.max_episode_length_s = 10_000.0
         self.episode_length_buf = torch.zeros(self.num_envs, dtype=torch.long, device=device)
         self.command_manager = _Task072FixtureCommandManager(self.num_envs, device)
+        self.termination_manager = _Task072FixtureTerminationManager(self.num_envs, device)
         max_site_id = 1
         nonfoot_count = 1
         stance_height = 1.0
@@ -1297,7 +1500,7 @@ class Task072RewardFixtureAdapter:
     def set_state(self, fixture: str, step_index: int) -> None:
         import torch
 
-        if fixture not in {"static_both", "ideal_phase_matched", "persistent_left_only"}:
+        if fixture not in {"static_both", "ideal_phase_matched", "persistent_left_only", "normal", "fell_over", "timeout"}:
             raise ValueError(f"unknown Task072 reward fixture: {fixture}")
         phase = (int(step_index) % 40) / 40.0
         desired = torch.tensor(
@@ -1309,6 +1512,9 @@ class Task072RewardFixtureAdapter:
             "static_both": torch.tensor([True, True], device=self.device),
             "ideal_phase_matched": desired,
             "persistent_left_only": torch.tensor([True, False], device=self.device),
+            "normal": torch.tensor([True, True], device=self.device),
+            "fell_over": torch.tensor([True, True], device=self.device),
+            "timeout": torch.tensor([True, True], device=self.device),
         }[fixture]
         vx = 0.5 if fixture == "ideal_phase_matched" else 0.0
         robot = self.scene["robot"].data
@@ -1334,6 +1540,8 @@ class Task072RewardFixtureAdapter:
         self.action_manager.action.zero_()
         self.action_manager.prev_action.zero_()
         self.episode_length_buf[:] = int(step_index)
+        self.termination_manager.terminated[:] = fixture == "fell_over"
+        self.termination_manager.time_outs[:] = fixture == "timeout"
 
 
 class _Task072FixtureRobotData:
@@ -1386,6 +1594,14 @@ class _Task072FixtureActionManager:
         self.prev_action = torch.zeros((num_envs, action_dim), device=device)
 
 
+class _Task072FixtureTerminationManager:
+    def __init__(self, num_envs: int, device: str) -> None:
+        import torch
+
+        self.terminated = torch.zeros(num_envs, dtype=torch.bool, device=device)
+        self.time_outs = torch.zeros(num_envs, dtype=torch.bool, device=device)
+
+
 def task072_reward_fixture_probe(active_cfg: dict[str, Any]) -> dict[str, Any]:
     import torch
     from mjlab.managers.reward_manager import RewardManager
@@ -1418,14 +1634,38 @@ def task072_reward_fixture_probe(active_cfg: dict[str, Any]) -> dict[str, Any]:
             "dt_once_abs_diff": abs(dt_mean - pre_mean * 0.02),
             "iterable_abs_diff_max": max_iterable_error,
         }
+    terminal = {}
+    for name in ("normal", "fell_over", "timeout"):
+        fixture.set_state(name, 1)
+        if bool(fixture.termination_manager.terminated[0]) and bool(fixture.termination_manager.time_outs[0]):
+            raise ValueError("Task072 terminal fixture overlaps terminated and timeout")
+        pre = manager_pre.compute(fixture.step_dt)
+        dt_reward = manager_dt.compute(fixture.step_dt)
+        fall_row = next(row for row in task072_reward_breakdown_from_manager(manager_pre, fixture, fixture.step_dt)["rows"] if row["name"] == "fall_terminated")
+        terminal[name] = {
+            "terminated": bool(fixture.termination_manager.terminated[0]),
+            "time_out": bool(fixture.termination_manager.time_outs[0]),
+            "fall_raw": float(fall_row["raw"][0].detach().cpu()),
+            "pre_dt": float(fall_row["weighted_pre_dt"][0].detach().cpu()),
+            "dt_contribution": float(fall_row["dt_contribution"][0].detach().cpu()),
+            "manager_dt_total": float(dt_reward[0].detach().cpu()),
+            "manager_pre_total": float(pre[0].detach().cpu()),
+        }
+    terminal["passed"] = terminal == {
+        "normal": {**terminal["normal"], "terminated": False, "time_out": False, "fall_raw": 0.0, "pre_dt": 0.0, "dt_contribution": 0.0},
+        "fell_over": {**terminal["fell_over"], "terminated": True, "time_out": False, "fall_raw": -1.0, "pre_dt": -300.0, "dt_contribution": -6.0},
+        "timeout": {**terminal["timeout"], "terminated": False, "time_out": True, "fall_raw": 0.0, "pre_dt": 0.0, "dt_contribution": 0.0},
+    }
+    result["terminal"] = terminal
     result["ideal_static_margin"] = (
         result["ideal_phase_matched"]["weighted_pre_dt_mean"]
         - result["static_both"]["weighted_pre_dt_mean"]
     )
     result["ideal_static_margin_abs_diff"] = abs(result["ideal_static_margin"] - REWARD_V3_ORACLE_EXPECTED["ideal_static_margin"])
     result["passed"] = (
-        all(value["oracle_abs_diff"] <= 1.0e-6 and value["dt_once_abs_diff"] <= 1.0e-6 and value["iterable_abs_diff_max"] <= 1.0e-6 for value in result.values() if isinstance(value, dict))
+        all(value["oracle_abs_diff"] <= 1.0e-6 and value["dt_once_abs_diff"] <= 1.0e-6 and value["iterable_abs_diff_max"] <= 1.0e-6 for name, value in result.items() if name in {"static_both", "ideal_phase_matched", "persistent_left_only"})
         and result["ideal_static_margin_abs_diff"] <= 1.0e-6
+        and terminal["passed"]
     )
     return result
 
@@ -1805,9 +2045,19 @@ def build_task_cfg(
     from mjlab.entity import EntityArticulationInfoCfg
     from mjlab.envs.mdp.actions import JointPositionAction, JointPositionActionCfg
     from mjlab.envs.mdp.actions.actions import resolve_matching_names_values
+    from mjlab.envs.mdp import events as mjlab_events
+    from mjlab.envs.mdp import metrics as mjlab_metrics
+    from mjlab.envs.mdp import observations as mjlab_observations
+    from mjlab.envs.mdp import terminations as mjlab_terminations
+    from mjlab.managers.event_manager import EventTermCfg
+    from mjlab.managers.metrics_manager import MetricsTermCfg
+    from mjlab.managers.observation_manager import ObservationGroupCfg, ObservationTermCfg
+    from mjlab.managers.scene_entity_config import SceneEntityCfg
+    from mjlab.managers.termination_manager import TerminationTermCfg
     from mjlab.sensor import ContactMatch, ContactSensorCfg
     from mjlab.tasks.registry import load_env_cfg, load_rl_cfg, load_runner_cls, register_mjlab_task
     from mjlab.utils.spec_config import CollisionCfg
+    from src.tasks.velocity.mdp import observations as task_velocity_observations
 
     spec_xml = runtime_spec_xml()
 
@@ -1866,35 +2116,100 @@ def build_task_cfg(
         ),
     )
     env_cfg.scene.entities["robot"] = robot
-    for sensor in env_cfg.scene.sensors or ():
-        if sensor.name == "feet_ground_contact":
-            sensor.primary = ContactMatch(
-                mode="subtree",
-                pattern=rf"^({FOOT_BODIES[0]}|{FOOT_BODIES[1]})$",
-                entity="robot",
-            )
-            sensor.secondary = ContactMatch(mode="body", pattern="terrain")
-            sensor.track_air_time = True
-        elif sensor.name == "self_collision":
-            sensor.primary = ContactMatch(mode="subtree", pattern=PELVIS_BODY, entity="robot")
-            sensor.secondary = ContactMatch(mode="subtree", pattern=PELVIS_BODY, entity="robot")
+    for group in ("actor", "critic"):
+        phase_term = env_cfg.observations[group].terms.get("phase")
+        if phase_term is None:
+            raise ValueError(f"Task072 {group} observation table is missing phase")
+        phase_term.params["period"] = TASK072_GAIT_PERIOD_S
     nonfoot_names = [
         body.get("name", "") for body in ET.parse(ASSET_XML).getroot().findall(".//body")
         if body.get("name") and body.get("name") not in FOOT_BODIES
     ]
     nonfoot_pattern = rf"^({'|'.join(nonfoot_names)})$"
-    env_cfg.scene.sensors = tuple(env_cfg.scene.sensors or ()) + (ContactSensorCfg(
-        name="nonfoot_ground_contact",
-        primary=ContactMatch(mode="body", pattern=nonfoot_pattern, entity="robot"),
-        secondary=ContactMatch(mode="body", pattern="terrain"),
-        fields=("found",), reduce="none", num_slots=1, secondary_policy="first",
-    ),)
-    env_cfg.observations["critic"].terms["foot_height"].params["asset_cfg"].site_names = FOOT_SITES
-    if "foot_friction" in env_cfg.events:
-        env_cfg.events["foot_friction"].params["asset_cfg"].geom_names = FOOT_GEOMS
-    if "base_com" in env_cfg.events:
-        env_cfg.events["base_com"].params["asset_cfg"].body_names = (TORSO_BODY,)
-    env_cfg.rewards = task072_reward_v3_table(stance)
+    env_cfg.scene.sensors = (
+        ContactSensorCfg(
+            name="feet_ground_contact",
+            primary=ContactMatch(
+                mode="subtree",
+                pattern=rf"^({FOOT_BODIES[0]}|{FOOT_BODIES[1]})$",
+                entity="robot",
+            ),
+            secondary=ContactMatch(mode="body", pattern="terrain"),
+            fields=("found", "force"),
+            reduce="netforce",
+            num_slots=1,
+            track_air_time=True,
+            history_length=0,
+            secondary_policy="first",
+        ),
+        ContactSensorCfg(
+            name="nonfoot_ground_contact",
+            primary=ContactMatch(mode="body", pattern=nonfoot_pattern, entity="robot"),
+            secondary=ContactMatch(mode="body", pattern="terrain"),
+            fields=("found",),
+            reduce="none",
+            num_slots=1,
+            track_air_time=False,
+            history_length=0,
+            secondary_policy="first",
+        ),
+    )
+    actor_terms = {
+        "base_ang_vel": ObservationTermCfg(
+            func=mjlab_observations.builtin_sensor,
+            params={"sensor_name": "robot/imu_ang_vel"},
+        ),
+        "projected_gravity": ObservationTermCfg(func=mjlab_observations.projected_gravity, params={}),
+        "command": ObservationTermCfg(
+            func=mjlab_observations.generated_commands,
+            params={"command_name": "twist"},
+        ),
+        "phase": ObservationTermCfg(
+            func=task_velocity_observations.phase,
+            params={"period": TASK072_GAIT_PERIOD_S, "command_name": "twist"},
+        ),
+        "joint_pos": ObservationTermCfg(func=mjlab_observations.joint_pos_rel, params={}),
+        "joint_vel": ObservationTermCfg(func=mjlab_observations.joint_vel_rel, params={}),
+        "actions": ObservationTermCfg(func=mjlab_observations.last_action, params={}),
+    }
+    critic_terms = {
+        **{name: ObservationTermCfg(func=term.func, params=dict(term.params)) for name, term in actor_terms.items()},
+        "base_lin_vel": ObservationTermCfg(
+            func=mjlab_observations.builtin_sensor,
+            params={"sensor_name": "robot/imu_lin_vel"},
+        ),
+        "foot_height": ObservationTermCfg(
+            func=task_velocity_observations.foot_height,
+            params={"asset_cfg": SceneEntityCfg("robot", site_names=FOOT_SITES)},
+        ),
+        "foot_air_time": ObservationTermCfg(
+            func=task_velocity_observations.foot_air_time,
+            params={"sensor_name": "feet_ground_contact"},
+        ),
+        "foot_contact": ObservationTermCfg(
+            func=task_velocity_observations.foot_contact,
+            params={"sensor_name": "feet_ground_contact"},
+        ),
+        "foot_contact_forces": ObservationTermCfg(
+            func=task_velocity_observations.foot_contact_forces,
+            params={"sensor_name": "feet_ground_contact"},
+        ),
+    }
+    env_cfg.observations = {
+        "actor": ObservationGroupCfg(
+            terms=actor_terms,
+            concatenate_terms=True,
+            enable_corruption=False,
+            history_length=1,
+        ),
+        "critic": ObservationGroupCfg(
+            terms=critic_terms,
+            concatenate_terms=True,
+            enable_corruption=False,
+            history_length=1,
+        ),
+    }
+    env_cfg.rewards = task072_reward_v4_table(stance)
     action_cfg = env_cfg.actions["joint_pos"]
     if not isinstance(action_cfg, JointPositionActionCfg):
         raise TypeError("expected MJLab joint_pos action")
@@ -1907,6 +2222,7 @@ def build_task_cfg(
     action_cfg.task072_negative_scale = negative_scale
     action_cfg.task072_positive_scale = positive_scale
     action_cfg.task072_policy_action_domain = dict(POLICY_ACTION_DOMAIN)
+    env_cfg.actions = {"joint_pos": action_cfg}
 
     class Task072SignedJointPositionAction(JointPositionAction):
         def __init__(self, cfg: Any, env: Any) -> None:
@@ -1946,21 +2262,58 @@ def build_task_cfg(
     twist_cmd.ranges.lin_vel_y = (0.0, 0.0)
     twist_cmd.ranges.ang_vel_z = (0.0, 0.0)
     twist_cmd.ranges.heading = None
+    twist_cmd.debug_vis = False
+    env_cfg.commands = {"twist": twist_cmd}
     env_cfg.episode_length_s = 10_000.0
-    for event_name in ("push_robot", "foot_friction", "encoder_bias", "base_com"):
-        env_cfg.events.pop(event_name, None)
-    if "reset_base" in env_cfg.events:
-        env_cfg.events["reset_base"].params["pose_range"] = {
-            "x": (0.0, 0.0),
-            "y": (0.0, 0.0),
-            "z": (0.0, 0.0),
-            "yaw": (0.0, 0.0),
-        }
-    if "reset_robot_joints" in env_cfg.events:
-        env_cfg.events["reset_robot_joints"].params["position_range"] = (0.0, 0.0)
-        env_cfg.events["reset_robot_joints"].params["velocity_range"] = (0.0, 0.0)
-    env_cfg.observations["actor"].enable_corruption = False
+    env_cfg.events = {
+        "reset_base": EventTermCfg(
+            func=mjlab_events.reset_root_state_uniform,
+            mode="reset",
+            params={
+                "pose_range": {
+                    "x": (0.0, 0.0),
+                    "y": (0.0, 0.0),
+                    "z": (0.0, 0.0),
+                    "yaw": (0.0, 0.0),
+                },
+                "velocity_range": {},
+            },
+        ),
+        "reset_robot_joints": EventTermCfg(
+            func=mjlab_events.reset_joints_by_offset,
+            mode="reset",
+            params={
+                "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
+                "position_range": (0.0, 0.0),
+                "velocity_range": (0.0, 0.0),
+            },
+        ),
+    }
+    env_cfg.terminations = {
+        "time_out": TerminationTermCfg(func=mjlab_terminations.time_out, params={}, time_out=True),
+        "fell_over": TerminationTermCfg(
+            func=mjlab_terminations.bad_orientation,
+            params={"limit_angle": 1.2217304763960306},
+            time_out=False,
+        ),
+    }
     env_cfg.curriculum = {}
+    env_cfg.metrics = {
+        "mean_action_acc": MetricsTermCfg(func=mjlab_metrics.mean_action_acc, params={}),
+    }
+    if list(env_cfg.events) != ["reset_base", "reset_robot_joints"]:
+        raise ValueError("Task072 event table replacement failed")
+    if list(env_cfg.terminations) != ["time_out", "fell_over"]:
+        raise ValueError("Task072 termination table replacement failed")
+    if list(env_cfg.metrics) != ["mean_action_acc"]:
+        raise ValueError("Task072 metrics table replacement failed")
+    if list(env_cfg.commands) != ["twist"] or list(env_cfg.actions) != ["joint_pos"]:
+        raise ValueError("Task072 command/action table replacement failed")
+    if list(env_cfg.scene.sensors) and [sensor.name for sensor in env_cfg.scene.sensors] != [
+        "feet_ground_contact",
+        "nonfoot_ground_contact",
+    ]:
+        raise ValueError("Task072 sensor table replacement failed")
 
     agent_cfg.seed = int(seed)
     agent_cfg.clip_actions = 1.0
@@ -2005,7 +2358,7 @@ def build_task_cfg(
         "expected_actuator_ctrl_eq": dict(stance["actuator_ctrl_eq"]),
         "disabled_events": ["push_robot", "foot_friction", "encoder_bias", "base_com"],
         "curriculum_disabled": True,
-        "reward_terms": list(REWARD_V3_ORDER),
+        "reward_terms": list(REWARD_V4_ORDER),
         "reward_active_table_sha256": task072_validate_reward_active_table(task072_reward_active_table_from_cfg(env_cfg.rewards)),
         "reward_payload_sha256": task072_canonical_reward_payload(
             task072_reward_active_table_from_cfg(env_cfg.rewards)
@@ -2076,6 +2429,12 @@ def _canonical_config_payload(env_cfg: Any, agent_cfg: Any, registration: dict[s
             "offset": dict(action_cfg.offset),
         },
         "reward": {"version": REWARD_CONTRACT_VERSION},
+        "semantic_contract": task072_runtime_semantic_payload(
+            env_cfg,
+            agent_cfg,
+            registration,
+            render_mode=render_mode,
+        ),
         "registration": registration,
     }
 
@@ -2612,10 +2971,10 @@ def _validate_training_manifest_for_eval(payload: dict[str, Any]) -> None:
     )
     runtime_table_ok = (
         isinstance(runtime_table, list)
-        and payload.get("runtime_reward_active_term_count") == 23
-        and len(runtime_table) == len(REWARD_V3_ORDER) == 23
+        and payload.get("runtime_reward_active_term_count") == len(REWARD_V4_ORDER)
+        and len(runtime_table) == len(REWARD_V4_ORDER)
         and all(isinstance(row, dict) for row in runtime_table)
-        and [row.get("name") for row in runtime_table] == list(REWARD_V3_ORDER)
+        and [row.get("name") for row in runtime_table] == list(REWARD_V4_ORDER)
         and payload.get("runtime_reward_active_table_sha256")
         == current.get("reward_contract", {}).get("config_active_table_sha256")
     )
@@ -2890,7 +3249,7 @@ def one_update_train(args: argparse.Namespace) -> int:
         "optimizer_step_count_exact": optimizer_step_count == expected_optimizer_steps,
         "parameter_delta_positive_finite": parameter_delta["finite"] and parameter_delta["max_abs"] > 0.0 and parameter_delta["changed_parameter_count"] > 0,
         "losses_finite": len(losses) == int(args.updates) and all(_task072_finite_loss_dict(loss) for loss in losses),
-        "runtime_reward_terms_exact": len(runtime_reward_table) == 23 and [row["name"] for row in runtime_reward_table] == list(REWARD_V3_ORDER),
+        "runtime_reward_terms_exact": len(runtime_reward_table) == len(REWARD_V4_ORDER) and [row["name"] for row in runtime_reward_table] == list(REWARD_V4_ORDER),
         "runtime_reward_sha_match": runtime_reward_sha == registration["reward_active_table_sha256"],
         "nan_check_enabled": check_for_nan_enabled,
         "finite_runtime_evidence": runtime_finite,
@@ -3185,7 +3544,7 @@ def task072_pilot_continuation_gate(
     manifest_contract_ok: bool = True,
     manifest_contract_error: str | None = None,
 ) -> dict[str, Any]:
-    """Fail-closed JSON gate for the 003j 21-update pilot continuation decision."""
+    """Fail-closed JSON gate for the 003k 21-update pilot continuation decision."""
     failure_reasons: list[str] = []
 
     def record_checks(prefix: str, checks: dict[str, bool]) -> dict[str, bool]:
@@ -3353,7 +3712,7 @@ def task072_pilot_continuation_gate(
     )
     return {
         "schema_version": 1,
-        "schema_kind": "003j_pilot_continuation_gate",
+        "schema_kind": "003k_pilot_continuation_gate",
         "lineage_id": LINEAGE_ID,
         "required_training": {
             "num_envs": REQUIRED_CAPACITY_NUM_ENVS,
@@ -3433,7 +3792,7 @@ def render_command(args: argparse.Namespace) -> int:
         eval_payload = _load_passing_json(args.eval, "numeric eval")
         if str(args.checkpoint.resolve()) != eval_payload.get("checkpoint", {}).get("path"):
             raise ValueError("render checkpoint does not match numeric eval checkpoint")
-        error = "Task072 MJLab render implementation is armed but video generation is not authorized in 003j repair"
+        error = "Task072 MJLab render implementation is armed but video generation is not authorized in 003k repair"
     except Exception as exc:  # noqa: BLE001
         error = repr(exc)
     result = {
@@ -3461,7 +3820,7 @@ def verify_reload_command(args: argparse.Namespace) -> int:
             raise ValueError("reload checkpoint does not match numeric eval checkpoint")
         if video_payload.get("checkpoint") != str(args.checkpoint.resolve()):
             raise ValueError("reload checkpoint does not match render video checkpoint")
-        error = "Task072 MJLab reload verifier is armed but rollout execution is not authorized in 003j repair"
+        error = "Task072 MJLab reload verifier is armed but rollout execution is not authorized in 003k repair"
     except Exception as exc:  # noqa: BLE001
         error = repr(exc)
     result = {
@@ -3490,7 +3849,7 @@ def freeze_command(args: argparse.Namespace) -> int:
             == reload_payload.get("checkpoint")
         ):
             raise ValueError("freeze evidence checkpoint mismatch")
-        error = "Task072 freeze is armed but refused until 003j proof evidence is produced in an authorized run"
+        error = "Task072 freeze is armed but refused until 003k/003l proof evidence is produced in an authorized run"
     except Exception as exc:  # noqa: BLE001
         error = repr(exc)
     result = {
@@ -3914,7 +4273,7 @@ def _common_manifest(args: argparse.Namespace) -> dict[str, Any]:
     canonical = canonical_train_eval_config_payload()
     runtime = _runtime_metadata(" ".join(sys.argv))
     external = runtime["external_mjlab"]
-    reward_cfg = task072_reward_v3_table(_stance_dict())
+    reward_cfg = task072_reward_v4_table(_stance_dict())
     reward_active_table = task072_reward_active_table_from_cfg(reward_cfg)
     reward_payload = task072_canonical_reward_payload(reward_active_table)
     manifest_subtask = "003f" if getattr(args, "command", None) == "verify-runtime-binding" else TASK072_ACTIVE_SUBTASK
@@ -3979,7 +4338,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     r0.set_defaults(func=r0_smoke)
 
     cap = sub.add_parser("capacity-smoke")
-    cap.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_ROOT / "003j_capacity_smoke_2048_4096_6144.json")
+    cap.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_ROOT / "003k_capacity_smoke_2048_4096_6144.json")
     cap.add_argument("--candidates", type=int, nargs="+", default=[2048, 4096, 6144])
     cap.add_argument("--rollout-steps", type=int, default=24)
     cap.add_argument("--steps", type=int, default=2)
@@ -3988,8 +4347,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     cap.set_defaults(func=capacity_smoke)
 
     train = sub.add_parser("one-update-train")
-    train.add_argument("--run-dir", type=Path, default=DEFAULT_OUTPUT_ROOT / "003j_one_update_4096x24_seed720301")
-    train.add_argument("--capacity-artifact", type=Path, default=RUNTIME_BINDING_ROOT / "003j_capacity_smoke_2048_4096_6144.json")
+    train.add_argument("--run-dir", type=Path, default=DEFAULT_OUTPUT_ROOT / "003k_one_update_4096x24_seed720301")
+    train.add_argument("--capacity-artifact", type=Path, default=RUNTIME_BINDING_ROOT / "003k_capacity_smoke_2048_4096_6144.json")
     train.add_argument("--num-envs", type=int, default=4096)
     train.add_argument("--rollout-steps", type=int, default=24)
     train.add_argument("--updates", type=int, default=1)
@@ -4009,17 +4368,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     evaluate.add_argument("--device", default="cuda:0")
     evaluate.set_defaults(func=evaluate_checkpoint)
     pilot_gate = sub.add_parser("pilot-gate")
-    pilot_gate.add_argument("--run-manifest", type=Path, default=DEFAULT_OUTPUT_ROOT / "003j_pilot_4096x24x21_seed720301/run_manifest.json")
+    pilot_gate.add_argument("--run-manifest", type=Path, default=DEFAULT_OUTPUT_ROOT / "003k_pilot_4096x24x21_seed720301/run_manifest.json")
     pilot_gate.add_argument(
         "--eval",
         type=Path,
         nargs=4,
         default=[
-            DEFAULT_OUTPUT_ROOT / f"003j_eval_pilot_model_{update}_fixed_vx0p5_seed720400.json"
+            DEFAULT_OUTPUT_ROOT / f"003k_eval_pilot_model_{update}_fixed_vx0p5_seed720400.json"
             for update in TASK072_PILOT_EVAL_UPDATES
         ],
     )
-    pilot_gate.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_ROOT / "003j_pilot_gate.json")
+    pilot_gate.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_ROOT / "003k_pilot_gate.json")
     pilot_gate.add_argument("--seed", type=int, default=DEFAULT_SEED)
     pilot_gate.set_defaults(func=pilot_gate_command)
     verify = sub.add_parser("verify-runtime-binding")
@@ -4028,7 +4387,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     verify.add_argument("--device", default="cpu")
     verify.set_defaults(func=verify_runtime_binding)
     contract = sub.add_parser("verify-reward-eval-contract")
-    contract.add_argument("--output", type=Path, default=RUNTIME_BINDING_ROOT / "003j_reward_eval_contract_verifier.json")
+    contract.add_argument("--output", type=Path, default=RUNTIME_BINDING_ROOT / "003k_v4_semantic_reward_eval_contract_verifier.json")
     contract.add_argument("--seed", type=int, default=DEFAULT_SEED)
     contract.set_defaults(func=verify_reward_eval_contract)
     render = sub.add_parser("render")

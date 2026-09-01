@@ -622,6 +622,9 @@ baseline、progression、SHA 或任一指标失败，均视为该 case 未通过
   `-0.957527`，确认 termination exploit。新建 003k，要求整表替换全部 task semantics、统一 phase、
   保留 gait reward并加入 post-dt `-6.0` bounded fall cost、actual-manager semantic SHA 和 per-env gait/
   survival gate。本轮仅写 task contract，未修改 source、未运行 CPU verifier 或 GPU。
+- 2026-09-01：003k implementation slice 切换 v4 root/lineage，统一 `TASK072_GAIT_PERIOD_S`，追加
+  24th `fall_terminated` reward 与 normal/fell-over/timeout fixture probe；未启动 GPU、training、eval、
+  proof、video 或 freeze。完整 task-owned manager-table replacement 尚未完成。
 
 ## Review
 
@@ -652,8 +655,9 @@ gate scope，CPU/capacity/one-update 与 pilot training contract 均通过；fre
 在 20 s 前跌倒，aggregate survival continuation gate failed。后验 cross-manager audit 已冻结为 003k：
 parent phase observation `0.6 s` 与 reward gait phase `0.8 s` 不一致，且实际 reward 无 terminal cost，
 产生 reward-up/survival-down termination exploit。003k 现为
-`ready_for_implementation / not_trained / not_passed`，只授权完整 task-owned semantic closure 与 CPU
-验证；尚未授权新的 GPU run。G1/Go2 full proof 仍未通过，Task072 继续保持 **not_passed**。
+`implementation_partial / cpu_validation_pending / not_passed`；本轮只完成 bounded reward/phase slice，
+完整 task-owned manager-table replacement 与 verifier payload consumption 仍待后续实现。尚未授权新的
+GPU run。G1/Go2 full proof 仍未通过，Task072 继续保持 **not_passed**。
 
 ## R2 single-variable recovery route
 
