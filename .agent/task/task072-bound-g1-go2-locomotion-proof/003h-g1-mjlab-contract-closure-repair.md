@@ -1,6 +1,6 @@
 # 003h — G1 MJLab contract-closure repair
 
-状态：**pilot_eval_failed / trained / not_passed**。
+状态：**rejected_diagnostic / trained / not_passed**。
 
 003h 是 003g 失败后的 versioned repair。003g 仅保留为 single-ground failed walking evidence；其
 training contract 继承了 `Unitree-G1-Flat` 的 command randomization、domain randomization、curriculum、
@@ -8,10 +8,11 @@ parent reward 和对称 action scale，因此不得作为下一次训练的父�
 
 ## Route
 
-003f single-ground runtime -> 003g failed evidence -> 003h contract closure -> user-authorized
-capacity/one-update/pilot only after this source commit is selected。
+历史 route 为 `003f single-ground runtime -> 003g failed evidence -> 003h contract closure ->
+user-authorized capacity/one-update/pilot`。该 route 已执行，但因 reward/eval 合同错误关闭；当前
+successor 固定为 `003h rejected_diagnostic -> 003i reward/eval/survival repair`。
 
-003h 唯一活动训练路线是 MJLab。旧 custom-PPO 路线和 E3a artifacts 只作为 historical/rejected evidence；
+003h 当时唯一训练路线是 MJLab。旧 custom-PPO 路线和 E3a artifacts 只作为 historical/rejected evidence；
 历史 SHA drift 必须被 verifier 拒绝，不得重写旧 artifact 使其通过。
 
 ## Log
@@ -27,9 +28,10 @@ capacity/one-update/pilot only after this source commit is selected。
   0、command resampling effectively disabled、push/friction/encoder/COM randomization disabled、actor
   corruption disabled、curriculum empty、random init PPO/no resume。eval 只允许 env count、seed、horizon、
   render mode、task id 和由 env count 派生的 transition count differ。
-- 2026-08-31：移除 active MJLab reward 中 inherited `is_terminated` 和 `feet_gait` terms；003h reward
-  lineage 记录为 `task072_mjlab_biped_phase_contact_v3`。fall 仍作为 termination，但不再是 reward
-  penalty。
+- 2026-08-31：文档曾声称移除 inherited `is_terminated` 和 `feet_gait` terms；后验确认 runner 实际
+  只尝试删除错误键 `feet_gait`，parent 实际 key 为 `foot_gait`，且没有完整替换 RewardManager。
+  因而 `task072_mjlab_biped_phase_contact_v3` 仅是标签，不是已实例化的 reward-v3 合同；触发
+  `reward_contract_not_instantiated` rejection，转入 003i。
 - 2026-08-31：runner 不再回退到 `/home/admin1/workspace/proj` 的可变 external symlink；缺少 frame-local
   `.external/unitree_rl_mjlab` 时 fail closed。manifest 记录 external path、expected commit、actual commit
   和 tracked-clean 状态。
@@ -48,13 +50,13 @@ capacity/one-update/pilot only after this source commit is selected。
   `ef75777584f7a3a3b8a622ef120d7ec677c38477cdb5dcb8a893fe10f90c7231`，最终 checkpoint
   `model_20.pt` SHA `08a700768ce8310fe20dcb87e96653bd450ada22475fabbf9e8765533b4a17b9`。
   Manifest-bound 20 s fixed-command eval on `model_20.pt` failed walking gate，eval SHA
-  `59f614ea2e0e4c5414f543bc6696cb582ad075338620cd6183a199accfa47fb0`；checks failed
-  `mean_forward_velocity`、`mean_x_displacement`、`planar_tracking_error`、`yaw_error`、
-  `gravity_xy`、`zero_fall_ratio`。未运行 proof training、passing video 或 freeze。
+  `59f614ea2e0e4c5414f543bc6696cb582ad075338620cd6183a199accfa47fb0`；后验确认 eval 将最后一步
+  `reset_time_outs` 与 `reset_terminated` 合并为 fall，并在无 survivor 时写入 0/sentinel，故按
+  `eval_timeout_conflation` rejection 保留。model_20、pilot manifest、eval artifact 均为
+  `rejected_diagnostic`，禁止 resume/warm-start/proof/freeze。未运行 proof training、passing video 或 freeze。
 
 ## Review
 
-状态：**pilot_eval_failed / trained / not_passed**。003h 已关闭 training/eval/action/reward/runtime/
-provenance 的主要合同分叉，并以 CPU tests、GPU capacity、one-update、21-update pilot 和
-manifest-bound eval 证明新路线可执行但仍未过 walking gate。不得复用 003g checkpoint；不得生成 passing
-video 或 freeze。
+状态：**rejected_diagnostic / trained / not_passed**。003h 的训练可执行性证据保留，但 reward contract
+未实例化、eval timeout 语义错误，且未记录可审计 clip/survival non-regression；不得复用 003g/003h
+checkpoint，必须执行 003i fresh-init route，不得生成 passing video 或 freeze。
