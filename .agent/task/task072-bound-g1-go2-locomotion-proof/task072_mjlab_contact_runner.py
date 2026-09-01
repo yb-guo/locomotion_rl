@@ -16,6 +16,7 @@ import xml.etree.ElementTree as ET
 from copy import deepcopy
 from dataclasses import asdict, replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -123,6 +124,263 @@ SEMANTIC_TO_ANON_JOINT = {
     "right_arm_wrist_pitch": "anon_right_arm_wrist_pitch_link_joint",
     "right_arm_wrist_yaw": "anon_right_arm_wrist_yaw_link_joint",
 }
+
+REWARD_V3_WEIGHTS = {
+    "track_xy_centered": 2.0,
+    "track_yaw": 0.50,
+    "upright": 0.25,
+    "tilt": 5.0,
+    "height": 0.25,
+    "stand_support": 0.30,
+    "phase_gait": 0.50,
+    "out_of_phase_double_support": 0.35,
+    "clearance": 0.50,
+    "touchdown_airtime": 0.10,
+    "soft_landing": 0.10,
+    "foot_slip": 0.20,
+    "nonfoot_contact": 0.20,
+    "pose_hip": 0.20,
+    "pose_knee": 0.30,
+    "pose_ankle": 0.20,
+    "pose_waist": 0.10,
+    "pose_arm_wrist": 0.05,
+    "joint_velocity": 0.02,
+    "joint_limit": 0.05,
+    "action_magnitude": 0.01,
+    "action_rate": 0.01,
+    "base_angvel_xy": 0.02,
+}
+REWARD_V3_ORDER = tuple(REWARD_V3_WEIGHTS)
+REWARD_V3_PHASE = {"period": 0.8, "offsets": [0.0, 0.5], "stance_fraction": 0.55}
+REWARD_V3_ORACLE_EXPECTED = {
+    "static_both": -0.5542411176571156,
+    "ideal_phase_matched": 1.7,
+    "persistent_left_only": -0.26012009890715004,
+    "ideal_static_margin": 2.2542411176571155,
+}
+
+
+def _task072_command(env: Any) -> Any:
+    return env.command_manager.get_command("twist")
+
+
+def _task072_robot(env: Any) -> Any:
+    return env.scene["robot"].data
+
+
+def _task072_contact(env: Any) -> Any:
+    return env.scene["feet_ground_contact"].data
+
+
+def _task072_contact_bits(env: Any) -> Any:
+    return _task072_contact(env).current_contact_time > 0
+
+
+def _task072_mask(env: Any, command_name: str, threshold: float = 0.1) -> Any:
+    import torch
+
+    command = env.command_manager.get_command(command_name)
+    return (torch.linalg.norm(command[:, :2], dim=1) + torch.abs(command[:, 2]) > threshold).to(torch.float32)
+
+
+def _task072_phase(env: Any, period: float = 0.8, offsets: list[float] | tuple[float, ...] = (0.0, 0.5)) -> Any:
+    import torch
+
+    period_steps = max(1, int(round(float(period) / float(env.step_dt))))
+    phase = torch.remainder(env.episode_length_buf.to(torch.int64), period_steps).to(torch.float32) / float(period_steps)
+    return torch.stack([torch.remainder(phase + float(offset), 1.0) for offset in offsets], dim=1)
+
+
+def _task072_site_pos(env: Any, site_ids: list[int]) -> Any:
+    return _task072_robot(env).site_pos_w[:, site_ids, :]
+
+
+def _task072_site_vel(env: Any, site_ids: list[int]) -> Any:
+    return _task072_robot(env).site_lin_vel_w[:, site_ids, :]
+
+
+def _task072_joint_values(env: Any, field: str, indices: list[int] | tuple[int, ...]) -> Any:
+    import torch
+    value = getattr(_task072_robot(env), field)
+    return value[:, list(indices)] if indices else torch.zeros((env.num_envs, 0), device=env.device)
+
+
+def task072_reward_track_xy_centered(env: Any, command_name: str, denominator: float, **_: Any) -> Any:
+    import torch
+
+    actual = _task072_robot(env).root_link_lin_vel_b
+    command = env.command_manager.get_command(command_name)
+    error = torch.stack((actual[:, 0] - command[:, 0], actual[:, 1] - command[:, 1], actual[:, 2]), dim=1)
+    return torch.exp(-torch.sum(error * error, dim=1) / float(denominator)) - 1.0
+
+
+def task072_reward_track_yaw(env: Any, command_name: str, denominator: float, **_: Any) -> Any:
+    import torch
+
+    command = env.command_manager.get_command(command_name)
+    error = _task072_robot(env).root_link_ang_vel_b[:, 2] - command[:, 2]
+    return torch.exp(-error.square() / float(denominator))
+
+
+def task072_reward_upright(env: Any, **_: Any) -> Any:
+    import torch
+    return torch.clamp(-_task072_robot(env).projected_gravity_b[:, 2], 0., 1.)
+
+
+def task072_reward_tilt(env: Any, **_: Any) -> Any:
+    return -_task072_robot(env).projected_gravity_b[:, :2].square().sum(dim=1)
+
+
+def task072_reward_height(env: Any, stance_height: float, **_: Any) -> Any:
+    return -((_task072_robot(env).root_link_pos_w[:, 2] - stance_height) / 0.10).square()
+
+
+def task072_reward_stand_support(env: Any, command_name: str, command_threshold: float, **_: Any) -> Any:
+    return (1.0 - _task072_mask(env, command_name, command_threshold)) * _task072_contact_bits(env).any(dim=1)
+
+
+def task072_reward_phase_gait(
+    env: Any,
+    command_name: str,
+    command_threshold: float,
+    period: float,
+    offsets: list[float],
+    stance_fraction: float,
+    **_: Any,
+) -> Any:
+    import torch
+
+    desired = _task072_phase(env, period, offsets) < stance_fraction
+    return _task072_mask(env, command_name, command_threshold) * (
+        _task072_contact_bits(env) == desired
+    ).to(torch.float32).mean(dim=1)
+
+
+def task072_reward_out_of_phase_double_support(
+    env: Any,
+    command_name: str,
+    command_threshold: float,
+    period: float,
+    offsets: list[float],
+    stance_fraction: float,
+    **_: Any,
+) -> Any:
+    import torch
+
+    desired = _task072_phase(env, period, offsets) < stance_fraction
+    contact = _task072_contact_bits(env)
+    return -_task072_mask(env, command_name, command_threshold) * (
+        contact.all(dim=1) & ~desired.all(dim=1)
+    ).to(torch.float32)
+
+
+def task072_reward_clearance(
+    env: Any,
+    command_name: str,
+    command_threshold: float,
+    period: float,
+    offsets: list[float],
+    stance_fraction: float,
+    site_ids: list[int],
+    clearance_height: float,
+    clearance_sigma: float,
+    **_: Any,
+) -> Any:
+    import torch
+
+    desired = _task072_phase(env, period, offsets) < stance_fraction
+    contact = _task072_contact_bits(env)
+    values = torch.exp(-((_task072_site_pos(env, site_ids)[:, :, 2] - clearance_height) / clearance_sigma).square())
+    swing = (~desired) & (~contact)
+    empty = torch.zeros(env.num_envs, device=env.device)
+    mean = torch.where(swing.any(dim=1), (values * swing).sum(dim=1) / swing.sum(dim=1).clamp_min(1), empty)
+    return _task072_mask(env, command_name, command_threshold) * mean
+
+
+def task072_reward_touchdown_airtime(env: Any, sensor_name: str, airtime_clip: float, **_: Any) -> Any:
+    import torch
+
+    sensor = env.scene[sensor_name]
+    return (
+        sensor.compute_first_contact(float(env.step_dt))
+        * torch.clamp(sensor.data.last_air_time / float(airtime_clip), 0.0, 1.0)
+    ).mean(dim=1)
+
+
+def task072_reward_soft_landing(env: Any, sensor_name: str, site_ids: list[int], landing_velocity_sigma: float, **_: Any) -> Any:
+    import torch
+
+    sensor = env.scene[sensor_name]
+    velocity = _task072_site_vel(env, site_ids)[:, :, 2]
+    return (sensor.compute_first_contact(float(env.step_dt)) * torch.exp(-(velocity / landing_velocity_sigma).square())).mean(dim=1)
+
+
+def task072_reward_foot_slip(env: Any, site_ids: list[int], **_: Any) -> Any:
+    contact = _task072_contact_bits(env)
+    velocity = _task072_site_vel(env, site_ids)[:, :, :2]
+    return -(contact * velocity.square().sum(dim=2)).mean(dim=1)
+
+
+def task072_reward_nonfoot_contact(env: Any, sensor_name: str, **_: Any) -> Any:
+    return -env.scene[sensor_name].data.found.to(dtype=_task072_robot(env).root_link_pos_w.dtype).mean(dim=1)
+
+
+def _task072_pose_reward(env: Any, joint_ids: list[int], q_ref: list[float], **_: Any) -> Any:
+    import torch
+
+    return -(
+        _task072_joint_values(env, "joint_pos", joint_ids)
+        - torch.tensor(q_ref, device=env.device, dtype=_task072_robot(env).joint_pos.dtype)
+    ).square().mean(dim=1)
+
+
+def task072_reward_pose_hip(env: Any, joint_ids: list[int], q_ref: list[float], **kwargs: Any) -> Any: return _task072_pose_reward(env, joint_ids, q_ref, **kwargs)
+def task072_reward_pose_knee(env: Any, joint_ids: list[int], q_ref: list[float], **kwargs: Any) -> Any: return _task072_pose_reward(env, joint_ids, q_ref, **kwargs)
+def task072_reward_pose_ankle(env: Any, joint_ids: list[int], q_ref: list[float], **kwargs: Any) -> Any: return _task072_pose_reward(env, joint_ids, q_ref, **kwargs)
+def task072_reward_pose_waist(env: Any, joint_ids: list[int], q_ref: list[float], **kwargs: Any) -> Any: return _task072_pose_reward(env, joint_ids, q_ref, **kwargs)
+def task072_reward_pose_arm_wrist(env: Any, joint_ids: list[int], q_ref: list[float], **kwargs: Any) -> Any: return _task072_pose_reward(env, joint_ids, q_ref, **kwargs)
+
+
+def task072_reward_joint_velocity(env: Any, joint_ids: list[int], **_: Any) -> Any:
+    return -_task072_joint_values(env, "joint_vel", joint_ids).square().mean(dim=1)
+
+
+def task072_reward_joint_limit(env: Any, joint_ids: list[int], lower: list[float], upper: list[float], soft_fraction: float = .9, **_: Any) -> Any:
+    import torch
+    q = _task072_joint_values(env, "joint_pos", joint_ids)
+    lo, hi = torch.tensor(lower, device=env.device), torch.tensor(upper, device=env.device)
+    center, half = (lo + hi) / 2, (hi - lo) / 2
+    v = torch.relu((q - (center + soft_fraction * half)) / (hi - lo)) + torch.relu(((center - soft_fraction * half) - q) / (hi - lo))
+    return -v.square().mean(dim=1)
+
+
+def _task072_action_pair(env: Any) -> tuple[Any, Any]:
+    import torch
+
+    action = env.action_manager.action
+    prev_action = getattr(env.action_manager, "prev_action", None)
+    if prev_action is None:
+        prev_action = torch.zeros_like(action)
+    return action, prev_action
+
+
+def task072_reward_action_magnitude(env: Any, **_: Any) -> Any:
+    action, _prev_action = _task072_action_pair(env)
+    return -action.square().mean(dim=1)
+
+
+def task072_reward_action_rate(env: Any, **_: Any) -> Any:
+    action, prev_action = _task072_action_pair(env)
+    return -(action - prev_action).square().mean(dim=1)
+
+
+def task072_reward_base_angvel_xy(env: Any, **_: Any) -> Any:
+    return -_task072_robot(env).root_link_ang_vel_b[:, :2].square().sum(dim=1)
+
+
+for _reward_name in REWARD_V3_ORDER:
+    globals()[f"task072_reward_{_reward_name}"].__module__ = "task072_mjlab_contact_runner"
+del _reward_name
 
 
 def sha256_path(path: Path) -> str:
@@ -584,6 +842,646 @@ def _signed_action_bounds_by_joint() -> tuple[dict[str, float], dict[str, float]
     return negative, positive
 
 
+def _runtime_entity_indices() -> dict[str, Any]:
+    import mujoco
+
+    spec = mujoco.MjSpec.from_string(runtime_spec_xml())
+    model = spec.compile()
+    body_names = [body.name.split("/")[-1] for body in spec.bodies[1:]]
+    joint_names = [
+        joint.name.split("/")[-1]
+        for joint in spec.joints
+        if joint.name and joint.name.split("/")[-1] != "root_free"
+    ]
+    site_names = [site.name.split("/")[-1] for site in spec.sites]
+    lower: list[float] = []
+    upper: list[float] = []
+    for name in joint_names:
+        joint_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
+        if joint_id < 0:
+            raise ValueError(f"compiled runtime model is missing joint {name}")
+        lo, hi = model.jnt_range[joint_id]
+        lower.append(float(lo))
+        upper.append(float(hi))
+    return {
+        "body_names": body_names,
+        "body_ids": {name: index for index, name in enumerate(body_names)},
+        "joint_names": joint_names,
+        "joint_ids": {name: index for index, name in enumerate(joint_names)},
+        "joint_lower": lower,
+        "joint_upper": upper,
+        "site_names": site_names,
+        "site_ids": {name: index for index, name in enumerate(site_names)},
+    }
+
+
+def _task072_pose_groups(semantic_joint_names: list[str]) -> dict[str, list[int]]:
+    groups = {
+        "pose_hip": [i for i, name in enumerate(semantic_joint_names) if name.startswith("limb") and "_hip_" in name],
+        "pose_knee": [i for i, name in enumerate(semantic_joint_names) if name.startswith("limb") and "_knee_" in name],
+        "pose_ankle": [i for i, name in enumerate(semantic_joint_names) if name.startswith("limb") and "_ankle_" in name],
+        "pose_waist": [i for i, name in enumerate(semantic_joint_names) if name.startswith("waist_")],
+        "pose_arm_wrist": [
+            i
+            for i, name in enumerate(semantic_joint_names)
+            if name.startswith(("left_arm_", "right_arm_"))
+        ],
+    }
+    if sorted(sum(groups.values(), [])) != list(range(29)):
+        raise ValueError("Task072 reward pose groups do not partition the 29-joint mapping")
+    if {name: len(indices) for name, indices in groups.items()} != {
+        "pose_hip": 6,
+        "pose_knee": 2,
+        "pose_ankle": 4,
+        "pose_waist": 3,
+        "pose_arm_wrist": 14,
+    }:
+        raise ValueError("Task072 reward pose groups have unexpected sizes")
+    return groups
+
+
+def task072_reward_v3_table(stance: dict[str, Any]) -> dict[str, Any]:
+    """Return the complete, ordered, JSON-native v3 RewardTermCfg table."""
+    from mjlab.managers.reward_manager import RewardTermCfg
+
+    indices = _runtime_entity_indices()
+    semantic_names = list(SEMANTIC_TO_ANON_JOINT)
+    anonymous_names = [SEMANTIC_TO_ANON_JOINT[name] for name in semantic_names]
+    if indices["joint_names"] != anonymous_names:
+        raise ValueError("Task072 reward joint order does not match runtime joint order")
+    groups = _task072_pose_groups(semantic_names)
+    q_ref = [float(stance["joint_qpos"][name]) for name in semantic_names]
+    stance_payload_sha = payload_sha256(stance)
+    torso_body_id = int(indices["body_ids"][TORSO_BODY])
+    foot_site_ids = [int(indices["site_ids"][name]) for name in FOOT_SITES]
+    nonfoot_body_names = [name for name in indices["body_names"] if name not in set(FOOT_BODIES)]
+    nonfoot_body_ids = [int(indices["body_ids"][name]) for name in nonfoot_body_names]
+    common = {"asset_name": "robot", "body_name": TORSO_BODY, "body_id": torso_body_id}
+    terms: dict[str, Any] = {}
+    funcs = {name: globals()[f"task072_reward_{name}"] for name in REWARD_V3_ORDER}
+    for name in REWARD_V3_ORDER:
+        params: dict[str, Any] = dict(common)
+        if name in ("track_xy_centered", "track_yaw"):
+            params.update(command_name="twist", denominator=0.25)
+        elif name == "height":
+            params.update(stance_height=float(stance["root_pose_eq"][2]), stance_payload_sha256=stance_payload_sha)
+        elif name == "stand_support":
+            params = {"command_name": "twist", "sensor_name": "feet_ground_contact", "command_threshold": 0.1}
+        elif name in ("phase_gait", "out_of_phase_double_support"):
+            params = {
+                "command_name": "twist",
+                "sensor_name": "feet_ground_contact",
+                "command_threshold": 0.1,
+                **REWARD_V3_PHASE,
+            }
+        elif name == "clearance":
+            params = {
+                "command_name": "twist",
+                "sensor_name": "feet_ground_contact",
+                "command_threshold": 0.1,
+                "site_names": list(FOOT_SITES),
+                "site_ids": foot_site_ids,
+                "clearance_height": 0.10,
+                "clearance_sigma": 0.05,
+                **REWARD_V3_PHASE,
+            }
+        elif name == "touchdown_airtime":
+            params = {
+                "sensor_name": "feet_ground_contact",
+                "site_names": list(FOOT_SITES),
+                "site_ids": foot_site_ids,
+                "airtime_clip": 0.5,
+            }
+        elif name == "soft_landing":
+            params = {
+                "sensor_name": "feet_ground_contact",
+                "site_names": list(FOOT_SITES),
+                "site_ids": foot_site_ids,
+                "landing_velocity_sigma": 0.5,
+            }
+        elif name == "foot_slip":
+            params = {"sensor_name": "feet_ground_contact", "site_names": list(FOOT_SITES), "site_ids": foot_site_ids}
+        elif name == "nonfoot_contact":
+            params = {
+                "sensor_name": "nonfoot_ground_contact",
+                "body_names": nonfoot_body_names,
+                "body_ids": nonfoot_body_ids,
+                "terrain_name": "terrain",
+            }
+        elif name.startswith("pose_"):
+            group_ids = groups[name]
+            params = {
+                "asset_name": "robot",
+                "semantic_joint_names": [semantic_names[i] for i in group_ids],
+                "anonymous_joint_names": [anonymous_names[i] for i in group_ids],
+                "joint_ids": group_ids,
+                "q_ref": [q_ref[i] for i in group_ids],
+                "stance_payload_sha256": stance_payload_sha,
+            }
+        elif name in ("joint_velocity", "joint_limit"):
+            params = {
+                "asset_name": "robot",
+                "semantic_joint_names": semantic_names,
+                "anonymous_joint_names": anonymous_names,
+                "joint_ids": list(range(29)),
+            }
+            if name == "joint_limit":
+                params.update(lower=indices["joint_lower"], upper=indices["joint_upper"], soft_fraction=0.9)
+        elif name in ("action_magnitude", "action_rate"):
+            params = {"action_name": "joint_pos"}
+            if name == "action_rate":
+                params["previous_action_reset"] = 0.0
+        terms[name] = RewardTermCfg(func=funcs[name], weight=REWARD_V3_WEIGHTS[name], params=params)
+    return terms
+
+
+def task072_reward_active_table_from_cfg(cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    import inspect
+
+    table = []
+    for name, term_cfg in cfg.items():
+        func = term_cfg.func
+        table.append(
+            {
+                "name": name,
+                "module": func.__module__,
+                "qualname": func.__qualname__,
+                "source_file": str(Path(inspect.getsourcefile(func) or "").resolve()),
+                "function_source_sha256": hashlib.sha256(inspect.getsource(func).encode()).hexdigest(),
+                "weight": float(term_cfg.weight),
+                "params": term_cfg.params,
+            }
+        )
+    return table
+
+
+def task072_reward_active_table_from_manager(manager: Any) -> list[dict[str, Any]]:
+    return task072_reward_active_table_from_cfg({name: manager.get_term_cfg(name) for name in manager.active_terms})
+
+
+def task072_canonical_reward_payload(active_table: list[dict[str, Any]]) -> dict[str, Any]:
+    payload = {
+        "schema_version": 1,
+        "id": REWARD_CONTRACT_VERSION,
+        "lineage_id": LINEAGE_ID,
+        "active_terms": active_table,
+        "signal_sampling": {
+            "step_source": "ManagerBasedRlEnv.step RewardManager point after decimation and termination compute before reset",
+            "contact_sensor": "feet_ground_contact logical OR over 7 capsules per foot against terrain",
+            "action": "RslRlVecEnvWrapper-clipped normalized joint_pos action; previous action resets to zero",
+            "q_ref": "bound stance_solution.joint_qpos",
+        },
+        "phase": {"clock": "episode_length_buf", "first_action_k": 1, "reset_k": 0, **REWARD_V3_PHASE},
+        "dt": {"control_dt": 0.02, "reward_manager_scale_by_dt": True, "term_functions_premultiply_dt": False},
+    }
+    payload["payload_sha256"] = payload_sha256(payload)
+    return payload
+
+
+def task072_validate_reward_active_table(table: list[dict[str, Any]]) -> str:
+    if [row.get("name") for row in table] != list(REWARD_V3_ORDER):
+        raise ValueError("Task072 reward active table has wrong key/order/count")
+    forbidden = {"foot_gait", "feet_gait", "is_terminated"}
+    if forbidden & {str(row.get("name")) for row in table}:
+        raise ValueError("Task072 reward active table contains forbidden parent reward")
+    seen: set[str] = set()
+    for row in table:
+        name = str(row["name"])
+        if name in seen:
+            raise ValueError(f"Task072 reward active table contains duplicate term {name}")
+        seen.add(name)
+        if row.get("module") != "task072_mjlab_contact_runner" or row.get("qualname") != f"task072_reward_{name}":
+            raise ValueError(f"Task072 reward term uses parent or alias callable: {name}")
+        if "<locals>" in str(row.get("qualname")):
+            raise ValueError(f"Task072 reward term is nested: {name}")
+        if float(row.get("weight")) != REWARD_V3_WEIGHTS[name]:
+            raise ValueError(f"Task072 reward weight drift: {name}")
+    phase = table[list(REWARD_V3_ORDER).index("phase_gait")]["params"]
+    if phase.get("period") != 0.8 or phase.get("offsets") != [0.0, 0.5] or phase.get("stance_fraction") != 0.55:
+        raise ValueError("Task072 reward phase params drift")
+    double = table[list(REWARD_V3_ORDER).index("out_of_phase_double_support")]["params"]
+    if double.get("period") != 0.8 or double.get("offsets") != [0.0, 0.5] or double.get("stance_fraction") != 0.55:
+        raise ValueError("Task072 reward phase params drift")
+    return payload_sha256(table)
+
+
+def task072_require_train_eval_reward_match(train_sha256: str, eval_sha256: str) -> None:
+    if train_sha256 != eval_sha256:
+        raise ValueError("Task072 train/eval reward active-table SHA drift")
+
+
+def task072_reward_v3_oracle_pre_dt_means() -> dict[str, float]:
+    totals = {"static_both": 0.0, "ideal_phase_matched": 0.0, "persistent_left_only": 0.0}
+    for step in range(1, 41):
+        phase = (step % 40) / 40.0
+        desired = [((phase + offset) % 1.0) < 0.55 for offset in (0.0, 0.5)]
+        fixtures = {
+            "static_both": {"vx": 0.0, "contact": [True, True], "height": [0.0, 0.0]},
+            "ideal_phase_matched": {
+                "vx": 0.5,
+                "contact": desired,
+                "height": [0.0 if contact else 0.10 for contact in desired],
+            },
+            "persistent_left_only": {"vx": 0.0, "contact": [True, False], "height": [0.0, 0.0]},
+        }
+        for name, fixture in fixtures.items():
+            contact = fixture["contact"]
+            height = fixture["height"]
+            raw = 0.0
+            raw += 2.0 * (math.exp(-(((fixture["vx"] - 0.5) ** 2) / 0.25)) - 1.0)
+            raw += 0.50
+            raw += 0.25
+            raw += 0.50 * (sum(actual == expected for actual, expected in zip(contact, desired)) / 2.0)
+            raw += 0.35 * (-float(all(contact) and not all(desired)))
+            swing = [
+                index
+                for index, (expected, actual) in enumerate(zip(desired, contact))
+                if not expected and not actual
+            ]
+            if swing:
+                raw += 0.50 * (
+                    sum(math.exp(-(((height[index] - 0.10) / 0.05) ** 2)) for index in swing)
+                    / len(swing)
+                )
+            totals[name] += raw
+    means = {name: value / 40.0 for name, value in totals.items()}
+    means["ideal_static_margin"] = means["ideal_phase_matched"] - means["static_both"]
+    return means
+
+
+class Task072RewardFixtureAdapter:
+    """Tensor-backed env surface consumed by the Task072 reward callables."""
+
+    def __init__(self, active_table: list[dict[str, Any]], num_envs: int = 1, device: str = "cpu") -> None:
+        import torch
+
+        self.num_envs = int(num_envs)
+        self.device = device
+        self.step_dt = 0.02
+        self.max_episode_length_s = 10_000.0
+        self.episode_length_buf = torch.zeros(self.num_envs, dtype=torch.long, device=device)
+        self.command_manager = _Task072FixtureCommandManager(self.num_envs, device)
+        max_site_id = 1
+        nonfoot_count = 1
+        stance_height = 1.0
+        foot_site_ids = [0, 1]
+        for row in active_table:
+            params = row["params"]
+            site_ids = params.get("site_ids", [])
+            if isinstance(site_ids, int):
+                site_ids = [site_ids]
+            if site_ids:
+                max_site_id = max(max_site_id, max(int(value) for value in site_ids))
+            nonfoot_count = max(nonfoot_count, len(params.get("body_ids", [])))
+            if row["name"] == "clearance":
+                foot_site_ids = [int(value) for value in params["site_ids"]]
+            if row["name"] == "height":
+                stance_height = float(params["stance_height"])
+        self._site_count = max_site_id + 1
+        self._nonfoot_count = nonfoot_count
+        self._foot_site_ids = foot_site_ids
+        self.scene = {
+            "robot": SimpleNamespace(data=_Task072FixtureRobotData(self.num_envs, self._site_count, device)),
+            "feet_ground_contact": _Task072FixtureFeetContact(self.num_envs, device),
+            "nonfoot_ground_contact": SimpleNamespace(
+                data=SimpleNamespace(found=torch.zeros((self.num_envs, self._nonfoot_count), device=device))
+            ),
+        }
+        self.action_manager = _Task072FixtureActionManager(self.num_envs, 29, device)
+        self._q_ref = torch.zeros((self.num_envs, 29), device=device)
+        for row in active_table:
+            if str(row["name"]).startswith("pose_"):
+                for joint_id, value in zip(row["params"]["joint_ids"], row["params"]["q_ref"]):
+                    self._q_ref[:, int(joint_id)] = float(value)
+        self._stance_height = stance_height
+
+    def set_state(self, fixture: str, step_index: int) -> None:
+        import torch
+
+        if fixture not in {"static_both", "ideal_phase_matched", "persistent_left_only"}:
+            raise ValueError(f"unknown Task072 reward fixture: {fixture}")
+        phase = (int(step_index) % 40) / 40.0
+        desired = torch.tensor(
+            [((phase + offset) % 1.0) < 0.55 for offset in (0.0, 0.5)],
+            dtype=torch.bool,
+            device=self.device,
+        )
+        contact = {
+            "static_both": torch.tensor([True, True], device=self.device),
+            "ideal_phase_matched": desired,
+            "persistent_left_only": torch.tensor([True, False], device=self.device),
+        }[fixture]
+        vx = 0.5 if fixture == "ideal_phase_matched" else 0.0
+        robot = self.scene["robot"].data
+        robot.root_link_lin_vel_b.zero_()
+        robot.root_link_lin_vel_b[:, 0] = vx
+        robot.root_link_ang_vel_b.zero_()
+        robot.projected_gravity_b[:] = torch.tensor([0.0, 0.0, -1.0], device=self.device)
+        robot.root_link_pos_w.zero_()
+        robot.root_link_pos_w[:, 2] = self._stance_height
+        robot.root_link_quat_w[:] = torch.tensor([1.0, 0.0, 0.0, 0.0], device=self.device)
+        robot.joint_pos[:] = self._q_ref
+        robot.joint_vel.zero_()
+        robot.site_pos_w.zero_()
+        robot.site_lin_vel_w.zero_()
+        for foot, site_id in enumerate(self._foot_site_ids):
+            if site_id < self._site_count:
+                robot.site_pos_w[:, site_id, 2] = 0.10 if fixture == "ideal_phase_matched" and not bool(desired[foot]) else 0.0
+        contact_sensor = self.scene["feet_ground_contact"]
+        contact_sensor.data.current_contact_time[:] = contact.float().view(1, 2) * self.step_dt
+        contact_sensor.data.last_air_time.zero_()
+        contact_sensor._first_contact.zero_()
+        self.scene["nonfoot_ground_contact"].data.found.zero_()
+        self.action_manager.action.zero_()
+        self.action_manager.prev_action.zero_()
+        self.episode_length_buf[:] = int(step_index)
+
+
+class _Task072FixtureRobotData:
+    def __init__(self, num_envs: int, site_count: int, device: str) -> None:
+        import torch
+
+        self.root_link_lin_vel_b = torch.zeros((num_envs, 3), device=device)
+        self.root_link_ang_vel_b = torch.zeros((num_envs, 3), device=device)
+        self.root_link_pos_w = torch.zeros((num_envs, 3), device=device)
+        self.root_link_quat_w = torch.zeros((num_envs, 4), device=device)
+        self.projected_gravity_b = torch.zeros((num_envs, 3), device=device)
+        self.joint_pos = torch.zeros((num_envs, 29), device=device)
+        self.joint_vel = torch.zeros((num_envs, 29), device=device)
+        self.site_pos_w = torch.zeros((num_envs, site_count, 3), device=device)
+        self.site_lin_vel_w = torch.zeros((num_envs, site_count, 3), device=device)
+
+
+class _Task072FixtureCommandManager:
+    def __init__(self, num_envs: int, device: str) -> None:
+        import torch
+
+        self._command = torch.tensor([0.5, 0.0, 0.0], device=device).repeat(num_envs, 1)
+
+    def get_command(self, command_name: str) -> Any:
+        if command_name != "twist":
+            raise ValueError(f"unexpected Task072 command name: {command_name}")
+        return self._command
+
+
+class _Task072FixtureFeetContact:
+    def __init__(self, num_envs: int, device: str) -> None:
+        import torch
+
+        self.data = SimpleNamespace(
+            current_contact_time=torch.zeros((num_envs, 2), device=device),
+            last_air_time=torch.zeros((num_envs, 2), device=device),
+        )
+        self._first_contact = torch.zeros((num_envs, 2), dtype=torch.bool, device=device)
+
+    def compute_first_contact(self, dt: float) -> Any:
+        del dt
+        return self._first_contact
+
+
+class _Task072FixtureActionManager:
+    def __init__(self, num_envs: int, action_dim: int, device: str) -> None:
+        import torch
+
+        self.action = torch.zeros((num_envs, action_dim), device=device)
+        self.prev_action = torch.zeros((num_envs, action_dim), device=device)
+
+
+def task072_reward_fixture_probe(active_cfg: dict[str, Any]) -> dict[str, Any]:
+    import torch
+    from mjlab.managers.reward_manager import RewardManager
+
+    active_table = task072_reward_active_table_from_cfg(active_cfg)
+    fixture = Task072RewardFixtureAdapter(active_table)
+    manager_pre = RewardManager(active_cfg, fixture, scale_by_dt=False)
+    manager_dt = RewardManager(active_cfg, fixture, scale_by_dt=True)
+    result: dict[str, Any] = {}
+    for name in ("static_both", "ideal_phase_matched", "persistent_left_only"):
+        pre_values = []
+        dt_values = []
+        max_iterable_error = 0.0
+        for step_index in range(1, 41):
+            fixture.set_state(name, step_index)
+            pre = manager_pre.compute(fixture.step_dt)
+            dt_reward = manager_dt.compute(fixture.step_dt)
+            breakdown = task072_reward_breakdown_from_manager(manager_pre, fixture, fixture.step_dt)
+            iterable_total = sum(float(values[0]) for _term, values in manager_pre.get_active_iterable_terms(0))
+            total_pre = float(breakdown["total_weighted_pre_dt"][0].detach().cpu())
+            max_iterable_error = max(max_iterable_error, abs(iterable_total - total_pre))
+            pre_values.append(float(pre[0].detach().cpu()))
+            dt_values.append(float(dt_reward[0].detach().cpu()))
+        pre_mean = sum(pre_values) / len(pre_values)
+        dt_mean = sum(dt_values) / len(dt_values)
+        result[name] = {
+            "weighted_pre_dt_mean": pre_mean,
+            "dt_contribution_mean": dt_mean,
+            "oracle_abs_diff": abs(pre_mean - REWARD_V3_ORACLE_EXPECTED[name]),
+            "dt_once_abs_diff": abs(dt_mean - pre_mean * 0.02),
+            "iterable_abs_diff_max": max_iterable_error,
+        }
+    result["ideal_static_margin"] = (
+        result["ideal_phase_matched"]["weighted_pre_dt_mean"]
+        - result["static_both"]["weighted_pre_dt_mean"]
+    )
+    result["ideal_static_margin_abs_diff"] = abs(result["ideal_static_margin"] - REWARD_V3_ORACLE_EXPECTED["ideal_static_margin"])
+    result["passed"] = (
+        all(value["oracle_abs_diff"] <= 1.0e-6 and value["dt_once_abs_diff"] <= 1.0e-6 and value["iterable_abs_diff_max"] <= 1.0e-6 for value in result.values() if isinstance(value, dict))
+        and result["ideal_static_margin_abs_diff"] <= 1.0e-6
+    )
+    return result
+
+
+def task072_reward_breakdown_from_manager(manager: Any, env: Any, dt: float) -> dict[str, Any]:
+    """Extract actual manager terms without duplicating or reimplementing formulas."""
+    rows = []
+    for name in manager.active_terms:
+        cfg = manager.get_term_cfg(name)
+        raw = cfg.func(env, **cfg.params)
+        weighted = raw * cfg.weight
+        rows.append(
+            {
+                "name": name,
+                "raw": raw,
+                "weight": float(cfg.weight),
+                "weighted_pre_dt": weighted,
+                "dt_contribution": weighted * dt,
+            }
+        )
+    return {
+        "rows": rows,
+        "total_weighted_pre_dt": sum((row["weighted_pre_dt"] for row in rows)),
+        "total_dt": sum((row["dt_contribution"] for row in rows)),
+    }
+
+
+class Task072ClipLoggingVecEnvWrapper:
+    """Transparent pre-clip action boundary with immutable 24-step snapshots."""
+    def __init__(self, base_env: Any, semantic_joint_names: Any, rollout_steps: int) -> None:
+        self.base_env, self.semantic_joint_names = base_env, tuple(semantic_joint_names)
+        self.rollout_steps = int(rollout_steps)
+        if self.rollout_steps <= 0:
+            raise ValueError("Task072 clip logging rollout_steps must be positive")
+        if len(self.semantic_joint_names) != int(base_env.num_actions):
+            raise ValueError("Task072 clip logging semantic joint count must match action dim")
+        self.joint_count = len(self.semantic_joint_names)
+        self.steps_in_update = 0
+        self._scalar_denominator = 0
+        self._clipped_scalars = 0
+        self._env_step_denominator = 0
+        self._env_steps_with_any_clip = 0
+        self._per_joint_clipped = [0 for _ in self.semantic_joint_names]
+        self._max_abs_raw_action = 0.0
+        self.completed_update_records: list[dict[str, Any]] = []
+
+    def __getattr__(self, name: str) -> Any: return getattr(self.base_env, name)
+    @property
+    def unwrapped(self) -> Any: return self.base_env.unwrapped
+    @property
+    def cfg(self) -> Any: return self.base_env.cfg
+    @property
+    def episode_length_buf(self) -> Any: return self.base_env.episode_length_buf
+    @episode_length_buf.setter
+    def episode_length_buf(self, value: Any) -> None:
+        self.base_env.episode_length_buf = value
+    def reset(self, *args: Any, **kwargs: Any) -> Any: return self.base_env.reset(*args, **kwargs)
+    def step(self, raw_action: Any) -> Any:
+        import torch
+
+        action = torch.as_tensor(raw_action)
+        if action.ndim != 2 or int(action.shape[1]) != self.joint_count:
+            raise ValueError("Task072 clip logging expected [num_envs, 29] raw actions")
+        clipped = torch.abs(action) > 1.0
+        self._scalar_denominator += int(action.numel())
+        self._clipped_scalars += int(clipped.sum().detach().cpu())
+        self._env_step_denominator += int(action.shape[0])
+        self._env_steps_with_any_clip += int(clipped.any(dim=1).sum().detach().cpu())
+        per_joint = clipped.sum(dim=0).detach().cpu().tolist()
+        self._per_joint_clipped = [int(old + new) for old, new in zip(self._per_joint_clipped, per_joint)]
+        self._max_abs_raw_action = max(self._max_abs_raw_action, float(torch.abs(action).max().detach().cpu()))
+        result = self.base_env.step(raw_action)
+        self.steps_in_update += 1
+        if self.steps_in_update == self.rollout_steps:
+            self.completed_update_records.append(self._snapshot_clip_record())
+            self._reset_clip_counts()
+        return result
+    def drain_task072_clip_update_records(self) -> list[dict[str, Any]]:
+        records = list(self.completed_update_records)
+        self.completed_update_records.clear()
+        return records
+
+    def _snapshot_clip_record(self) -> dict[str, Any]:
+        per_joint_fraction = {
+            name: self._per_joint_clipped[index] / self._env_step_denominator
+            for index, name in enumerate(self.semantic_joint_names)
+        }
+        per_joint_numerators = {
+            name: self._per_joint_clipped[index]
+            for index, name in enumerate(self.semantic_joint_names)
+        }
+        return {
+            "update_index": len(self.completed_update_records),
+            "num_envs": int(self._env_step_denominator // self.rollout_steps),
+            "rollout_steps": self.rollout_steps,
+            "joint_count": self.joint_count,
+            "clipped_scalars": int(self._clipped_scalars),
+            "scalar_denominator": int(self._scalar_denominator),
+            "scalar_clip_fraction": self._clipped_scalars / self._scalar_denominator,
+            "env_steps_with_any_clip": int(self._env_steps_with_any_clip),
+            "env_step_denominator": int(self._env_step_denominator),
+            "env_step_any_clip_fraction": self._env_steps_with_any_clip / self._env_step_denominator,
+            "per_joint_clipped_scalars": per_joint_numerators,
+            "per_joint_denominator": int(self._env_step_denominator),
+            "per_joint_clip_fraction": per_joint_fraction,
+            "max_abs_raw_action": float(self._max_abs_raw_action),
+            "clip_numerator": int(self._clipped_scalars),
+            "clip_denominator": int(self._scalar_denominator),
+            "clip_fraction": self._clipped_scalars / self._scalar_denominator,
+        }
+
+    def _reset_clip_counts(self) -> None:
+        self.steps_in_update = 0
+        self._scalar_denominator = 0
+        self._clipped_scalars = 0
+        self._env_step_denominator = 0
+        self._env_steps_with_any_clip = 0
+        self._per_joint_clipped = [0 for _ in self.semantic_joint_names]
+        self._max_abs_raw_action = 0.0
+
+
+def validate_task072_clip_records(records: list[dict[str, Any]], *, expected_updates: int | None = None) -> list[dict[str, Any]]:
+    if expected_updates is not None and len(records) != expected_updates:
+        raise ValueError("Task072 clip metric update count mismatch")
+    required = {
+        "update_index",
+        "clipped_scalars",
+        "scalar_denominator",
+        "scalar_clip_fraction",
+        "env_steps_with_any_clip",
+        "env_step_denominator",
+        "env_step_any_clip_fraction",
+        "per_joint_clipped_scalars",
+        "per_joint_denominator",
+        "per_joint_clip_fraction",
+        "max_abs_raw_action",
+        "num_envs",
+        "rollout_steps",
+        "joint_count",
+    }
+    for index, record in enumerate(records):
+        missing = sorted(required - set(record))
+        if missing:
+            raise ValueError(f"Task072 clip metric missing fields: {missing}")
+        if int(record["update_index"]) != index:
+            raise ValueError("Task072 clip metric update index mismatch")
+        if int(record["joint_count"]) != 29:
+            raise ValueError("Task072 clip metric joint count mismatch")
+        if int(record["scalar_denominator"]) != int(record["env_step_denominator"]) * 29:
+            raise ValueError("Task072 clip metric denominator mismatch")
+        if len(record["per_joint_clip_fraction"]) != 29 or len(record["per_joint_clipped_scalars"]) != 29:
+            raise ValueError("Task072 clip metric per-joint field count mismatch")
+        if not math.isfinite(float(record["max_abs_raw_action"])):
+            raise ValueError("Task072 clip metric max raw action is non-finite")
+    return records
+
+
+def pool_task072_clip_records(records: list[dict[str, Any]], *, last_n: int = 7) -> dict[str, Any]:
+    validate_task072_clip_records(records)
+    selected = records[-last_n:]
+    if not selected:
+        raise ValueError("Task072 clip metric pool requires at least one update")
+    clipped_scalars = sum(int(record["clipped_scalars"]) for record in selected)
+    scalar_denominator = sum(int(record["scalar_denominator"]) for record in selected)
+    env_steps_with_any_clip = sum(int(record["env_steps_with_any_clip"]) for record in selected)
+    env_step_denominator = sum(int(record["env_step_denominator"]) for record in selected)
+    per_joint_clipped = {
+        name: sum(int(record["per_joint_clipped_scalars"][name]) for record in selected)
+        for name in selected[0]["per_joint_clipped_scalars"]
+    }
+    per_joint_denominator = sum(int(record["per_joint_denominator"]) for record in selected)
+    per_joint_fraction = {
+        name: count / per_joint_denominator
+        for name, count in per_joint_clipped.items()
+    }
+    return {
+        "update_indices": [int(record["update_index"]) for record in selected],
+        "clipped_scalars": clipped_scalars,
+        "scalar_denominator": scalar_denominator,
+        "scalar_clip_fraction": clipped_scalars / scalar_denominator,
+        "env_steps_with_any_clip": env_steps_with_any_clip,
+        "env_step_denominator": env_step_denominator,
+        "env_step_any_clip_fraction": env_steps_with_any_clip / env_step_denominator,
+        "per_joint_clipped_scalars": per_joint_clipped,
+        "per_joint_denominator": per_joint_denominator,
+        "per_joint_clip_fraction": per_joint_fraction,
+        "max_abs_raw_action": max(float(record["max_abs_raw_action"]) for record in selected),
+        "checks": {
+            "scalar_clip_fraction": clipped_scalars / scalar_denominator <= 0.10,
+            "env_step_any_clip_fraction": env_steps_with_any_clip / env_step_denominator <= 0.50,
+            "per_joint_clip_fraction": max(per_joint_fraction.values()) <= 0.25,
+        },
+    }
+
+
 def apply_signed_action_contract(raw_actions: Any, negative_scale: Any, positive_scale: Any, offset: Any) -> tuple[Any, Any]:
     import torch
 
@@ -663,7 +1561,7 @@ def build_task_cfg(
     from mjlab.entity import EntityArticulationInfoCfg
     from mjlab.envs.mdp.actions import JointPositionAction, JointPositionActionCfg
     from mjlab.envs.mdp.actions.actions import resolve_matching_names_values
-    from mjlab.sensor import ContactMatch
+    from mjlab.sensor import ContactMatch, ContactSensorCfg
     from mjlab.tasks.registry import load_env_cfg, load_rl_cfg, load_runner_cls, register_mjlab_task
     from mjlab.utils.spec_config import CollisionCfg
 
@@ -736,15 +1634,23 @@ def build_task_cfg(
         elif sensor.name == "self_collision":
             sensor.primary = ContactMatch(mode="subtree", pattern=PELVIS_BODY, entity="robot")
             sensor.secondary = ContactMatch(mode="subtree", pattern=PELVIS_BODY, entity="robot")
+    nonfoot_names = [
+        body.get("name", "") for body in ET.parse(ASSET_XML).getroot().findall(".//body")
+        if body.get("name") and body.get("name") not in FOOT_BODIES
+    ]
+    nonfoot_pattern = rf"^({'|'.join(nonfoot_names)})$"
+    env_cfg.scene.sensors = tuple(env_cfg.scene.sensors or ()) + (ContactSensorCfg(
+        name="nonfoot_ground_contact",
+        primary=ContactMatch(mode="body", pattern=nonfoot_pattern, entity="robot"),
+        secondary=ContactMatch(mode="body", pattern="terrain"),
+        fields=("found",), reduce="none", num_slots=1, secondary_policy="first",
+    ),)
     env_cfg.observations["critic"].terms["foot_height"].params["asset_cfg"].site_names = FOOT_SITES
     if "foot_friction" in env_cfg.events:
         env_cfg.events["foot_friction"].params["asset_cfg"].geom_names = FOOT_GEOMS
     if "base_com" in env_cfg.events:
         env_cfg.events["base_com"].params["asset_cfg"].body_names = (TORSO_BODY,)
-    for name in ("body_orientation_l2", "body_ang_vel"):
-        env_cfg.rewards[name].params["asset_cfg"].body_names = (TORSO_BODY,)
-    for name in ("foot_clearance", "foot_slip"):
-        env_cfg.rewards[name].params["asset_cfg"].site_names = FOOT_SITES
+    env_cfg.rewards = task072_reward_v3_table(stance)
     action_cfg = env_cfg.actions["joint_pos"]
     if not isinstance(action_cfg, JointPositionActionCfg):
         raise TypeError("expected MJLab joint_pos action")
@@ -796,7 +1702,7 @@ def build_task_cfg(
     twist_cmd.ranges.lin_vel_y = (0.0, 0.0)
     twist_cmd.ranges.ang_vel_z = (0.0, 0.0)
     twist_cmd.ranges.heading = None
-    env_cfg.episode_length_s = 10_000.0 if not fixed_command else float(max(20.0, rollout_steps / 50.0))
+    env_cfg.episode_length_s = 10_000.0
     for event_name in ("push_robot", "foot_friction", "encoder_bias", "base_com"):
         env_cfg.events.pop(event_name, None)
     if "reset_base" in env_cfg.events:
@@ -811,12 +1717,9 @@ def build_task_cfg(
         env_cfg.events["reset_robot_joints"].params["velocity_range"] = (0.0, 0.0)
     env_cfg.observations["actor"].enable_corruption = False
     env_cfg.curriculum = {}
-    if "is_terminated" in env_cfg.rewards:
-        env_cfg.rewards.pop("is_terminated")
-    if "feet_gait" in env_cfg.rewards:
-        env_cfg.rewards.pop("feet_gait")
 
     agent_cfg.seed = int(seed)
+    agent_cfg.clip_actions = 1.0
     agent_cfg.num_steps_per_env = int(rollout_steps)
     agent_cfg.max_iterations = int(max_iterations)
     agent_cfg.save_interval = max(1, int(max_iterations))
@@ -858,7 +1761,11 @@ def build_task_cfg(
         "expected_actuator_ctrl_eq": dict(stance["actuator_ctrl_eq"]),
         "disabled_events": ["push_robot", "foot_friction", "encoder_bias", "base_com"],
         "curriculum_disabled": True,
-        "removed_parent_rewards": ["is_terminated", "feet_gait"],
+        "reward_terms": list(REWARD_V3_ORDER),
+        "reward_active_table_sha256": task072_validate_reward_active_table(task072_reward_active_table_from_cfg(env_cfg.rewards)),
+        "reward_payload_sha256": task072_canonical_reward_payload(
+            task072_reward_active_table_from_cfg(env_cfg.rewards)
+        )["payload_sha256"],
     }
     try:
         register_mjlab_task(task_id, env_cfg, env_cfg, agent_cfg, runner_cls)
@@ -1361,9 +2268,15 @@ def _load_capacity_evidence(path: Path, *, num_envs: int, rollout_steps: int) ->
 
 def _validate_training_manifest_for_eval(payload: dict[str, Any]) -> None:
     current = _common_manifest(argparse.Namespace(command="evaluate-manifest-check", seed=DEFAULT_SEED + 99))
+    clip_records = payload.get("action_clip_update_records", [])
+    try:
+        validate_task072_clip_records(clip_records, expected_updates=payload.get("updates"))
+        clip_ok = bool(clip_records)
+    except Exception:
+        clip_ok = False
     checks = {
         "schema": payload.get("schema_version") == 3,
-        "subtask": payload.get("subtask") == "003h",
+        "subtask": payload.get("subtask") == "003i",
         "lineage": payload.get("lineage_id") == LINEAGE_ID,
         "runtime_lineage": payload.get("runtime_lineage_id") == LINEAGE_ID,
         "action_contract": payload.get("action_contract") == current["action_contract"],
@@ -1381,9 +2294,27 @@ def _validate_training_manifest_for_eval(payload: dict[str, Any]) -> None:
         "external_passed": all(payload.get("external_mjlab_checks", {}).values()),
         "training_complete": payload.get("training_execution_complete") is True,
         "capacity_consumed": all(payload.get("capacity_evidence", {}).get("consumption_checks", {}).values()),
+        "action_clip_metrics": clip_ok,
+        "progression_sha": bool(payload.get("progression", {}).get("sha256")),
     }
     if not all(checks.values()):
         raise ValueError(f"training manifest failed Task072 eval lineage checks: {checks}")
+
+
+def _write_task072_clip_tensorboard(log_dir: Path, records: list[dict[str, Any]]) -> None:
+    from torch.utils.tensorboard import SummaryWriter
+
+    writer = SummaryWriter(log_dir=str(log_dir))
+    try:
+        for record in records:
+            step = int(record["update_index"])
+            writer.add_scalar("Diagnostics/action_clip/scalar_fraction", float(record["scalar_clip_fraction"]), step)
+            writer.add_scalar("Diagnostics/action_clip/env_step_any_fraction", float(record["env_step_any_clip_fraction"]), step)
+            writer.add_scalar("Diagnostics/action_clip/max_abs_raw", float(record["max_abs_raw_action"]), step)
+            for joint_name, value in record["per_joint_clip_fraction"].items():
+                writer.add_scalar(f"Diagnostics/action_clip/joint/{joint_name}", float(value), step)
+    finally:
+        writer.close()
 
 
 def one_update_train(args: argparse.Namespace) -> int:
@@ -1416,15 +2347,36 @@ def one_update_train(args: argparse.Namespace) -> int:
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
     outer = ManagerBasedRlEnv(cfg=env_cfg, device=args.device, render_mode=None)
-    env = RslRlVecEnvWrapper(outer, clip_actions=agent_cfg.clip_actions)
+    base_env = RslRlVecEnvWrapper(outer, clip_actions=agent_cfg.clip_actions)
+    env = Task072ClipLoggingVecEnvWrapper(base_env, list(SEMANTIC_TO_ANON_JOINT), agent_cfg.num_steps_per_env)
     runner_cls = load_runner_cls(registration["task_id"]) or MjlabOnPolicyRunner
     runner = runner_cls(env, asdict(agent_cfg), str(log_dir), args.device)
     start = time.time()
+    clip_records: list[dict[str, Any]] = []
     try:
         runner.learn(num_learning_iterations=args.updates, init_at_random_ep_len=True)
+        clip_records = validate_task072_clip_records(
+            env.drain_task072_clip_update_records(),
+            expected_updates=int(args.updates),
+        )
+        if env.steps_in_update != 0:
+            raise ValueError("Task072 clip logging update did not reset at learn drain")
+        clip_summary = pool_task072_clip_records(clip_records, last_n=min(7, len(clip_records)))
+        _write_task072_clip_tensorboard(log_dir, clip_records)
+        progression = {
+            "schema_version": 1,
+            "lineage_id": LINEAGE_ID,
+            "action_clip_update_records": clip_records,
+            "action_clip_last_7_summary": clip_summary,
+            "passed": True,
+        }
+        progression_path = log_dir / "progression.json"
+        write_json(progression_path, progression)
     finally:
         env.close()
     checkpoints = sorted(log_dir.glob("model_*.pt"))
+    progression_path = log_dir / "progression.json"
+    clip_summary = pool_task072_clip_records(clip_records, last_n=min(7, len(clip_records))) if clip_records else None
     payload = {
         **_common_manifest(args),
         "task_id": registration["task_id"],
@@ -1438,6 +2390,13 @@ def one_update_train(args: argparse.Namespace) -> int:
         "observed_transitions": args.num_envs * args.rollout_steps * args.updates,
         "checkpoint_paths": [str(path) for path in checkpoints],
         "checkpoint_sha256": {str(path): sha256_path(path) for path in checkpoints},
+        "action_clip_update_records": clip_records,
+        "action_clip_update_count": len(clip_records),
+        "action_clip_last_7_summary": clip_summary,
+        "progression": {
+            "path": str(progression_path),
+            "sha256": sha256_path(progression_path) if progression_path.exists() else None,
+        },
         "gpu_lock": gpu_lock,
         "capacity_evidence": {
             "path": str(args.capacity_artifact.resolve()),
@@ -1446,7 +2405,7 @@ def one_update_train(args: argparse.Namespace) -> int:
         },
         "wall_time_s": time.time() - start,
         "training_execution_complete": len(checkpoints) > 0,
-        "passed": len(checkpoints) > 0,
+        "passed": len(checkpoints) > 0 and len(clip_records) == int(args.updates),
     }
     write_json(log_dir / "task072_mjlab_one_update_smoke.json", payload)
     write_json(log_dir / "run_manifest.json", payload)
@@ -1462,6 +2421,14 @@ def _force_fixed_command(env: Any) -> None:
     term.is_standing_env[:] = False
     if hasattr(term, "is_heading_env"):
         term.is_heading_env[:] = False
+
+
+def _metric_ge(value: Any, threshold: float) -> bool:
+    return value is not None and math.isfinite(float(value)) and float(value) >= threshold
+
+
+def _metric_le(value: Any, threshold: float) -> bool:
+    return value is not None and math.isfinite(float(value)) and float(value) <= threshold
 
 
 def evaluate_checkpoint(args: argparse.Namespace) -> int:
@@ -1500,106 +2467,124 @@ def evaluate_checkpoint(args: argparse.Namespace) -> int:
         agent_cfg = load_rl_cfg(registration["task_id"])
         configure_torch_backends()
         torch.set_grad_enabled(False)
+        if agent_cfg.clip_actions != 1.0:
+            raise ValueError("Task072 eval requires agent_cfg.clip_actions == 1.0")
         outer = ManagerBasedRlEnv(cfg=env_cfg, device=args.device, render_mode=None)
-        env = RslRlVecEnvWrapper(outer, clip_actions=agent_cfg.clip_actions)
+        base_env = RslRlVecEnvWrapper(outer, clip_actions=agent_cfg.clip_actions)
+        steps = round(args.eval_seconds / float(outer.step_dt))
+        env = Task072ClipLoggingVecEnvWrapper(base_env, list(SEMANTIC_TO_ANON_JOINT), steps)
         runner_cls = load_runner_cls(registration["task_id"]) or MjlabOnPolicyRunner
         runner = runner_cls(env, asdict(agent_cfg), None, args.device)
         runner.load(str(checkpoint), map_location=args.device)
         policy = runner.get_inference_policy(args.device)
         obs, _extras = env.reset()
         _force_fixed_command(env)
+        env.unwrapped.observation_manager._obs_buffer = None
+        obs = env.get_observations()
+        actor_layout = _observation_layout(env, env_cfg, "actor", obs)
+        command_slice = actor_layout["term_slices"].get("command")
+        if command_slice != [6, 9]:
+            raise ValueError(f"Task072 eval command slice drift: {command_slice}")
+
+        def command_values_from_obs() -> list[float]:
+            return [float(value) for value in obs["actor"][0, command_slice[0]:command_slice[1]].detach().cpu()]
+
+        def assert_fixed_command() -> None:
+            command = env.unwrapped.command_manager.get_command("twist")
+            actual = [float(value) for value in command[0].detach().cpu()]
+            observed = command_values_from_obs()
+            if actual != [0.5, 0.0, 0.0] or observed != [0.5, 0.0, 0.0]:
+                raise ValueError(f"Task072 fixed command drift: actual={actual}, obs={observed}")
+
+        assert_fixed_command()
 
         robot = env.unwrapped.scene["robot"]
         contact_sensor = env.unwrapped.scene["feet_ground_contact"]
-        steps = round(args.eval_seconds / float(env.unwrapped.step_dt))
         start_x = robot.data.root_link_pos_w[:, 0].clone()
-        fallen = torch.zeros(args.eval_envs, dtype=torch.bool, device=args.device)
-        active_counts = torch.zeros(args.eval_envs, dtype=torch.float32, device=args.device)
-        planar_error_sum = torch.zeros(args.eval_envs, dtype=torch.float32, device=args.device)
-        yaw_error_sum = torch.zeros(args.eval_envs, dtype=torch.float32, device=args.device)
-        gravity_xy_sum = torch.zeros(args.eval_envs, dtype=torch.float32, device=args.device)
-        touchdown_counts = torch.zeros(2, dtype=torch.int64, device=args.device)
-        single_support_counts = torch.zeros(2, dtype=torch.int64, device=args.device)
-        alternating = torch.zeros(args.eval_envs, dtype=torch.int64, device=args.device)
-        last_touch = torch.full((args.eval_envs,), -1, dtype=torch.int64, device=args.device)
+        active = torch.ones(args.eval_envs, dtype=torch.bool, device=args.device)
         reward_finite = True
         obs_finite = bool(torch.isfinite(obs["actor"]).all() and torch.isfinite(obs["critic"]).all())
         initial_contact = contact_sensor.data.current_contact_time > 0
-        prev_contact = initial_contact.clone()
+        records: list[dict[str, Any]] = []
 
-        for step in range(steps):
-            active_before = ~fallen
+        for _step in range(steps):
+            active_before = active.clone()
             action = policy(obs.to(args.device))
             obs, reward, done, _extras = env.step(action.to(args.device))
+            if not hasattr(outer, "reset_terminated") or not hasattr(outer, "reset_time_outs"):
+                raise ValueError("MJLab outer env lacks reset_terminated/reset_time_outs")
+            terminated = outer.reset_terminated.clone()
+            time_out = outer.reset_time_outs.clone()
+            if not torch.equal(done.bool(), terminated | time_out):
+                raise ValueError("Task072 eval wrapper done differs from termination/time-out flags")
+            if bool((terminated & time_out).any().detach().cpu()):
+                raise ValueError("Task072 eval termination/time-out cause overlap")
             _force_fixed_command(env)
+            assert_fixed_command()
             reward_finite = bool(reward_finite and torch.isfinite(reward).all())
             obs_finite = bool(obs_finite and torch.isfinite(obs["actor"]).all() and torch.isfinite(obs["critic"]).all())
+            active_after = active_before & ~(terminated | time_out)
             vel = robot.data.root_link_lin_vel_b
             ang = robot.data.root_link_ang_vel_b
             grav = robot.data.projected_gravity_b
             planar = torch.linalg.norm(vel[:, :2] - torch.tensor((0.5, 0.0), device=args.device), dim=1)
-            active = active_before.float()
-            active_counts += active
-            planar_error_sum += planar * active
-            yaw_error_sum += torch.abs(ang[:, 2]) * active
-            gravity_xy_sum += torch.linalg.norm(grav[:, :2], dim=1) * active
             contact = contact_sensor.data.current_contact_time > 0
-            touchdown = (~prev_contact) & contact
-            if step > 0:
-                touchdown_counts += touchdown.sum(dim=0)
-                single = contact.sum(dim=1) == 1
-                single_support_counts += (contact & single.unsqueeze(1)).sum(dim=0)
-                labels = torch.where(
-                    touchdown[:, 0] & ~touchdown[:, 1],
-                    torch.zeros(args.eval_envs, dtype=torch.int64, device=args.device),
-                    torch.where(
-                        touchdown[:, 1] & ~touchdown[:, 0],
-                        torch.ones(args.eval_envs, dtype=torch.int64, device=args.device),
-                        torch.full((args.eval_envs,), -1, dtype=torch.int64, device=args.device),
-                    ),
-                )
-                valid = labels >= 0
-                alternating += (valid & (last_touch >= 0) & (labels != last_touch)).to(torch.int64)
-                last_touch = torch.where(valid, labels, last_touch)
-            prev_contact = contact.clone()
-            fallen |= done.bool()
+            records.append(
+                {
+                    "reset_terminated": [bool(value) for value in terminated.detach().cpu()],
+                    "reset_time_outs": [bool(value) for value in time_out.detach().cpu()],
+                    "done": [bool(value) for value in done.bool().detach().cpu()],
+                    "x": [float(value) for value in robot.data.root_link_pos_w[:, 0].detach().cpu()],
+                    "vx": [float(value) for value in vel[:, 0].detach().cpu()],
+                    "planar_tracking_error": [float(value) for value in planar.detach().cpu()],
+                    "yaw_error": [float(value) for value in torch.abs(ang[:, 2]).detach().cpu()],
+                    "gravity_xy": [float(value) for value in torch.linalg.norm(grav[:, :2], dim=1).detach().cpu()],
+                    "contact": [[bool(item) for item in row] for row in contact.detach().cpu().tolist()],
+                }
+            )
+            active = active_after
 
-        final_x = robot.data.root_link_pos_w[:, 0]
-        nofall = ~fallen
-        displacement = final_x - start_x
-        nofall_count = int(nofall.sum().detach().cpu())
-        denom = torch.clamp(active_counts, min=1.0)
-        mean_displacement = float(displacement[nofall].mean().detach().cpu()) if nofall_count else 0.0
-        nofall_missing_value = 1.0e9
+        cause_metrics = task072_eval_cause_metrics(
+            records,
+            args.eval_envs,
+            float(args.eval_seconds),
+            dt=float(env.unwrapped.step_dt),
+            start_x=[float(value) for value in start_x.detach().cpu()],
+            initial_contact=[[bool(item) for item in row] for row in initial_contact.detach().cpu().tolist()],
+        )
+        eval_clip_records = validate_task072_clip_records(env.drain_task072_clip_update_records(), expected_updates=1)
+        common = cause_metrics["common_prefix"]
+        survivor = cause_metrics["survivor_full_horizon"]
         metrics = {
             "eval_seconds": float(args.eval_seconds),
             "eval_envs": int(args.eval_envs),
             "fixed_command": {"vx": 0.5, "vy": 0.0, "yaw": 0.0},
-            "zero_fall_ratio": float(nofall.float().mean().detach().cpu()),
-            "mean_forward_velocity": float(mean_displacement / float(args.eval_seconds)),
-            "mean_x_displacement": mean_displacement,
-            "planar_tracking_error": float((planar_error_sum / denom)[nofall].mean().detach().cpu()) if nofall_count else nofall_missing_value,
-            "yaw_error": float((yaw_error_sum / denom)[nofall].mean().detach().cpu()) if nofall_count else nofall_missing_value,
-            "gravity_xy": float((gravity_xy_sum / denom)[nofall].mean().detach().cpu()) if nofall_count else nofall_missing_value,
-            "touchdown_counts": {
-                "left": int(touchdown_counts[0].detach().cpu()),
-                "right": int(touchdown_counts[1].detach().cpu()),
-            },
-            "single_support_counts": {
-                "left": int(single_support_counts[0].detach().cpu()),
-                "right": int(single_support_counts[1].detach().cpu()),
-            },
-            "alternating_touchdown_transitions": int(alternating.sum().detach().cpu()),
+            "zero_fall_ratio": cause_metrics["zero_fall_ratio"],
+            "mean_forward_velocity": survivor["mean_vx"],
+            "mean_x_displacement": survivor["mean_x_displacement"],
+            "planar_tracking_error": survivor["planar_tracking_error"],
+            "yaw_error": survivor["yaw_error"],
+            "gravity_xy": survivor["gravity_xy"],
+            "touchdown_counts": common["touchdown_counts"],
+            "single_support_counts": common["single_support_counts"],
+            "alternating_touchdown_transitions": common["alternating_touchdown_transitions"],
+            "reset_terminated": cause_metrics["reset_terminated"],
+            "reset_time_outs": cause_metrics["reset_time_outs"],
+            "first_fall_seconds": cause_metrics["first_fall_seconds"],
+            "common_prefix": common,
+            "survivor_full_horizon": survivor,
+            "eval_action_clip_record": eval_clip_records[0],
             "reward_finite": reward_finite,
             "obs_finite": obs_finite,
         }
         checks = {
             "zero_fall_ratio": metrics["zero_fall_ratio"] >= 0.95,
-            "mean_forward_velocity": metrics["mean_forward_velocity"] >= 0.30,
-            "mean_x_displacement": metrics["mean_x_displacement"] >= 6.0,
-            "planar_tracking_error": metrics["planar_tracking_error"] <= 0.35,
-            "yaw_error": metrics["yaw_error"] <= 0.35,
-            "gravity_xy": metrics["gravity_xy"] <= 0.35,
+            "no_time_outs": metrics["reset_time_outs"]["count"] == 0,
+            "mean_forward_velocity": _metric_ge(metrics["mean_forward_velocity"], 0.30),
+            "mean_x_displacement": _metric_ge(metrics["mean_x_displacement"], 6.0),
+            "planar_tracking_error": _metric_le(metrics["planar_tracking_error"], 0.35),
+            "yaw_error": _metric_le(metrics["yaw_error"], 0.35),
+            "gravity_xy": _metric_le(metrics["gravity_xy"], 0.35),
             "left_touchdown": metrics["touchdown_counts"]["left"] > 0,
             "right_touchdown": metrics["touchdown_counts"]["right"] > 0,
             "left_single_support": metrics["single_support_counts"]["left"] > 0,
@@ -1649,7 +2634,7 @@ def render_command(args: argparse.Namespace) -> int:
         eval_payload = _load_passing_json(args.eval, "numeric eval")
         if str(args.checkpoint.resolve()) != eval_payload.get("checkpoint", {}).get("path"):
             raise ValueError("render checkpoint does not match numeric eval checkpoint")
-        error = "Task072 MJLab render implementation is armed but video generation is not authorized in 003h repair"
+        error = "Task072 MJLab render implementation is armed but video generation is not authorized in 003i repair"
     except Exception as exc:  # noqa: BLE001
         error = repr(exc)
     result = {
@@ -1677,7 +2662,7 @@ def verify_reload_command(args: argparse.Namespace) -> int:
             raise ValueError("reload checkpoint does not match numeric eval checkpoint")
         if video_payload.get("checkpoint") != str(args.checkpoint.resolve()):
             raise ValueError("reload checkpoint does not match render video checkpoint")
-        error = "Task072 MJLab reload verifier is armed but rollout execution is not authorized in 003h repair"
+        error = "Task072 MJLab reload verifier is armed but rollout execution is not authorized in 003i repair"
     except Exception as exc:  # noqa: BLE001
         error = repr(exc)
     result = {
@@ -1706,7 +2691,7 @@ def freeze_command(args: argparse.Namespace) -> int:
             == reload_payload.get("checkpoint")
         ):
             raise ValueError("freeze evidence checkpoint mismatch")
-        error = "Task072 freeze is armed but refused until 003h training evidence is produced in an authorized run"
+        error = "Task072 freeze is armed but refused until 003i proof evidence is produced in an authorized run"
     except Exception as exc:  # noqa: BLE001
         error = repr(exc)
     result = {
@@ -1721,6 +2706,407 @@ def freeze_command(args: argparse.Namespace) -> int:
     return 1
 
 
+def task072_eval_cause_metrics(
+    records: list[dict[str, Any]],
+    num_envs: int,
+    horizon_seconds: float = 20.0,
+    *,
+    dt: float = 0.02,
+    start_x: list[float] | None = None,
+    initial_contact: list[list[bool]] | None = None,
+) -> dict[str, Any]:
+    """Reduce post-step eval records using only active-after samples."""
+    import numpy as np
+
+    active = np.ones(num_envs, dtype=bool)
+    start = np.asarray(start_x if start_x is not None else [0.0] * num_envs, dtype=float)
+    last_x = start.copy()
+    vx_sum = np.zeros(num_envs, dtype=float)
+    planar_error_sum = np.zeros(num_envs, dtype=float)
+    yaw_error_sum = np.zeros(num_envs, dtype=float)
+    gravity_xy_sum = np.zeros(num_envs, dtype=float)
+    sample_counts = np.zeros(num_envs, dtype=int)
+    terminated_ids: list[int] = []
+    timeout_ids: list[int] = []
+    first_fall: dict[int, float] = {}
+    contact_sample_counts = np.zeros(num_envs, dtype=int)
+    contact_counts = np.zeros((num_envs, 2), dtype=int)
+    touchdown_counts = np.zeros(2, dtype=int)
+    single_support_counts = np.zeros(2, dtype=int)
+    alternating = np.zeros(num_envs, dtype=int)
+    prev_contact = np.asarray(initial_contact if initial_contact is not None else [[False, False]] * num_envs, dtype=bool)
+    last_touch = np.full(num_envs, -1, dtype=int)
+
+    for step_index, record in enumerate(records, 1):
+        terminated = np.asarray(record["reset_terminated"], dtype=bool).copy()
+        time_out = np.asarray(record["reset_time_outs"], dtype=bool).copy()
+        done = np.asarray(record.get("done", terminated | time_out), dtype=bool).copy()
+        if np.any(terminated & time_out):
+            raise ValueError("reset_terminated and reset_time_outs overlap")
+        if not np.array_equal(done, terminated | time_out):
+            raise ValueError("wrapper done does not equal reset_terminated | reset_time_outs")
+        active_before = active.copy()
+        new_terminated = active_before & terminated
+        new_time_out = active_before & time_out
+        active = active_before & ~(terminated | time_out)
+        terminated_ids.extend(np.flatnonzero(new_terminated).tolist())
+        timeout_ids.extend(np.flatnonzero(new_time_out).tolist())
+        for env_id in np.flatnonzero(new_terminated):
+            first_fall.setdefault(int(env_id), step_index * dt)
+
+        valid = active
+        x = np.asarray(record["x"], dtype=float)
+        vx = np.asarray(record["vx"], dtype=float)
+        last_x[valid] = x[valid]
+        vx_sum[valid] += vx[valid]
+        if "planar_tracking_error" in record:
+            planar_error_sum[valid] += np.asarray(record["planar_tracking_error"], dtype=float)[valid]
+        if "yaw_error" in record:
+            yaw_error_sum[valid] += np.asarray(record["yaw_error"], dtype=float)[valid]
+        if "gravity_xy" in record:
+            gravity_xy_sum[valid] += np.asarray(record["gravity_xy"], dtype=float)[valid]
+        sample_counts[valid] += 1
+        if "contact" in record:
+            contact = np.asarray(record["contact"], dtype=bool)
+            touchdown = (~prev_contact) & contact
+            touchdown_counts += touchdown[valid].sum(axis=0)
+            single = contact.sum(axis=1) == 1
+            single_support_counts += (contact[valid] & single[valid, None]).sum(axis=0)
+            labels = np.full(num_envs, -1, dtype=int)
+            labels[contact[:, 0] & ~contact[:, 1] & touchdown[:, 0]] = 0
+            labels[contact[:, 1] & ~contact[:, 0] & touchdown[:, 1]] = 1
+            label_valid = valid & (labels >= 0)
+            alternating += (label_valid & (last_touch >= 0) & (labels != last_touch)).astype(int)
+            last_touch[label_valid] = labels[label_valid]
+            contact_counts[valid] += contact[valid].astype(int)
+            contact_sample_counts[valid] += 1
+            prev_contact[valid] = contact[valid]
+
+    def cause(ids: list[int]) -> dict[str, Any]:
+        unique = sorted(set(ids))
+        return {"count": len(unique), "ratio": len(unique) / num_envs, "env_ids": unique}
+
+    values = [first_fall.get(index, horizon_seconds) for index in range(num_envs)]
+    percentiles = np.percentile(values, [0, 10, 50, 90, 100])
+    valid_env = sample_counts > 0
+    displacements = last_x - start
+    active_env_steps = int(sample_counts.sum())
+    contact_valid = contact_sample_counts > 0
+    survivor = active
+
+    def survivor_value(values_array: np.ndarray) -> float | None:
+        return float(values_array[survivor].mean()) if survivor.any() else None
+
+    common_prefix = {
+        "active_env_steps": active_env_steps,
+        "valid_env_count": int(valid_env.sum()),
+        "mean_vx": float(vx_sum.sum() / active_env_steps) if active_env_steps else None,
+        "planar_tracking_error": float(planar_error_sum.sum() / active_env_steps) if active_env_steps else None,
+        "yaw_error": float(yaw_error_sum.sum() / active_env_steps) if active_env_steps else None,
+        "gravity_xy": float(gravity_xy_sum.sum() / active_env_steps) if active_env_steps else None,
+        "mean_x_displacement": float(displacements[valid_env].mean()) if valid_env.any() else None,
+        "median_x_displacement": float(np.median(displacements[valid_env])) if valid_env.any() else None,
+        "contact_fraction": {
+            "left": float(contact_counts[contact_valid, 0].sum() / contact_sample_counts[contact_valid].sum()) if contact_valid.any() else None,
+            "right": float(contact_counts[contact_valid, 1].sum() / contact_sample_counts[contact_valid].sum()) if contact_valid.any() else None,
+        },
+        "touchdown_counts": {"left": int(touchdown_counts[0]), "right": int(touchdown_counts[1])},
+        "single_support_counts": {"left": int(single_support_counts[0]), "right": int(single_support_counts[1])},
+        "alternating_touchdown_transitions": int(alternating.sum()),
+    }
+    survivor_counts = np.maximum(sample_counts, 1)
+    survivor_mean_vx = vx_sum / survivor_counts
+    survivor_planar = planar_error_sum / survivor_counts
+    survivor_yaw = yaw_error_sum / survivor_counts
+    survivor_gravity = gravity_xy_sum / survivor_counts
+    return {
+        "reset_terminated": cause(terminated_ids),
+        "reset_time_outs": cause(timeout_ids),
+        "zero_fall_ratio": 1.0 - len(set(terminated_ids)) / num_envs,
+        "first_fall_seconds": dict(zip(("min", "p10", "median", "p90", "max"), map(float, percentiles))),
+        "common_prefix": common_prefix,
+        "survivor_full_horizon": {
+            "survivor_count": int(survivor.sum()),
+            "mean_vx": survivor_value(survivor_mean_vx),
+            "planar_tracking_error": survivor_value(survivor_planar),
+            "yaw_error": survivor_value(survivor_yaw),
+            "gravity_xy": survivor_value(survivor_gravity),
+            "mean_x_displacement": survivor_value(displacements),
+            "median_x_displacement": float(np.median(displacements[survivor])) if survivor.any() else None,
+        },
+    }
+
+
+def task072_eval_schema_self_check() -> dict[str, Any]:
+    timeout_only = task072_eval_cause_metrics(
+        [
+            {
+                "reset_terminated": [False, False],
+                "reset_time_outs": [False, True],
+                "done": [False, True],
+                "x": [0.1, 99.0],
+                "vx": [0.5, 99.0],
+            }
+        ],
+        2,
+    )
+    termination_with_reset_pollution = task072_eval_cause_metrics(
+        [
+            {
+                "reset_terminated": [False, False],
+                "reset_time_outs": [False, False],
+                "done": [False, False],
+                "x": [0.1, 0.2],
+                "vx": [0.5, 0.4],
+                "contact": [[True, False], [False, True]],
+            },
+            {
+                "reset_terminated": [True, False],
+                "reset_time_outs": [False, False],
+                "done": [True, False],
+                "x": [99.0, 0.3],
+                "vx": [99.0, 0.6],
+                "contact": [[True, True], [True, False]],
+            },
+        ],
+        2,
+    )
+    all_fall = task072_eval_cause_metrics(
+        [
+            {
+                "reset_terminated": [False, False],
+                "reset_time_outs": [False, False],
+                "done": [False, False],
+                "x": [0.1, 0.2],
+                "vx": [0.5, 0.4],
+            },
+            {
+                "reset_terminated": [True, True],
+                "reset_time_outs": [False, False],
+                "done": [True, True],
+                "x": [99.0, 99.0],
+                "vx": [99.0, 99.0],
+            },
+        ],
+        2,
+    )
+    overlap_failed = False
+    try:
+        task072_eval_cause_metrics(
+            [{"reset_terminated": [True], "reset_time_outs": [True], "done": [True], "x": [0.0], "vx": [0.0]}],
+            1,
+        )
+    except ValueError:
+        overlap_failed = True
+    checks = {
+        "timeout_not_fall": timeout_only["reset_terminated"]["count"] == 0
+        and timeout_only["reset_time_outs"]["count"] == 1
+        and timeout_only["zero_fall_ratio"] == 1.0,
+        "termination_step_excluded": math.isclose(
+            termination_with_reset_pollution["common_prefix"]["mean_x_displacement"], 0.2
+        ),
+        "no_survivor_null": all_fall["survivor_full_horizon"]["survivor_count"] == 0
+        and all_fall["survivor_full_horizon"]["mean_vx"] is None
+        and all_fall["survivor_full_horizon"]["mean_x_displacement"] is None,
+        "common_prefix_preserved_after_all_fall": math.isclose(all_fall["common_prefix"]["mean_vx"], 0.45)
+        and math.isclose(all_fall["common_prefix"]["median_x_displacement"], 0.15),
+        "cause_overlap_fail_closed": overlap_failed,
+    }
+    return {"checks": checks, "passed": all(checks.values())}
+
+
+def task072_clip_schema_self_check() -> dict[str, Any]:
+    import torch
+
+    class _Base:
+        num_actions = 29
+        num_envs = 2
+        device = "cpu"
+        cfg = {}
+        max_episode_length = 1000
+
+        def __init__(self) -> None:
+            self.last_action = None
+
+        @property
+        def unwrapped(self) -> Any:
+            return self
+
+        def reset(self) -> tuple[str, dict[str, Any]]:
+            return "obs", {}
+
+        def step(self, action: Any) -> tuple[str, Any, bool, dict[str, Any]]:
+            self.last_action = action.clone()
+            return "obs", action, False, {}
+
+    names = list(SEMANTIC_TO_ANON_JOINT)
+    wrapper = Task072ClipLoggingVecEnvWrapper(_Base(), names, 2)
+    wrapper.step(torch.zeros((2, 29)))
+    raw = torch.zeros((2, 29))
+    raw[0, 0] = 1.1
+    raw[1, 1] = -2.0
+    _obs, applied, _done, _extras = wrapper.step(raw)
+    records = validate_task072_clip_records(wrapper.drain_task072_clip_update_records(), expected_updates=1)
+    record = records[0]
+    checks = {
+        "scalar_counts": record["clipped_scalars"] == 2 and record["scalar_denominator"] == 116,
+        "env_step_counts": record["env_steps_with_any_clip"] == 2 and record["env_step_denominator"] == 4,
+        "per_joint_counts": record["per_joint_clipped_scalars"][names[0]] == 1
+        and record["per_joint_clipped_scalars"][names[1]] == 1,
+        "raw_action_forwarded": torch.equal(applied, raw),
+        "drain_clears": wrapper.drain_task072_clip_update_records() == [],
+    }
+    return {"checks": checks, "record": record, "passed": all(checks.values())}
+
+
+def verify_reward_eval_contract(args: argparse.Namespace) -> int:
+    """CPU-only reward/manager/eval/clip boundary gate."""
+    output = args.output.resolve()
+    result: dict[str, Any] = {"schema_version": 1, "lineage_id": LINEAGE_ID, "subtask": "003i", "passed": False}
+    train_outer = None
+    eval_outer = None
+    try:
+        import torch
+        import inspect
+        from mjlab.envs import ManagerBasedRlEnv
+        from mjlab.managers.reward_manager import RewardManager
+        from mjlab.rl import RslRlVecEnvWrapper
+        from mjlab.utils.torch import configure_torch_backends
+
+        configure_torch_backends()
+        torch.set_grad_enabled(False)
+        api_signature = inspect.signature(RewardManager)
+        manager_api = {
+            "scale_by_dt_parameter": "scale_by_dt" in api_signature.parameters,
+            "active_terms": hasattr(RewardManager, "active_terms"),
+            "get_term_cfg": hasattr(RewardManager, "get_term_cfg"),
+            "compute": hasattr(RewardManager, "compute"),
+            "get_active_iterable_terms": hasattr(RewardManager, "get_active_iterable_terms"),
+        }
+        if not all(manager_api.values()):
+            raise ValueError(f"MJLab RewardManager API drift: {manager_api}")
+        train_cfg, train_agent, _runner, train_registration = build_task_cfg(
+            1, REQUIRED_ROLLOUT_STEPS, args.seed, 1, fixed_command=False
+        )
+        eval_cfg, eval_agent, _runner, eval_registration = build_task_cfg(
+            1, REQUIRED_ROLLOUT_STEPS, DEFAULT_SEED + 99, 1, fixed_command=True
+        )
+        train_outer = ManagerBasedRlEnv(cfg=train_cfg, device="cpu", render_mode=None)
+        eval_outer = ManagerBasedRlEnv(cfg=eval_cfg, device="cpu", render_mode=None)
+        train_table = task072_reward_active_table_from_manager(train_outer.reward_manager)
+        eval_table = task072_reward_active_table_from_manager(eval_outer.reward_manager)
+        train_active_sha = task072_validate_reward_active_table(train_table)
+        eval_active_sha = task072_validate_reward_active_table(eval_table)
+        task072_require_train_eval_reward_match(train_active_sha, eval_active_sha)
+        reward_payload = task072_canonical_reward_payload(train_table)
+        fixture_probe = task072_reward_fixture_probe(
+            {name: train_outer.reward_manager.get_term_cfg(name) for name in train_outer.reward_manager.active_terms}
+        )
+        eval_schema = task072_eval_schema_self_check()
+        clip_schema = task072_clip_schema_self_check()
+        zero_action = {
+            "steps": 120,
+            "reward_manager_sum_abs_error_max": 0.0,
+            "done_count": 0,
+            "terminated_count": 0,
+            "time_out_count": 0,
+            "first_step_phase": None,
+            "reset_episode_length_buf": None,
+            "finite": True,
+        }
+        base_env = RslRlVecEnvWrapper(train_outer, clip_actions=train_agent.clip_actions)
+        try:
+            obs, _ = base_env.reset()
+            _force_fixed_command(base_env)
+            train_outer.observation_manager._obs_buffer = None
+            obs = base_env.get_observations()
+            zero_action["reset_episode_length_buf"] = int(train_outer.episode_length_buf[0].detach().cpu())
+            action = torch.zeros((1, base_env.num_actions), device="cpu")
+            for step_index in range(1, zero_action["steps"] + 1):
+                obs, reward, done, _extras = base_env.step(action)
+                _force_fixed_command(base_env)
+                terms_total = sum(float(values[0]) for _name, values in train_outer.reward_manager.get_active_iterable_terms(0))
+                zero_action["reward_manager_sum_abs_error_max"] = max(
+                    zero_action["reward_manager_sum_abs_error_max"],
+                    abs(float(reward[0].detach().cpu()) - terms_total * float(train_outer.step_dt)),
+                )
+                if step_index == 1:
+                    phase_values = _task072_phase(train_outer, 0.8, [0.0, 0.5])[0].detach().cpu().tolist()
+                    zero_action["first_step_phase"] = [float(value) for value in phase_values]
+                zero_action["finite"] = bool(
+                    zero_action["finite"]
+                    and torch.isfinite(obs["actor"]).all()
+                    and torch.isfinite(obs["critic"]).all()
+                    and torch.isfinite(reward).all()
+                )
+                zero_action["done_count"] += int(done.sum().detach().cpu())
+                zero_action["terminated_count"] += int(train_outer.reset_terminated.sum().detach().cpu())
+                zero_action["time_out_count"] += int(train_outer.reset_time_outs.sum().detach().cpu())
+            train_outer.reset()
+            zero_action["post_reset_episode_length_buf"] = int(train_outer.episode_length_buf[0].detach().cpu())
+        finally:
+            base_env.close()
+            train_outer = None
+        canonical_config = canonical_train_eval_config_payload()
+        checks = {
+            "reward_manager_api": all(manager_api.values()),
+            "train_active_table": bool(train_active_sha),
+            "eval_active_table": bool(eval_active_sha),
+            "train_eval_reward_match": train_active_sha == eval_active_sha,
+            "reward_payload": reward_payload["payload_sha256"] == train_registration["reward_payload_sha256"],
+            "registration_active_sha": train_active_sha == train_registration["reward_active_table_sha256"]
+            == eval_registration["reward_active_table_sha256"],
+            "canonical_config": canonical_config["passed"],
+            "fixture_oracle": fixture_probe["passed"],
+            "eval_schema": eval_schema["passed"],
+            "clip_schema": clip_schema["passed"],
+            "zero_action_sanity": (
+                zero_action["finite"]
+                and zero_action["done_count"] == 0
+                and zero_action["terminated_count"] == 0
+                and zero_action["time_out_count"] == 0
+                and zero_action["reward_manager_sum_abs_error_max"] <= 1.0e-6
+                and len(zero_action["first_step_phase"] or []) == 2
+                and all(
+                    abs(actual - expected) <= 1.0e-6
+                    for actual, expected in zip(zero_action["first_step_phase"] or [], [0.025, 0.525])
+                )
+                and zero_action["reset_episode_length_buf"] == 0
+                and zero_action["post_reset_episode_length_buf"] == 0
+            ),
+        }
+        result.update(
+            {
+                **_common_manifest(argparse.Namespace(command="verify-reward-eval-contract", seed=args.seed)),
+                "source_commit": subprocess.run(["git", "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip(),
+                "runner_sha256": sha256_path(Path(__file__).resolve()),
+                "test_sha256": sha256_path(ROOT / "tests/test_task072_locomotion_proof.py"),
+                "reward_payload_sha256": reward_payload["payload_sha256"],
+                "actual_manager_active_table_sha256": train_active_sha,
+                "train_reward_active_table": train_table,
+                "eval_reward_active_table": eval_table,
+                "reward_manager_api": manager_api,
+                "reward_fixture_probe": fixture_probe,
+                "eval_schema_self_check": eval_schema,
+                "clip_schema_self_check": clip_schema,
+                "zero_action_runtime": zero_action,
+                "canonical_train_eval_config": canonical_config,
+                "checks": checks,
+                "passed": all(checks.values()),
+            }
+        )
+    except Exception as exc:
+        result.update({"passed": False, "error": repr(exc), "traceback": traceback.format_exc()})
+    finally:
+        if train_outer is not None:
+            train_outer.close()
+        if eval_outer is not None:
+            eval_outer.close()
+    write_json(output, result)
+    print(json.dumps({"passed": result["passed"], "output": str(output)}), flush=True)
+    return 0 if result["passed"] else 1
+
+
 def _common_manifest(args: argparse.Namespace) -> dict[str, Any]:
     ensure_v2_artifacts()
     contact_payload = json.loads(CONTACT_PROFILE.read_text(encoding="utf-8"))
@@ -1729,7 +3115,10 @@ def _common_manifest(args: argparse.Namespace) -> dict[str, Any]:
     canonical = canonical_train_eval_config_payload()
     runtime = _runtime_metadata(" ".join(sys.argv))
     external = runtime["external_mjlab"]
-    manifest_subtask = "003f" if getattr(args, "command", None) == "verify-runtime-binding" else "003h"
+    reward_cfg = task072_reward_v3_table(_stance_dict())
+    reward_active_table = task072_reward_active_table_from_cfg(reward_cfg)
+    reward_payload = task072_canonical_reward_payload(reward_active_table)
+    manifest_subtask = "003f" if getattr(args, "command", None) == "verify-runtime-binding" else "003i"
     return {
         "schema_version": 3,
         "task": "task072-bound-g1-go2-locomotion-proof",
@@ -1755,7 +3144,11 @@ def _common_manifest(args: argparse.Namespace) -> dict[str, Any]:
             "payload_sha256": action_contract["payload_sha256"],
             "policy_action_domain": dict(POLICY_ACTION_DOMAIN),
         },
-        "reward_contract": {"version": REWARD_CONTRACT_VERSION},
+        "reward_contract": {
+            "version": REWARD_CONTRACT_VERSION,
+            "canonical_payload_sha256": reward_payload["payload_sha256"],
+            "config_active_table_sha256": task072_validate_reward_active_table(reward_active_table),
+        },
         "canonical_train_eval_config": {
             "payload_sha256": canonical["payload_sha256"],
             "diff": canonical["diff"],
@@ -1787,7 +3180,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     r0.set_defaults(func=r0_smoke)
 
     cap = sub.add_parser("capacity-smoke")
-    cap.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_ROOT / "r1_capacity_smoke.json")
+    cap.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_ROOT / "003i_capacity_smoke_2048_4096_6144.json")
     cap.add_argument("--candidates", type=int, nargs="+", default=[2048, 4096, 6144])
     cap.add_argument("--rollout-steps", type=int, default=24)
     cap.add_argument("--steps", type=int, default=2)
@@ -1796,8 +3189,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     cap.set_defaults(func=capacity_smoke)
 
     train = sub.add_parser("one-update-train")
-    train.add_argument("--run-dir", type=Path, default=DEFAULT_OUTPUT_ROOT / "r1_one_update")
-    train.add_argument("--capacity-artifact", type=Path, default=RUNTIME_BINDING_ROOT / "capacity_smoke_2048_4096_6144.json")
+    train.add_argument("--run-dir", type=Path, default=DEFAULT_OUTPUT_ROOT / "003i_one_update_4096x24_seed720301")
+    train.add_argument("--capacity-artifact", type=Path, default=RUNTIME_BINDING_ROOT / "003i_capacity_smoke_2048_4096_6144.json")
     train.add_argument("--num-envs", type=int, default=4096)
     train.add_argument("--rollout-steps", type=int, default=24)
     train.add_argument("--updates", type=int, default=1)
@@ -1821,6 +3214,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     verify.add_argument("--seed", type=int, default=DEFAULT_SEED)
     verify.add_argument("--device", default="cpu")
     verify.set_defaults(func=verify_runtime_binding)
+    contract = sub.add_parser("verify-reward-eval-contract")
+    contract.add_argument("--output", type=Path, default=RUNTIME_BINDING_ROOT / "003i_reward_eval_contract_verifier.json")
+    contract.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    contract.set_defaults(func=verify_reward_eval_contract)
     render = sub.add_parser("render")
     render.add_argument("--checkpoint", type=Path, required=True)
     render.add_argument("--run-manifest", type=Path, required=True)

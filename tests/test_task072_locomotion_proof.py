@@ -44,6 +44,216 @@ assert MJLAB_RUNNER_SPEC is not None and MJLAB_RUNNER_SPEC.loader is not None
 MJLAB_RUNNER = importlib.util.module_from_spec(MJLAB_RUNNER_SPEC)
 MJLAB_RUNNER_SPEC.loader.exec_module(MJLAB_RUNNER)
 
+# Independent audit literal: never generated from the runner's table builder.
+EXPECTED_TASK072_REWARD_V3_ACTIVE_TABLE = (
+    ("track_xy_centered", "task072_reward_track_xy_centered", 2.0),
+    ("track_yaw", "task072_reward_track_yaw", 0.50),
+    ("upright", "task072_reward_upright", 0.25),
+    ("tilt", "task072_reward_tilt", 5.0),
+    ("height", "task072_reward_height", 0.25),
+    ("stand_support", "task072_reward_stand_support", 0.30),
+    ("phase_gait", "task072_reward_phase_gait", 0.50),
+    ("out_of_phase_double_support", "task072_reward_out_of_phase_double_support", 0.35),
+    ("clearance", "task072_reward_clearance", 0.50),
+    ("touchdown_airtime", "task072_reward_touchdown_airtime", 0.10),
+    ("soft_landing", "task072_reward_soft_landing", 0.10),
+    ("foot_slip", "task072_reward_foot_slip", 0.20),
+    ("nonfoot_contact", "task072_reward_nonfoot_contact", 0.20),
+    ("pose_hip", "task072_reward_pose_hip", 0.20),
+    ("pose_knee", "task072_reward_pose_knee", 0.30),
+    ("pose_ankle", "task072_reward_pose_ankle", 0.20),
+    ("pose_waist", "task072_reward_pose_waist", 0.10),
+    ("pose_arm_wrist", "task072_reward_pose_arm_wrist", 0.05),
+    ("joint_velocity", "task072_reward_joint_velocity", 0.02),
+    ("joint_limit", "task072_reward_joint_limit", 0.05),
+    ("action_magnitude", "task072_reward_action_magnitude", 0.01),
+    ("action_rate", "task072_reward_action_rate", 0.01),
+    ("base_angvel_xy", "task072_reward_base_angvel_xy", 0.02),
+)
+
+
+def test_task072_reward_v3_literal_has_exact_active_order() -> None:
+    env_cfg, _agent_cfg, _runner_cls, registration = MJLAB_RUNNER.build_task_cfg(1, 24, MJLAB_RUNNER.DEFAULT_SEED, 1)
+    table = MJLAB_RUNNER.task072_reward_active_table_from_cfg(env_cfg.rewards)
+    actual = tuple((row["name"], row["qualname"], row["weight"]) for row in table)
+
+    assert actual == EXPECTED_TASK072_REWARD_V3_ACTIVE_TABLE
+    assert len(table) == 23
+    assert registration["reward_terms"] == [row[0] for row in EXPECTED_TASK072_REWARD_V3_ACTIVE_TABLE]
+    assert set(env_cfg.rewards) == {row[0] for row in EXPECTED_TASK072_REWARD_V3_ACTIVE_TABLE}
+    assert {"foot_gait", "feet_gait", "is_terminated"}.isdisjoint(env_cfg.rewards)
+    assert env_cfg.episode_length_s == 10_000.0
+    assert all(row["module"] == "task072_mjlab_contact_runner" for row in table)
+    assert all("<locals>" not in row["qualname"] for row in table)
+    assert all(json.loads(json.dumps(row["params"])) == row["params"] for row in table)
+
+    active_sha = MJLAB_RUNNER.task072_validate_reward_active_table(table)
+    reward_payload = MJLAB_RUNNER.task072_canonical_reward_payload(table)
+    assert active_sha == registration["reward_active_table_sha256"]
+    assert reward_payload["payload_sha256"] == registration["reward_payload_sha256"]
+    assert reward_payload["phase"] == {
+        "clock": "episode_length_buf",
+        "first_action_k": 1,
+        "reset_k": 0,
+        "period": 0.8,
+        "offsets": [0.0, 0.5],
+        "stance_fraction": 0.55,
+    }
+
+    by_name = {row["name"]: row for row in table}
+    for name in ("phase_gait", "out_of_phase_double_support", "clearance"):
+        assert by_name[name]["params"]["period"] == 0.8
+        assert by_name[name]["params"]["offsets"] == [0.0, 0.5]
+        assert by_name[name]["params"]["stance_fraction"] == 0.55
+    for name in ("clearance", "touchdown_airtime", "soft_landing", "foot_slip"):
+        assert by_name[name]["params"]["site_ids"] == [8, 15]
+        assert by_name[name]["params"]["sensor_name"] == "feet_ground_contact"
+    assert len(by_name["nonfoot_contact"]["params"]["body_ids"]) == 29
+    assert by_name["nonfoot_contact"]["params"]["sensor_name"] == "nonfoot_ground_contact"
+    assert {name: len(by_name[name]["params"]["joint_ids"]) for name in (
+        "pose_hip",
+        "pose_knee",
+        "pose_ankle",
+        "pose_waist",
+        "pose_arm_wrist",
+    )} == {
+        "pose_hip": 6,
+        "pose_knee": 2,
+        "pose_ankle": 4,
+        "pose_waist": 3,
+        "pose_arm_wrist": 14,
+    }
+    assert len(by_name["joint_limit"]["params"]["lower"]) == 29
+    assert len(by_name["joint_limit"]["params"]["upper"]) == 29
+
+    missing = table[:-1]
+    with pytest.raises(ValueError, match="wrong key/order/count"):
+        MJLAB_RUNNER.task072_validate_reward_active_table(missing)
+    parent_callable = copy.deepcopy(table)
+    parent_callable[0]["module"] = "mjlab.parent_rewards"
+    with pytest.raises(ValueError, match="parent or alias"):
+        MJLAB_RUNNER.task072_validate_reward_active_table(parent_callable)
+    weight_drift = copy.deepcopy(table)
+    weight_drift[0]["weight"] = 99.0
+    with pytest.raises(ValueError, match="weight drift"):
+        MJLAB_RUNNER.task072_validate_reward_active_table(weight_drift)
+    phase_drift = copy.deepcopy(table)
+    phase_drift[6]["params"]["period"] = 1.0
+    with pytest.raises(ValueError, match="phase params drift"):
+        MJLAB_RUNNER.task072_validate_reward_active_table(phase_drift)
+    with pytest.raises(ValueError, match="reward active-table SHA drift"):
+        MJLAB_RUNNER.task072_require_train_eval_reward_match("a" * 64, "b" * 64)
+
+
+def test_task072_reward_v3_oracle_and_manager_fixture_probe() -> None:
+    env_cfg, _agent_cfg, _runner_cls, _registration = MJLAB_RUNNER.build_task_cfg(1, 24, MJLAB_RUNNER.DEFAULT_SEED, 1)
+    oracle = MJLAB_RUNNER.task072_reward_v3_oracle_pre_dt_means()
+    assert oracle == {
+        "static_both": pytest.approx(-0.5542411176571156),
+        "ideal_phase_matched": pytest.approx(1.7),
+        "persistent_left_only": pytest.approx(-0.26012009890715004),
+        "ideal_static_margin": pytest.approx(2.2542411176571155),
+    }
+    probe = MJLAB_RUNNER.task072_reward_fixture_probe(env_cfg.rewards)
+    assert probe["passed"] is True
+    for key in ("static_both", "ideal_phase_matched", "persistent_left_only"):
+        assert probe[key]["weighted_pre_dt_mean"] == pytest.approx(oracle[key], abs=1.0e-6)
+        assert probe[key]["dt_contribution_mean"] == pytest.approx(oracle[key] * 0.02, abs=1.0e-6)
+        assert probe[key]["iterable_abs_diff_max"] <= 1.0e-6
+    assert probe["ideal_static_margin"] == pytest.approx(oracle["ideal_static_margin"], abs=1.0e-6)
+
+
+def test_task072_clip_logging_and_eval_cause_separation() -> None:
+    torch = pytest.importorskip("torch")
+
+    class Base:
+        num_actions = 29
+        num_envs = 2
+        cfg = {}
+
+        def __init__(self) -> None:
+            self.last_action = None
+
+        @property
+        def unwrapped(self) -> Self:
+            return self
+
+        def reset(self) -> tuple[str, dict[str, object]]:
+            return "obs", {}
+
+        def step(self, action):
+            self.last_action = action
+            return "obs", action, torch.zeros(2, dtype=torch.bool), {}
+
+    names = list(MJLAB_RUNNER.SEMANTIC_TO_ANON_JOINT)
+    base = Base()
+    wrapper = MJLAB_RUNNER.Task072ClipLoggingVecEnvWrapper(base, names, 2)
+    raw0 = torch.zeros((2, 29))
+    raw1 = torch.zeros((2, 29))
+    raw0[0, 0] = 1.1
+    raw1[1, 1] = -2.0
+    wrapper.step(raw0)
+    wrapper.step(raw1)
+    records = MJLAB_RUNNER.validate_task072_clip_records(
+        wrapper.drain_task072_clip_update_records(),
+        expected_updates=1,
+    )
+    record = records[0]
+    assert record["clipped_scalars"] == 2
+    assert record["scalar_denominator"] == 116
+    assert record["scalar_clip_fraction"] == pytest.approx(2 / 116)
+    assert record["env_steps_with_any_clip"] == 2
+    assert record["env_step_denominator"] == 4
+    assert record["per_joint_denominator"] == 4
+    assert record["per_joint_clipped_scalars"][names[0]] == 1
+    assert record["per_joint_clipped_scalars"][names[1]] == 1
+    assert record["per_joint_clip_fraction"][names[0]] == pytest.approx(0.25)
+    assert record["max_abs_raw_action"] == pytest.approx(2.0)
+    assert torch.equal(base.last_action, raw1)
+    assert wrapper.drain_task072_clip_update_records() == []
+
+    missing_field = copy.deepcopy(record)
+    del missing_field["per_joint_clip_fraction"]
+    with pytest.raises(ValueError, match="missing fields"):
+        MJLAB_RUNNER.validate_task072_clip_records([missing_field], expected_updates=1)
+
+    metrics = MJLAB_RUNNER.task072_eval_cause_metrics([
+        {
+            "reset_terminated": [False, False],
+            "reset_time_outs": [False, False],
+            "done": [False, False],
+            "x": [0.1, 0.2],
+            "vx": [0.5, 0.4],
+            "planar_tracking_error": [0.0, 0.1],
+            "yaw_error": [0.0, 0.0],
+            "gravity_xy": [0.0, 0.0],
+            "contact": [[True, False], [False, True]],
+        },
+        {
+            "reset_terminated": [True, False],
+            "reset_time_outs": [False, True],
+            "done": [True, True],
+            "x": [99.0, 99.0],
+            "vx": [99.0, 99.0],
+            "planar_tracking_error": [99.0, 99.0],
+            "yaw_error": [99.0, 99.0],
+            "gravity_xy": [99.0, 99.0],
+            "contact": [[True, True], [True, True]],
+        },
+    ], 2)
+    assert metrics["reset_terminated"]["count"] == 1
+    assert metrics["reset_time_outs"]["count"] == 1
+    assert metrics["zero_fall_ratio"] == pytest.approx(0.5)
+    assert metrics["common_prefix"]["mean_x_displacement"] == pytest.approx(0.15)
+    assert metrics["common_prefix"]["mean_vx"] == pytest.approx(0.45)
+    assert metrics["common_prefix"]["planar_tracking_error"] == pytest.approx(0.05)
+    assert metrics["survivor_full_horizon"]["survivor_count"] == 0
+    assert metrics["survivor_full_horizon"]["mean_vx"] is None
+    with pytest.raises(ValueError, match="overlap"):
+        MJLAB_RUNNER.task072_eval_cause_metrics([
+            {"reset_terminated": [True], "reset_time_outs": [True], "done": [True], "x": [0.0], "vx": [0.0]},
+        ], 1)
+
 
 def _passing_gate_metrics() -> dict[str, object]:
     return {
@@ -149,11 +359,11 @@ def test_mjlab_runner_capacity_defaults_require_4096_equivalence() -> None:
     train = MJLAB_RUNNER.parse_args(["one-update-train", "--run-dir", "run"])
     assert train.num_envs == 4096
     assert train.rollout_steps == 24
-    assert train.capacity_artifact == MJLAB_RUNNER.RUNTIME_BINDING_ROOT / "capacity_smoke_2048_4096_6144.json"
+    assert train.capacity_artifact == MJLAB_RUNNER.RUNTIME_BINDING_ROOT / "003i_capacity_smoke_2048_4096_6144.json"
     assert MJLAB_RUNNER.REQUIRED_TRANSITIONS_PER_UPDATE == 4096 * 24
 
 
-def test_mjlab_runner_records_003f_only_for_runtime_verifier(tmp_path: Path) -> None:
+def test_mjlab_runner_records_003f_only_for_runtime_verifier_then_003i(tmp_path: Path) -> None:
     verify = MJLAB_RUNNER.parse_args(["verify-runtime-binding", "--output", "verify.json"])
     capacity = MJLAB_RUNNER.parse_args(["capacity-smoke", "--output", "capacity.json"])
     one_update = MJLAB_RUNNER.parse_args(["one-update-train", "--run-dir", "run"])
@@ -178,6 +388,11 @@ def test_mjlab_runner_records_003f_only_for_runtime_verifier(tmp_path: Path) -> 
     original_runtime = MJLAB_RUNNER._runtime_metadata
     original_canonical = MJLAB_RUNNER.canonical_train_eval_config_payload
     original_action_contract = MJLAB_RUNNER.action_contract_from_asset_xml
+    original_stance_dict = MJLAB_RUNNER._stance_dict
+    original_reward_table = MJLAB_RUNNER.task072_reward_v3_table
+    original_active_table = MJLAB_RUNNER.task072_reward_active_table_from_cfg
+    original_reward_payload = MJLAB_RUNNER.task072_canonical_reward_payload
+    original_reward_validate = MJLAB_RUNNER.task072_validate_reward_active_table
     original_ensure = MJLAB_RUNNER.ensure_v2_artifacts
     contact = tmp_path / "contact.json"
     stance = tmp_path / "stance.json"
@@ -207,10 +422,15 @@ def test_mjlab_runner_records_003f_only_for_runtime_verifier(tmp_path: Path) -> 
         MJLAB_RUNNER.action_contract_from_asset_xml = lambda: {
             "payload_sha256": "d" * 64,
         }
+        MJLAB_RUNNER._stance_dict = lambda: {"stub": True}
+        MJLAB_RUNNER.task072_reward_v3_table = lambda _stance: {"stub": object()}
+        MJLAB_RUNNER.task072_reward_active_table_from_cfg = lambda _cfg: []
+        MJLAB_RUNNER.task072_canonical_reward_payload = lambda _table: {"payload_sha256": "e" * 64}
+        MJLAB_RUNNER.task072_validate_reward_active_table = lambda _table: "f" * 64
         assert MJLAB_RUNNER._common_manifest(verify)["subtask"] == "003f"
-        assert MJLAB_RUNNER._common_manifest(capacity)["subtask"] == "003h"
-        assert MJLAB_RUNNER._common_manifest(one_update)["subtask"] == "003h"
-        assert MJLAB_RUNNER._common_manifest(evaluate)["subtask"] == "003h"
+        assert MJLAB_RUNNER._common_manifest(capacity)["subtask"] == "003i"
+        assert MJLAB_RUNNER._common_manifest(one_update)["subtask"] == "003i"
+        assert MJLAB_RUNNER._common_manifest(evaluate)["subtask"] == "003i"
     finally:
         MJLAB_RUNNER.CONTACT_PROFILE = original_contact
         MJLAB_RUNNER.STANCE = original_stance
@@ -220,6 +440,11 @@ def test_mjlab_runner_records_003f_only_for_runtime_verifier(tmp_path: Path) -> 
         MJLAB_RUNNER._runtime_metadata = original_runtime
         MJLAB_RUNNER.canonical_train_eval_config_payload = original_canonical
         MJLAB_RUNNER.action_contract_from_asset_xml = original_action_contract
+        MJLAB_RUNNER._stance_dict = original_stance_dict
+        MJLAB_RUNNER.task072_reward_v3_table = original_reward_table
+        MJLAB_RUNNER.task072_reward_active_table_from_cfg = original_active_table
+        MJLAB_RUNNER.task072_canonical_reward_payload = original_reward_payload
+        MJLAB_RUNNER.task072_validate_reward_active_table = original_reward_validate
         MJLAB_RUNNER.ensure_v2_artifacts = original_ensure
 
 
