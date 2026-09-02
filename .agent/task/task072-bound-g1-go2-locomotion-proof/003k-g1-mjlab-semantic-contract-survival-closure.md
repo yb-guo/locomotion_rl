@@ -1,6 +1,6 @@
 # 003k — G1 MJLab task-owned semantic contract and survival closure
 
-状态：**lineage_blocked / trained / not_passed**。
+状态：**pilot_failed / trained / not_passed**。
 
 003k 是 003j pilot failure 之后的唯一活动修复任务。它不把失败归因于“训练轮数不够”，也不允许
 继续在 `Unitree-G1-Flat` 上逐个删除已知 parent 项。目标是一次性关闭 Task072 的完整训练语义：
@@ -631,7 +631,8 @@ checkpoint。stage failure 立即停止，保留 artifact，不继续下一个�
 - [x] fresh v4 capacity 和 one-update passed；
 - [x] fresh 21-update pilot training contract passed；
 - [ ] model `0/7/14/20` exact eval set 完整且 semantic payload SHA 一致；保留的 model_0 后续续跑因
-  manifest/source contract SHA 不一致而停止；
+  manifest/source contract SHA 不一致而停止；后续已在原 frame 的 `f343968` 下完成补跑并由 aggregate
+  gate 判定失败；
 - [ ] no `reward_up_survival_down`；
 - [ ] survival、forward、touchdown、双侧 single-support、alternation gates 全部 passed；
 - [ ] 未消费任何 v3 checkpoint；
@@ -686,10 +687,17 @@ checkpoint。stage failure 立即停止，保留 artifact，不继续下一个�
   无法重建一致，故无 model_7 eval artifact 产生；按 lineage/SHA 立即停止，未运行 model_14、model_20
   或 aggregate pilot gate。现有 capacity、one-update、pilot、model_0 eval 均保留；proof、video、
   freeze、003l 和 Task073/Task074 未启动。
+- 2026-09-02：按后续指示切换原 frame 至 `f343968177efba716d49beacb256d15bad0ad807`，仅加载已有
+  checkpoint 补跑 model_7/14/20；三份结果均 finite、无 error，但 numeric `passed=false`。artifact
+  SHA 分别为 model_7 `996d219675ade5c044fe7f156244ad3e9d6e36735ea72a8572e6c702abdd711b`、model_14
+  `48cedff2bd3eff89096d4190da1aebe26e703127ed0ef30bb66efdeb4d39da4e`、model_20
+  `607a66fb54c5b1640b3208196c8da6a7d48a40fa0366c99562e950c826b85d0b`。使用现有 model_0 加四份
+  eval 运行 aggregate pilot gate，artifact SHA `bb6f2f58396f56efef4a6120908d52def8745c9c32375b2a7dafc9ccf1ea1f93`，结果 `passed=false`；
+  survival comparison 失败，未启动 proof。随后已切回当前分支 `codex/task072-bound-walk-proof`。
 
 ## Review
 
-状态：**lineage_blocked / trained / not_passed**。
+状态：**pilot_failed / trained / not_passed**。
 
 003k implementation/CPU gate 已关闭：Task072 现在拥有 task-owned observations/actions/commands/events/
 rewards/terminations/curriculum/metrics/sensors/PPO runtime contract，actor/critic/reward phase 统一为
@@ -697,7 +705,6 @@ rewards/terminations/curriculum/metrics/sensors/PPO runtime contract，actor/cri
 non-timeout termination 的 dt contribution 为 `-6.0`，train/eval semantic diff 仅含冻结 allowlist。
 
 003k 已在后续用户授权下完成 fresh capacity、exact one-update 和 fresh 21-update pilot training，但
-formal fixed-command eval 在首个 required checkpoint `model_0` 即失败，且全部 256 个 env 在 20 s 前
-跌倒。续跑在 model_7 仿真前发现保留 pilot manifest 与 source commit 的 reward/canonical/stage
-semantic SHA 不一致，按 lineage/SHA fail-closed 规则停止；model `14/20` 与 aggregate pilot gate 未
-运行。003k 仍 not_passed；proof、video、freeze、003l 和 Task073/Task074 均未启动。
+formal fixed-command eval 的四个 checkpoint 均已收齐，但四个 numeric eval 均未通过；aggregate pilot
+gate 失败于 model_20 survival comparison（model_20 median first fall `2.04 s`）。003k 仍 not_passed；
+proof、video、freeze、003l 和 Task073/Task074 均未启动。

@@ -1,6 +1,6 @@
 # Task072 — Bound G1/Go2 nominal locomotion proof
 
-状态：**003k_lineage_blocked / trained / not_passed**。
+状态：**003k_pilot_failed / trained / not_passed**。
 
 ## 目标与边界
 
@@ -651,10 +651,15 @@ baseline、progression、SHA 或任一指标失败，均视为该 case 未通过
   `reward_contract`、`canonical_train_eval_config`、`stage_semantic_contract` SHA 与该 source 无法
   一致重建；未产生 model_7 artifact，按 lineage/SHA 错误立即停止，model_14/20 与 aggregate pilot
   gate 未运行。capacity、one-update、pilot、model_0 eval 保留，proof 未启动。
+- 2026-09-02：在原 frame 切换至 `f343968177efba716d49beacb256d15bad0ad807`，仅使用已有 checkpoint
+  补跑 model_7/14/20；三份 eval 均 finite、无 execution error，但 numeric `passed=false`。随后用
+  现有 model_0 加四份 eval 运行 aggregate gate，结果 `passed=false`，失败于 model_20 survival
+  comparison；gate SHA-256 `bb6f2f58396f56efef4a6120908d52def8745c9c32375b2a7dafc9ccf1ea1f93`。
+  未重训、未删除 checkpoint、未修改 SHA，已切回 `codex/task072-bound-walk-proof`，proof 未启动。
 
 ## Review
 
-状态：**003k_lineage_blocked / trained / not_passed**。
+状态：**003k_pilot_failed / trained / not_passed**。
 
 Task072 只有在 exact-bound G1 和 Go2 都在同一冻结 source commit/config contract 上满足全部数值、
 视频、baseline、checkpoint 与 verifier gate 后才能标记 passed。Task071 的 one-update PPO smoke、旧
