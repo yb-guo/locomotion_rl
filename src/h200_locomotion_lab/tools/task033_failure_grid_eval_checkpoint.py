@@ -12,6 +12,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 
 DEFAULT_TASK = "Unitree-G1-Gripper-Flat-Task033-StackMlpK4-FocusedDeadGrid-Fast2p0"
 DEFAULT_JOINTS = (
@@ -59,9 +60,11 @@ def run_case(args: argparse.Namespace, joint_name: str, index: int) -> dict[str,
     os.environ.setdefault("MUJOCO_GL", "egl")
     os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
 
+    import mjlab.tasks as _mjlab_tasks
+    import src.tasks as _project_tasks
+
+    del _mjlab_tasks, _project_tasks  # Imports register task packages by side effect.
     import torch
-    import mjlab.tasks  # noqa: F401
-    import src.tasks  # noqa: F401
     from mjlab.envs import ManagerBasedRlEnv
     from mjlab.rl import MjlabOnPolicyRunner, RslRlVecEnvWrapper
     from mjlab.tasks.registry import load_env_cfg, load_rl_cfg, load_runner_cls
@@ -173,7 +176,7 @@ def safe_run_case(args: argparse.Namespace, output_dir: Path, joint_name: str, i
     case_name = f"dead_motor_grid_{index:02d}_{joint_name}"
     try:
         result = run_case(args, joint_name, index)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         result = {
             "case": case_name,
             "task": args.task,

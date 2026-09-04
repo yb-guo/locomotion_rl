@@ -14,6 +14,7 @@ from numbers import Number
 from pathlib import Path
 from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 
 DEFAULT_TASK = "Unitree-G1-Gripper-Flat-Task038-TrainAssetSmoke"
 DEFAULT_EXPECTED_ACTION_DIM = 31
@@ -41,9 +42,11 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
     os.environ.setdefault("MUJOCO_GL", "egl")
     os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
 
+    import mjlab.tasks as _mjlab_tasks
+    import src.tasks as _project_tasks
+
+    del _mjlab_tasks, _project_tasks  # Imports register task packages by side effect.
     import torch
-    import mjlab.tasks  # noqa: F401
-    import src.tasks  # noqa: F401
     from mjlab.envs import ManagerBasedRlEnv
     from mjlab.rl import RslRlVecEnvWrapper
     from mjlab.tasks.registry import load_env_cfg, load_rl_cfg
@@ -152,7 +155,7 @@ def resolve_registered_xml_path(task: str) -> tuple[str | None, str | None]:
         constants = importlib.import_module(
             "src.assets.robots.unitree_g1_gripper.g1_gripper_constants"
         )
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         return None, repr(exc)
 
     if task == TRAIN_TASK_ID:
@@ -197,7 +200,7 @@ def evaluate_probe_pass(summary: dict[str, Any]) -> tuple[bool, list[str]]:
 def _safe_resolve_registered_xml_path(task: str) -> tuple[str | None, str | None]:
     try:
         return resolve_registered_xml_path(task)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         return None, repr(exc)
 
 
@@ -371,7 +374,7 @@ def main() -> None:
     args = parse_args()
     try:
         summary = run_probe(args)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         summary = build_failure_summary(args, exc)
     write_json_summary(args.output_json, summary)
     print(json.dumps(summary, indent=2, sort_keys=True))

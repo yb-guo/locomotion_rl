@@ -6,10 +6,10 @@ JSON summaries produced by normal, zero-residual, and stateless-memory evals.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
-from typing import Any, Mapping
-
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any
 
 ZERO_RESIDUAL_MODES = frozenset({"zero_txl_residual", "zero_residual", "zero_memory_latent"})
 STATELESS_MEMORY_MODES = frozenset({"stateless_txl_memory", "stateless_memory"})

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import argparse
 import csv
+import itertools
 import math
 import time
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from h200_locomotion_lab.envs.genesis_adapter import GenesisG1Env
-
 
 ARMATURE_5020 = 0.003609725
 ARMATURE_7520_14 = 0.010177520
@@ -428,7 +429,7 @@ def _read_all_dof_positions(robot: Any) -> tuple[float, ...]:
     try:
         return _flatten_numeric(robot.get_dofs_position())
     except TypeError:
-        n_dofs = int(getattr(robot, "n_dofs"))
+        n_dofs = int(robot.n_dofs)
         return _flatten_numeric(robot.get_dofs_position(dofs_idx_local=tuple(range(n_dofs))))
 
 
@@ -442,7 +443,7 @@ def _horizontal_distance(
 
 
 def _xy_path_length(positions: Sequence[tuple[float, float, float]]) -> float:
-    return sum(_horizontal_distance(prev, curr) for prev, curr in zip(positions, positions[1:]))
+    return sum(_horizontal_distance(prev, curr) for prev, curr in itertools.pairwise(positions))
 
 
 if __name__ == "__main__":

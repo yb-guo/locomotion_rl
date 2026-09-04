@@ -14,9 +14,9 @@ from h200_locomotion_lab.robots.g1like_morphology import (
     validate_g1like_morphology_manifest,
 )
 from h200_locomotion_lab.robots.g1like_slots import (
+    G1_29DOF_COMMAND_MUJOCO_ACTUATOR_ORDER,
     G1LIKE_ACTION_DIM,
     G1LIKE_ACTION_SLOT_NAMES,
-    G1_29DOF_COMMAND_MUJOCO_ACTUATOR_ORDER,
 )
 
 
@@ -92,7 +92,7 @@ def test_heldout_ranges_are_outside_train_range(condition: str, outside_fields: 
         seed=38,
         heldout_conditions=(condition,),
     )
-    heldout = [variant for variant in manifest["variants"] if variant["split"] == "heldout"][0]
+    heldout = next(variant for variant in manifest["variants"] if variant["split"] == "heldout")
     scale_fields = {
         "link_scale",
         "mass_scale",

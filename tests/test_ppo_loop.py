@@ -7,11 +7,11 @@ from h200_locomotion_lab.training.ppo_loop import (
     PPOConfig,
     RolloutBatch,
     build_actor_critic,
+    collect_rollout,
     compute_gae,
     describe_training_plan,
     parameter_l1_sum,
     ppo_update,
-    collect_rollout,
     tanh_gaussian_log_prob_from_action,
 )
 

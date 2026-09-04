@@ -6,21 +6,56 @@ can still import this module.
 
 from __future__ import annotations
 
-import math
 import time
 from dataclasses import dataclass
 from typing import Any
 
-REWARD_COMPONENT_NAMES = (
-    "tracking_lin_vel",
-    "tracking_yaw_rate",
-    "upright",
-    "tracking_base_height",
-    "action_rate_penalty",
-    "joint_velocity_penalty",
-    "joint_deviation_penalty",
-    "termination_penalty",
+from h200_locomotion_lab.algorithms.ppo import (
+    PPODiagnostics,
+    compute_gae,
+    ppo_update,
 )
+from h200_locomotion_lab.policies.tanh_gaussian_actor_critic import (
+    build_tanh_gaussian_actor_critic as build_actor_critic,
+)
+from h200_locomotion_lab.policies.tanh_gaussian_actor_critic import (
+    gaussian_entropy,
+    make_mlp,
+    tanh_gaussian_log_prob_from_action,
+    tanh_gaussian_log_prob_from_raw,
+)
+from h200_locomotion_lab.tasks.g1_velocity_tracking import G1_REWARD_COMPONENT_NAMES
+
+__all__ = [
+    "REWARD_COMPONENT_NAMES",
+    "PPOConfig",
+    "PPODiagnostics",
+    "RolloutBatch",
+    "assert_finite_flags",
+    "assert_finite_tensor",
+    "build_actor_critic",
+    "collect_rollout",
+    "compute_gae",
+    "describe_training_plan",
+    "gaussian_entropy",
+    "make_mlp",
+    "max_tensors",
+    "mean_cat_tensors",
+    "mean_tensors",
+    "min_tensors",
+    "parameter_l1_sum",
+    "ppo_update",
+    "require_torch",
+    "sum_bool_tensors",
+    "sum_tensor_lengths",
+    "synchronize_device",
+    "tanh_gaussian_log_prob_from_action",
+    "tanh_gaussian_log_prob_from_raw",
+    "tensor_device_ok",
+    "tensor_length",
+]
+
+REWARD_COMPONENT_NAMES = G1_REWARD_COMPONENT_NAMES
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,18 +144,6 @@ class RolloutBatch:
     upright_mean: float
 
 
-@dataclass(frozen=True, slots=True)
-class PPODiagnostics:
-    policy_loss: float
-    value_loss: float
-    entropy: float
-    approx_kl: float
-    clip_fraction: float
-    grad_norm: float
-    update_time_s: float
-    update_samples_per_sec: float
-
-
 def describe_training_plan() -> tuple[str, ...]:
     return (
         "Validate simulator reset/step API.",
@@ -136,93 +159,6 @@ def require_torch() -> Any:
     except Exception as exc:  # pragma: no cover - local no-torch path.
         raise RuntimeError(f"torch import failed: {exc}") from exc
     return torch
-
-
-def build_actor_critic(config: PPOConfig, *, device: str) -> Any:
-    torch = require_torch()
-    nn = torch.nn
-
-    class ActorCritic(nn.Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.actor = make_mlp(nn, config.obs_dim, config.action_dim, config)
-            self.value = make_mlp(nn, config.obs_dim, 1, config)
-            self.log_std = nn.Parameter(
-                torch.full((config.action_dim,), config.log_std_init, device=device)
-            )
-
-        def forward(self, observation: Any) -> tuple[Any, Any]:
-            mean = self.actor(observation)
-            value = self.value(observation).squeeze(-1)
-            return mean, value
-
-        def act(self, observation: Any) -> tuple[Any, Any, Any, Any]:
-            mean, value = self.forward(observation)
-            log_std = self.log_std.expand_as(mean)
-            std = log_std.exp()
-            raw_action = mean + std * torch.randn_like(mean)
-            action = torch.tanh(raw_action)
-            log_prob = tanh_gaussian_log_prob_from_raw(raw_action, mean, log_std, config)
-            entropy = gaussian_entropy(log_std)
-            return action, log_prob, value, entropy
-
-        def evaluate_actions(self, observation: Any, action: Any) -> tuple[Any, Any, Any]:
-            mean, value = self.forward(observation)
-            log_std = self.log_std.expand_as(mean)
-            log_prob = tanh_gaussian_log_prob_from_action(action, mean, log_std, config)
-            entropy = gaussian_entropy(log_std)
-            return log_prob, entropy, value
-
-    return ActorCritic().to(device)
-
-
-def make_mlp(nn: Any, input_dim: int, output_dim: int, config: PPOConfig) -> Any:
-    layers: list[Any] = []
-    current_dim = input_dim
-    for _ in range(config.hidden_layers):
-        layer = nn.Linear(current_dim, config.hidden_dim)
-        nn.init.orthogonal_(layer.weight, gain=math.sqrt(2.0))
-        nn.init.zeros_(layer.bias)
-        layers.append(layer)
-        layers.append(nn.Tanh())
-        current_dim = config.hidden_dim
-    output = nn.Linear(current_dim, output_dim)
-    nn.init.orthogonal_(output.weight, gain=0.01)
-    nn.init.zeros_(output.bias)
-    layers.append(output)
-    return nn.Sequential(*layers)
-
-
-def tanh_gaussian_log_prob_from_raw(
-    raw_action: Any,
-    mean: Any,
-    log_std: Any,
-    config: PPOConfig,
-) -> Any:
-    torch = require_torch()
-    std = log_std.exp()
-    normal = torch.distributions.Normal(mean, std)
-    action = torch.tanh(raw_action)
-    log_prob = normal.log_prob(raw_action) - torch.log(
-        1.0 - action.square() + config.tanh_eps
-    )
-    return log_prob.sum(dim=-1)
-
-
-def tanh_gaussian_log_prob_from_action(
-    action: Any,
-    mean: Any,
-    log_std: Any,
-    config: PPOConfig,
-) -> Any:
-    torch = require_torch()
-    clipped = action.clamp(-1.0 + config.tanh_eps, 1.0 - config.tanh_eps)
-    raw_action = 0.5 * (torch.log1p(clipped) - torch.log1p(-clipped))
-    return tanh_gaussian_log_prob_from_raw(raw_action, mean, log_std, config)
-
-
-def gaussian_entropy(log_std: Any) -> Any:
-    return (log_std + 0.5 * math.log(2.0 * math.pi * math.e)).sum(dim=-1)
 
 
 def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -> RolloutBatch:
@@ -337,104 +273,6 @@ def collect_rollout(env: Any, model: Any, observation: Any, config: PPOConfig) -
         root_height_mean=mean_tensors(torch, root_height_values),
         root_height_min=min_tensors(torch, root_height_values),
         upright_mean=mean_tensors(torch, upright_values),
-    )
-
-
-def compute_gae(batch: RolloutBatch, config: PPOConfig) -> tuple[Any, Any]:
-    torch = require_torch()
-    advantages = torch.zeros_like(batch.rewards)
-    last_advantage = torch.zeros_like(batch.next_value)
-    for step in reversed(range(config.rollout_steps)):
-        next_value = batch.next_value if step == config.rollout_steps - 1 else batch.values[step + 1]
-        next_not_done = 1.0 - batch.dones[step].float()
-        delta = batch.rewards[step] + config.gamma * next_value * next_not_done - batch.values[step]
-        last_advantage = delta + config.gamma * config.gae_lambda * next_not_done * last_advantage
-        advantages[step] = last_advantage
-    returns = advantages + batch.values
-    assert_finite_tensor(advantages, "advantages")
-    assert_finite_tensor(returns, "returns")
-    return advantages, returns
-
-
-def ppo_update(
-    model: Any,
-    optimizer: Any,
-    batch: RolloutBatch,
-    advantages: Any,
-    returns: Any,
-    config: PPOConfig,
-) -> PPODiagnostics:
-    torch = require_torch()
-    flat_observations = batch.observations.reshape(-1, config.obs_dim)
-    flat_actions = batch.actions.reshape(-1, config.action_dim)
-    flat_old_log_probs = batch.log_probs.reshape(-1)
-    flat_advantages = advantages.reshape(-1)
-    flat_returns = returns.reshape(-1)
-    flat_advantages = (flat_advantages - flat_advantages.mean()) / (
-        flat_advantages.std(unbiased=False) + 1e-8
-    )
-    device = flat_observations.device
-    synchronize_device(device)
-    started = time.perf_counter()
-    batch_size = flat_observations.shape[0]
-    metric_sums = {
-        "policy_loss": torch.zeros((), device=device),
-        "value_loss": torch.zeros((), device=device),
-        "entropy": torch.zeros((), device=device),
-        "approx_kl": torch.zeros((), device=device),
-        "clip_fraction": torch.zeros((), device=device),
-        "grad_norm": torch.zeros((), device=device),
-    }
-    finite_loss_flags: list[Any] = []
-    minibatches = 0
-    for _epoch in range(config.epochs):
-        indices = torch.randperm(batch_size, device=device)
-        for start in range(0, batch_size, config.minibatch_size):
-            minibatch = indices[start : start + config.minibatch_size]
-            new_log_prob, entropy, value = model.evaluate_actions(
-                flat_observations[minibatch],
-                flat_actions[minibatch],
-            )
-            old_log_prob = flat_old_log_probs[minibatch]
-            log_ratio = new_log_prob - old_log_prob
-            ratio = log_ratio.exp()
-            advantage = flat_advantages[minibatch]
-            policy_loss = -torch.min(
-                ratio * advantage,
-                ratio.clamp(1.0 - config.clip, 1.0 + config.clip) * advantage,
-            ).mean()
-            value_loss = 0.5 * (value - flat_returns[minibatch]).square().mean()
-            entropy_mean = entropy.mean()
-            loss = policy_loss + config.value_coef * value_loss - config.entropy_coef * entropy_mean
-            finite_loss_flags.append(torch.isfinite(loss.detach()))
-            optimizer.zero_grad(set_to_none=True)
-            loss.backward()
-            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
-            optimizer.step()
-            with torch.no_grad():
-                approx_kl = ((ratio - 1.0) - log_ratio).mean()
-                clip_fraction = ((ratio - 1.0).abs() > config.clip).float().mean()
-                metric_sums["policy_loss"] += policy_loss.detach()
-                metric_sums["value_loss"] += value_loss.detach()
-                metric_sums["entropy"] += entropy_mean.detach()
-                metric_sums["approx_kl"] += approx_kl.detach()
-                metric_sums["clip_fraction"] += clip_fraction.detach()
-                metric_sums["grad_norm"] += grad_norm.detach()
-            minibatches += 1
-    assert_finite_flags(torch.stack(finite_loss_flags), "ppo_loss")
-    synchronize_device(device)
-    update_time_s = time.perf_counter() - started
-    scale = 1.0 / max(1, minibatches)
-    samples = batch_size * config.epochs
-    return PPODiagnostics(
-        policy_loss=float((metric_sums["policy_loss"] * scale).item()),
-        value_loss=float((metric_sums["value_loss"] * scale).item()),
-        entropy=float((metric_sums["entropy"] * scale).item()),
-        approx_kl=float((metric_sums["approx_kl"] * scale).item()),
-        clip_fraction=float((metric_sums["clip_fraction"] * scale).item()),
-        grad_norm=float((metric_sums["grad_norm"] * scale).item()),
-        update_time_s=update_time_s,
-        update_samples_per_sec=samples / update_time_s if update_time_s > 0.0 else 0.0,
     )
 
 

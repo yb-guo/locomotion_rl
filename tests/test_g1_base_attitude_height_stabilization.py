@@ -1,9 +1,10 @@
-from dataclasses import dataclass
 import inspect
 import json
 import math
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
+from typing import ClassVar
 from uuid import uuid4
 
 import pytest
@@ -728,7 +729,7 @@ class FakeLink:
 
 
 class FakeContactRobot:
-    link_indices = {
+    link_indices: ClassVar[dict[str, int]] = {
         "left_ankle_roll_link": 0,
         "right_ankle_roll_link": 1,
         "left_ankle_pitch_link": 2,

@@ -17,12 +17,12 @@ from h200_locomotion_lab.sonic.g1_observation import (
     SonicG1HistoryBuffer,
     sonic_g1_history_from_decoder_observation,
 )
+from h200_locomotion_lab.tools.genesis_action_replay_smoke import read_default_joint_positions
 from h200_locomotion_lab.tools.sonic_policy_decoder_forward import (
     SonicOnnxReferenceDecoder,
     read_obs_csv_rows,
     vector_range,
 )
-from h200_locomotion_lab.tools.genesis_action_replay_smoke import read_default_joint_positions
 from h200_locomotion_lab.tools.sonic_reference_replay_smoke import apply_sonic_g1_motor_config
 
 

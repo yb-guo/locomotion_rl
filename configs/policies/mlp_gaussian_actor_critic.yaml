@@ -1,0 +1,15 @@
+policy:
+  name: mlp_gaussian_actor_critic
+  family: gaussian_actor_critic
+  action_horizon: 1
+  capabilities:
+    - sample
+    - log_prob
+    - value
+  parameters:
+    actor_hidden_dims: [512, 256, 128]
+    critic_hidden_dims: [512, 256, 128]
+    activation: elu
+    observation_normalization: true
+    initial_action_std: 1.0
+    action_std_type: scalar

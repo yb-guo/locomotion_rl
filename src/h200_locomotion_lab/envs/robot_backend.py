@@ -9,8 +9,9 @@ velocity, and raw 29D SONIC actions mapped to MuJoCo-order motor targets.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol, Sequence
+from typing import Any, Protocol
 
 from h200_locomotion_lab.runtime import ScalarActionBridge
 from h200_locomotion_lab.sonic.g1_observation import (
@@ -113,7 +114,7 @@ class G1MotorCommand:
         cls,
         raw_action_isaaclab: Sequence[float],
         action_bridge: ScalarActionBridge | None = None,
-    ) -> "G1MotorCommand":
+    ) -> G1MotorCommand:
         raw_action = _coerce_vector(raw_action_isaaclab, SONIC_ACTION_DIM, "raw_action_isaaclab")
         bridge = action_bridge or get_default_sonic_g1_action_bridge()
         return cls(
@@ -155,7 +156,7 @@ class LogReplayG1RobotBackend:
         rows: Sequence[Sequence[float]],
         *,
         policy_rate_hz: float = 50.0,
-    ) -> "LogReplayG1RobotBackend":
+    ) -> LogReplayG1RobotBackend:
         if policy_rate_hz <= 0.0:
             raise ValueError("policy_rate_hz must be positive")
         qpos_rows = tuple(

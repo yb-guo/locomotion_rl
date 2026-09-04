@@ -1,8 +1,7 @@
 import importlib.util
 from pathlib import Path
 
-import h200_locomotion_lab.training.rsl_history_wrapper as rsl_history_wrapper
-
+from h200_locomotion_lab.training import rsl_history_wrapper
 
 ROOT = Path(__file__).resolve().parents[1]
 TASK038_DIR = ROOT / ".agent" / "task" / "task038-locoformer-min-g1like-reproduction"

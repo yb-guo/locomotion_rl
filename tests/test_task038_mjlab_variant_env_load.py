@@ -3,7 +3,6 @@ import json
 from collections import UserDict
 from pathlib import Path
 
-
 TASK038_DIR = (
     Path(__file__).resolve().parents[1]
     / ".agent"

@@ -3,7 +3,6 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-
 ROOT = Path(__file__).resolve().parents[1]
 TASK040_DIR = ROOT / ".agent" / "task" / "task040-sequence-aware-txl-ppo-update"
 

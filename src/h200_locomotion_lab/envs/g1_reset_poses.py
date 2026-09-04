@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from h200_locomotion_lab.robots import G1_27DOF_NOHAND_ACTUATOR_ORDER
 
-
 G1_STANDING_RESET_POSE_NAMES = (
     "profile",
     "half_crouch",

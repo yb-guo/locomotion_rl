@@ -7,9 +7,9 @@ summaries must provide.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Mapping
-
+from typing import Any
 
 DEFAULT_SPEEDS_MPS = (0.4, 1.2, 2.0)
 DEFAULT_BASELINE_POLICIES = ("MLP", "GRU", "AdaptK160")

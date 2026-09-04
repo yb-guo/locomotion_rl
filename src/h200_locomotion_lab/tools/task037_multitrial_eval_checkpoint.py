@@ -10,10 +10,12 @@ import sys
 import time
 import traceback
 import types
+from collections.abc import Mapping
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 
 DEFAULT_TASK = "Unitree-G1-Gripper-Flat-Task037-AdaptK4-DeterministicInnerReset-Fast2p0"
 DEFAULT_JOINTS = (
@@ -170,9 +172,11 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
     _install_wandb_stub()
     _install_wcwidth_stub()
 
+    import mjlab.tasks as _mjlab_tasks
+    import src.tasks as _project_tasks
+
+    del _mjlab_tasks, _project_tasks  # Imports register task packages by side effect.
     import torch
-    import mjlab.tasks  # noqa: F401
-    import src.tasks  # noqa: F401
     from mjlab.envs import ManagerBasedRlEnv
     from mjlab.rl import MjlabOnPolicyRunner, RslRlVecEnvWrapper
     from mjlab.tasks.registry import load_env_cfg, load_rl_cfg, load_runner_cls
@@ -226,7 +230,7 @@ def run_eval(args: argparse.Namespace) -> dict[str, Any]:
         num_trials = int(getattr(getattr(rollout_env.env, "config", None), "num_trials", 3))
         final_trial_idx = max(num_trials - 1, 0)
         final_window_steps = _final_window_steps(args.final_window_s, dt)
-        trial_length_steps = max(1, int(math.ceil(args.trial_length_s / dt)))
+        trial_length_steps = max(1, math.ceil(args.trial_length_s / dt))
         current_trial = torch.zeros(args.num_envs, device=args.device, dtype=torch.long)
         trial_step_index = torch.zeros(args.num_envs, device=args.device, dtype=torch.long)
         trial_stats = [_TrialAccumulator(torch, args.num_envs, args.device) for _ in range(num_trials)]
@@ -692,7 +696,7 @@ def _final_window_steps(window_s: float, dt: float) -> int | None:
         return None
     if dt <= 0.0:
         raise ValueError("step dt must be positive when --final-window-s is used")
-    return max(1, int(math.ceil(window_s / dt)))
+    return max(1, math.ceil(window_s / dt))
 
 
 def _final_trial_pass(final_trial: dict[str, Any], thresholds: dict[str, float]) -> bool:
@@ -814,7 +818,7 @@ def _apply_optional_memory_ablation(actor: Any | None, args: argparse.Namespace)
         return
     setter = getattr(actor, "task042_set_memory_ablation_mode", None)
     if callable(setter):
-        setter(getattr(args, "memory_ablation_mode"))
+        setter(args.memory_ablation_mode)
 
 
 def _action_dim(env: Any, base: Any) -> int | None:
@@ -844,7 +848,7 @@ def main() -> None:
     output_json.parent.mkdir(parents=True, exist_ok=True)
     try:
         result = run_eval(args)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         result = {
             "task": args.task,
             "checkpoint": args.checkpoint,

@@ -1,6 +1,7 @@
 # Agent Index
 
-H200 Locomotion Lab 的 agent 入口。
+Locomotion Lab 的 agent 入口。当前主力硬件是 RTX 5060 Ti；H200 profile
+已暂停。
 
 ## Docs
 
@@ -9,6 +10,7 @@ H200 Locomotion Lab 的 agent 入口。
 - `doc/sonic.md`
 - `doc/locoformer.md`
 - `doc/runtime_architecture.md`
+- `doc/component_architecture.md`
 - `../../README.md`
 
 ## Active Tasks
@@ -53,6 +55,33 @@ H200 Locomotion Lab 的 agent 入口。
 - `task/task044-memory-required-fault-identification-target/task.md`
 - `task/task045-left-knee-continuous-stability-tail-gate/task.md`
 - `task/task046-retry-after-fall-adaptation-eval/task.md`
+- `task/task047-rtx5060ti-mjlab-setup/task.md`
+- `task/task048-rtx-normal-walking-baseline/task.md`
+- `task/task049-component-boundary-redesign/task.md`
+- `task/task050-whole-body-contract/task.md`
+- `task/task051-procedural-whole-body-generator/task.md`
+- `task/task052-whole-body-adapter-motor-process/task.md`
+- `task/task053-specialist-normal-walk/task.md`
+- `task/task054-shared-mlp-cross-morphology/task.md`
+- `task/task055-hidden-online-motor-process/task.md`
+- `task/task056-gru-transformer-xl/task.md`
+- `task/task057-heldout-ood-evaluation/task.md`
+- `task/task058-scale-and-flow-algorithms/task.md`
+- `task/task059-rtx5060ti-primary/task.md`
+- `task/task060-2000-usability-gate/task.md`
+- `task/task061-rtx-specialist-normal-walk/task.md`
+- `task/task062-shared-mlp-train-topologies/task.md`
+- `task/task063-hidden-motor-process-training/task.md`
+- `task/task064-gru-txl-adaptation/task.md`
+- `task/task065-heldout-ood-final-gate/task.md`
+- `task/task066-scale-flow-independent/task.md`
+- `task/task067-biped-stance-contract/task.md`
+- `task/task068-repository-ruff-cleanup/task.md`
+- `task/task069-locoformer-paper-faithful-morphology/task.md`
+- `task/task070-archetype-constrained-standable-morphology/task.md`
+- `task/task071-multimorphology-training-readiness/task.md`
+- `task/task072-bound-g1-go2-locomotion-proof/task.md`
+- `task/task073-all-configuration-binding-training/task.md`
 
 ## Consensus
 
@@ -61,12 +90,12 @@ H200 Locomotion Lab 的 agent 入口。
 - `.agent/doc` 放长期共识和项目判断。
 - `.agent/task` 放可执行任务，任务必须拆成小的 closed unit。
 - 每个 subtask 固定 `Route / Log / Review`。
-- 不把 H200 上完整 Isaac Sim/RTX 路线当主线。
+- 不把 H200 路线当主线；默认只在 RTX 5060 Ti 上开发和训练。
 - 所有训练和仿真路径都必须有 smoke test、失败条件和退出规则。
 
 ## Lessons
 
-- H200 是训练卡，不是 RTX 仿真工作站。
+- RTX 5060 Ti 是当前主力开发和训练卡；H200 仅保留历史记录。
 - 先复现官方最短链路，再改算法。
 - SONIC 先跑 MuJoCo sim2sim，再试 Isaac Lab headless。
 - LocoFormer 先做最小可验证版本，不从 full scale 开始。

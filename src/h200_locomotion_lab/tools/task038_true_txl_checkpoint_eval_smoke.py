@@ -11,6 +11,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.tools.task038_true_txl_runner_smoke_probe import (
     DEFAULT_EXPECTED_ACTION_DIM,
     DEFAULT_EXPECTED_ACTOR_MODEL_CLASS,
@@ -36,7 +37,6 @@ from h200_locomotion_lab.tools.task038_true_txl_runner_smoke_probe import (
     _txl_debug_snapshot,
     _variant_label,
 )
-
 
 DEFAULT_TASK = TRAIN_TRUE_TXL_RUNNER_SMOKE_TASK_ID
 ALLOWED_TASKS = (
@@ -92,7 +92,7 @@ def preflight_args(args: argparse.Namespace) -> None:
 def _optional_txl_debug_snapshot(actor_model: Any) -> tuple[dict[str, Any] | None, str | None]:
     try:
         return _txl_debug_snapshot(actor_model), None
-    except Exception as exc:
+    except (AssertionError, *RECOVERABLE_RUNTIME_ERRORS) as exc:
         return None, repr(exc)
 
 
@@ -101,9 +101,11 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
     os.environ.setdefault("MUJOCO_GL", "egl")
     os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
 
+    import mjlab.tasks as _mjlab_tasks
+    import src.tasks as _project_tasks
+
+    del _mjlab_tasks, _project_tasks  # Imports register task packages by side effect.
     import torch
-    import mjlab.tasks  # noqa: F401
-    import src.tasks  # noqa: F401
     from mjlab.envs import ManagerBasedRlEnv
     from mjlab.rl import MjlabOnPolicyRunner, RslRlVecEnvWrapper
     from mjlab.tasks.registry import load_env_cfg, load_rl_cfg, load_runner_cls
@@ -160,7 +162,7 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
                     action = policy(obs)
                     policy_action_shape = _shape(action)
                     policy_action_finite = _finite(torch, action)
-                except Exception as exc:
+                except RECOVERABLE_RUNTIME_ERRORS as exc:
                     policy_error = repr(exc)
                     break
                 step_result = rollout_env.step(action)
@@ -317,7 +319,7 @@ def main() -> None:
         summary = run_probe(args)
     except PreflightError as exc:
         summary = build_preflight_failure_summary(args, exc)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         summary = build_failure_summary(args, exc)
     write_json_summary(args.output_json, summary)
     print(json.dumps(summary, indent=2, sort_keys=True))

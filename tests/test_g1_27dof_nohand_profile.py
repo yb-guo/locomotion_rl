@@ -6,15 +6,14 @@ import yaml
 
 from h200_locomotion_lab.robots import (
     G1_27DOF_NOHAND_ACTUATOR_ORDER,
+    REMOVED_FROM_G1_29DOF_COMMAND_ORDER,
     G1NoHandGenesisTrainingProfile,
     G1NoHandProfileError,
-    REMOVED_FROM_G1_29DOF_COMMAND_ORDER,
     RobotProfileError,
     load_g1_27dof_nohand_profile,
     load_g1_27dof_nohand_profile_dict,
     load_robot_profile,
 )
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROFILE_27DOF_PATH = REPO_ROOT / "configs/robots/unitree_g1_27dof_nohand_genesis.yaml"

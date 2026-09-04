@@ -1,0 +1,21 @@
+experiment:
+  name: procedural_whole_body_rtx5060ti
+  hardware_profile: rtx5060ti_16gb
+  status: active
+  task: tasks/procedural_whole_body_v1.yaml
+  policy: policies/whole_body_mlp.yaml
+  algorithm: algorithms/whole_body_ppo.yaml
+  runtime:
+    backend: mujoco_mjlab_reference
+    device: cuda:0
+    headless: true
+    topology_shards: 4
+    envs_per_shard: 64
+    total_envs: 256
+    expansion_target: 1024
+    note: >-
+      VRAM-safe local starting point for the RTX 5060 Ti. Increase only after
+      a measured memory and throughput probe.
+  pinned_revisions:
+    unitree_mjlab: 1425b15f73bd4095f0df53709d7c389c3eb9e790
+    mujoco_menagerie: da76818e269b82289eba39808e2fb91d679d6994

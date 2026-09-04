@@ -12,12 +12,22 @@ import math
 import platform
 import sys
 import time
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
-
+from typing import Any
 
 DEFAULT_OUTPUT = Path("outputs/task023/franka_current_force_estimation/genesis_api_smoke.json")
 DEFAULT_ASSET = "xml/franka_emika_panda/panda_nohand.xml"
+RECOVERABLE_API_ERRORS = (
+    ArithmeticError,
+    AttributeError,
+    ImportError,
+    LookupError,
+    OSError,
+    RuntimeError,
+    TypeError,
+    ValueError,
+)
 FRANKA_JOINT_NAME_SETS = (
     tuple(f"joint{index}" for index in range(1, 8)),
     tuple(f"panda_joint{index}" for index in range(1, 8)),
@@ -47,7 +57,7 @@ def main() -> None:
     except SmokeBlocked as exc:
         report["status"] = "blocked"
         report["blocker"] = str(exc)
-    except Exception as exc:  # pragma: no cover - target-only simulator failures.
+    except RECOVERABLE_API_ERRORS as exc:  # pragma: no cover - target-only simulator failures.
         report["status"] = "failed"
         report["blocker"] = f"{exc.__class__.__name__}: {exc}"
     finally:
@@ -184,7 +194,7 @@ def make_scene(gs: Any, sim_dt: float) -> Any:
 def add_plane(gs: Any, scene: Any) -> None:
     try:
         scene.add_entity(gs.morphs.Plane())
-    except Exception:
+    except RECOVERABLE_API_ERRORS:
         return
 
 
@@ -219,7 +229,7 @@ def add_payload_box(gs: Any, scene: Any) -> Any | None:
             return scene.add_entity(gs.morphs.Box(**kwargs))
         except TypeError:
             continue
-        except Exception:
+        except RECOVERABLE_API_ERRORS:
             return None
     return None
 
@@ -241,7 +251,7 @@ def resolve_arm_dofs(robot: Any) -> tuple[list[str], list[int]]:
             try:
                 joint = robot.get_joint(name)
                 resolved.append(single_joint_dof_index(joint))
-            except Exception:
+            except RECOVERABLE_API_ERRORS:
                 ok = False
                 break
         if ok and len(resolved) == 7:
@@ -257,9 +267,9 @@ def resolve_arm_dofs(robot: Any) -> tuple[list[str], list[int]]:
 
 def single_joint_dof_index(joint: Any) -> int:
     if hasattr(joint, "dof_idx_local"):
-        return int(getattr(joint, "dof_idx_local"))
+        return int(joint.dof_idx_local)
     if hasattr(joint, "dofs_idx_local"):
-        values = list(getattr(joint, "dofs_idx_local"))
+        values = list(joint.dofs_idx_local)
         if len(values) != 1:
             raise ValueError(f"expected one dof, got {values}")
         return int(values[0])
@@ -270,9 +280,10 @@ def resolve_tool_link(robot: Any) -> tuple[Any, str]:
     for name in TOOL_LINK_CANDIDATES:
         try:
             link = robot.get_link(name)
+        except RECOVERABLE_API_ERRORS:
+            link = None
+        if link is not None:
             return link, str(name)
-        except Exception:
-            continue
     links = list_named_objects(robot, ("links", "_links"))
     if not links:
         raise SmokeBlocked("could_not_resolve_tool_link")
@@ -293,9 +304,9 @@ def apply_basic_pd(robot: Any, np: Any, arm_dofs: Sequence[int]) -> None:
         except TypeError:
             try:
                 robot.set_dofs_force_range(lower, upper, arm_dofs)
-            except Exception:
+            except RECOVERABLE_API_ERRORS:
                 return
-        except Exception:
+        except RECOVERABLE_API_ERRORS:
             return
 
 
@@ -308,9 +319,9 @@ def optional_dof_setter(robot: Any, method_name: str, values: Any, arm_dofs: Seq
     except TypeError:
         try:
             method(values, arm_dofs)
-        except Exception:
+        except RECOVERABLE_API_ERRORS:
             return
-    except Exception:
+    except RECOVERABLE_API_ERRORS:
         return
 
 
@@ -321,7 +332,7 @@ def command_small_motion(robot: Any, arm_dofs: Sequence[int]) -> list[float]:
     target = [float(value) for value in q[: len(arm_dofs)]]
     for index in range(len(target)):
         target[index] += 0.01 * math.sin(index + 1.0)
-    method = getattr(robot, "control_dofs_position")
+    method = robot.control_dofs_position
     try:
         method(target, dofs_idx_local=arm_dofs)
     except TypeError:
@@ -379,8 +390,8 @@ def probe_weld(gs: Any, np: Any, scene: Any, payload: Any | None, tool_link: Any
         return report
     try:
         payload_link = resolve_payload_link(payload)
-        payload_ids = np.array([int(getattr(payload_link, "idx"))], dtype=gs.np_int)
-        tool_ids = np.array([int(getattr(tool_link, "idx"))], dtype=gs.np_int)
+        payload_ids = np.array([int(payload_link.idx)], dtype=gs.np_int)
+        tool_ids = np.array([int(tool_link.idx)], dtype=gs.np_int)
         rigid.add_weld_constraint(payload_ids, tool_ids)
         report["payload_link_name"] = str(getattr(payload_link, "name", "unknown"))
         report["payload_link_idx"] = int(getattr(payload_link, "idx", -1))
@@ -390,9 +401,9 @@ def probe_weld(gs: Any, np: Any, scene: Any, payload: Any | None, tool_link: Any
                 rigid.delete_weld_constraint(payload_ids, tool_ids)
             except TypeError:
                 rigid.delete_weld_constraint(payload_ids)
-            except Exception as exc:
+            except RECOVERABLE_API_ERRORS as exc:
                 report["delete_blocker"] = str(exc)
-    except Exception as exc:
+    except RECOVERABLE_API_ERRORS as exc:
         report["smoke_status"] = "blocked"
         report["blocker"] = f"weld_smoke_failed:{exc}"
     return report
@@ -401,9 +412,11 @@ def probe_weld(gs: Any, np: Any, scene: Any, payload: Any | None, tool_link: Any
 def resolve_payload_link(payload: Any) -> Any:
     for name in ("box_baselink", "base_link", "link"):
         try:
-            return payload.get_link(name)
-        except Exception:
-            continue
+            link = payload.get_link(name)
+        except RECOVERABLE_API_ERRORS:
+            link = None
+        if link is not None:
+            return link
     links = list_named_objects(payload, ("links", "_links"))
     if not links:
         raise SmokeBlocked("payload_link_missing")
@@ -448,7 +461,7 @@ def shape_of(value: Any) -> list[int] | str:
     if shape is not None:
         try:
             return [int(dim) for dim in shape]
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             return str(shape)
     data = to_python(value)
     if isinstance(data, list):
@@ -513,7 +526,7 @@ def flatten_list(value: Any) -> list[Any]:
         return out
     try:
         return [float(value)]
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return []
 
 
@@ -528,7 +541,7 @@ def to_python(value: Any) -> Any:
 
 
 def list_named_children(parent: Any, attrs: Iterable[str]) -> list[str]:
-    return [str(getattr(item, "name")) for item in list_named_objects(parent, attrs)]
+    return [str(item.name) for item in list_named_objects(parent, attrs)]
 
 
 def list_named_objects(parent: Any, attrs: Iterable[str]) -> list[Any]:

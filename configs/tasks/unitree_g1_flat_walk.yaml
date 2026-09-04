@@ -1,0 +1,36 @@
+task:
+  name: unitree_g1_flat_walk
+  observations:
+    policy:
+      shape: [98]
+      dtype: float32
+    value:
+      shape: [113]
+      dtype: float32
+  action:
+    shape: [29]
+    dtype: float32
+  max_episode_steps: 1000
+  metrics:
+    - episode_return
+    - episode_length
+    - forward_velocity
+    - planar_velocity_error
+    - yaw_velocity_error
+    - projected_gravity_xy
+    - fall
+  parameters:
+    implementation: Unitree-G1-Flat
+    upstream_revision: 1425b15f73bd4095f0df53709d7c389c3eb9e790
+    control_rate_hz: 50
+    action_semantics: unbounded_joint_position_delta_with_per_joint_scale
+    command:
+      linear_velocity_x_mps: 0.5
+      linear_velocity_y_mps: 0.0
+      angular_velocity_z_radps: 0.0
+    evaluation_gate:
+      duration_s: 20.0
+      minimum_zero_fall_ratio: 0.95
+      maximum_planar_velocity_error_mps: 0.35
+      maximum_yaw_velocity_error_radps: 0.35
+      maximum_projected_gravity_xy: 0.35

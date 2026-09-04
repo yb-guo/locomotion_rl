@@ -7,7 +7,6 @@ from h200_locomotion_lab.training.rsl_history_wrapper import (
     migrate_adaptk160_to_task041_true_txl_checkpoint,
 )
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 

@@ -7,7 +7,6 @@ from typing import Any
 
 import yaml
 
-
 EXPECTED_G1_27DOF_ACTION_DIM = 27
 DEFAULT_UNITREE_G1_27DOF_NOHAND_GENESIS_PROFILE = (
     Path(__file__).resolve().parents[3]

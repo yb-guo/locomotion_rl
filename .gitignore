@@ -22,6 +22,7 @@ logs/
 runs/
 wandb/
 outputs/
+.external/
 .agent/task/*/artifacts/
 
 # Simulator and upstream clones

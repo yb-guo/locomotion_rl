@@ -5,6 +5,8 @@ from __future__ import annotations
 from types import MethodType
 from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
+
 
 class Task037MjlabInnerResetController:
     """Patch a MJLab ManagerBasedRlEnv to split inner and outer resets."""
@@ -100,7 +102,7 @@ class _ConditionSnapshot:
         self.env_tensors = env_tensors
 
     @classmethod
-    def capture(cls, env: Any, env_ids: Any) -> "_ConditionSnapshot":
+    def capture(cls, env: Any, env_ids: Any) -> _ConditionSnapshot:
         command_tensors: dict[str, Any] = {}
         if env_ids.numel() > 0:
             command_term = _command_term(env, "twist")
@@ -175,7 +177,7 @@ def _command_term(env: Any, name: str) -> Any | None:
     if get_term is not None:
         try:
             return get_term(name)
-        except Exception:
+        except RECOVERABLE_RUNTIME_ERRORS:
             return None
     return None
 
@@ -184,9 +186,7 @@ def _capture_env_condition_tensors(env: Any, env_ids: Any) -> dict[str, Any]:
     tensors = {}
     for name in dir(env):
         if not (
-            name.startswith("_task029_motor_failure_")
-            or name.startswith("_task030_dynamic")
-            or name.startswith("_task031_dynamic")
+            name.startswith(("_task029_motor_failure_", "_task030_dynamic", "_task031_dynamic"))
         ):
             continue
         value = getattr(env, name)

@@ -5,7 +5,6 @@ from unittest.mock import patch
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[1]
 TASK041_DIR = ROOT / ".agent" / "task" / "task041-sequence-aware-txl-clean-gait"
 

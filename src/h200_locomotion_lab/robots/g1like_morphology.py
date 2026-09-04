@@ -9,11 +9,10 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from h200_locomotion_lab.robots.g1like_slots import (
+    G1_29DOF_COMMAND_MUJOCO_ACTUATOR_ORDER,
     G1LIKE_ACTION_DIM,
     G1LIKE_ACTION_SLOT_NAMES,
-    G1_29DOF_COMMAND_MUJOCO_ACTUATOR_ORDER,
 )
-
 
 G1LIKE_SLOT_SCHEMA_ID = "g1like_slots.v1.body29.command_mujoco"
 TRAIN_RANGE = (0.95, 1.05)
@@ -250,11 +249,12 @@ def _validate_variant(
     if not isinstance(notes, list) or not all(isinstance(note, str) for note in notes):
         raise G1LikeMorphologyManifestError("limitation_notes must be a list of strings")
     joined_notes = " ".join(notes).lower()
-    if any(float(variant[field]) != 1.0 for field in ("mass_scale", "com_scale", "inertia_scale")):
-        if "nonphysical" not in joined_notes or "mass/com/inertia" not in joined_notes:
-            raise G1LikeMorphologyManifestError(
-                "nonphysical mass/COM/inertia scaling must be recorded in limitation_notes"
-            )
+    if any(
+        float(variant[field]) != 1.0 for field in ("mass_scale", "com_scale", "inertia_scale")
+    ) and ("nonphysical" not in joined_notes or "mass/com/inertia" not in joined_notes):
+        raise G1LikeMorphologyManifestError(
+            "nonphysical mass/COM/inertia scaling must be recorded in limitation_notes"
+        )
 
 
 def _validate_scale(

@@ -9,29 +9,28 @@ import time
 from pathlib import Path
 from typing import Any
 
-from h200_locomotion_lab.envs.g1_velocity_tracking_env import (
-    G1VelocityTrackingConfig,
-    G1VelocityTrackingVectorizedEnv,
-)
 from h200_locomotion_lab.envs.g1_reset_poses import (
     G1_STANDING_RESET_POSE_NAMES,
     build_g1_standing_reset_pose_candidates,
     leg_value_summary,
 )
+from h200_locomotion_lab.envs.g1_velocity_tracking_env import (
+    G1VelocityTrackingConfig,
+    G1VelocityTrackingVectorizedEnv,
+)
 from h200_locomotion_lab.envs.vectorized_genesis_backend import (
     VectorizedGenesisBackend,
     VectorizedGenesisConfig,
 )
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.robots import load_g1_27dof_nohand_profile
-from h200_locomotion_lab.training.ppo_loop import require_torch, synchronize_device
 from h200_locomotion_lab.tools.g1_ppo_smoke import (
-    PROJECT_PREFIX,
     non_negative_float,
     positive_float,
     positive_int,
     resolve_run_dir,
 )
-
+from h200_locomotion_lab.training.ppo_loop import require_torch, synchronize_device
 
 DEFAULT_OUTPUT_ROOT = Path("outputs/task014/standing_reset_pose_probe")
 DEFAULT_ROOT_Z_VALUES = "0.90,1.00,1.10,1.20"
@@ -52,7 +51,7 @@ def main() -> None:
     try:
         result.update(run_probe(args))
         result["status"] = "ok"
-    except Exception as exc:  # pragma: no cover - H200 failure path.
+    except RECOVERABLE_RUNTIME_ERRORS as exc:  # pragma: no cover - H200 failure path.
         result["blocker"] = f"{exc.__class__.__name__}:{exc}"
     print(json.dumps(result, sort_keys=True), flush=True)
     if result["status"] != "ok":

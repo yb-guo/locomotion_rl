@@ -14,6 +14,7 @@ from numbers import Number
 from pathlib import Path
 from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 
 TRAIN_TRUE_TXL_RUNNER_SMOKE_TASK_ID = (
     "Unitree-G1-Gripper-Flat-Task038-TrainTrueTxlRunnerSmoke"
@@ -64,9 +65,11 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
     os.environ.setdefault("MUJOCO_GL", "egl")
     os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
 
+    import mjlab.tasks as _mjlab_tasks
+    import src.tasks as _project_tasks
+
+    del _mjlab_tasks, _project_tasks  # Imports register task packages by side effect.
     import torch
-    import mjlab.tasks  # noqa: F401
-    import src.tasks  # noqa: F401
     from mjlab.envs import ManagerBasedRlEnv
     from mjlab.rl import MjlabOnPolicyRunner, RslRlVecEnvWrapper
     from mjlab.tasks.registry import load_env_cfg, load_rl_cfg, load_runner_cls
@@ -343,7 +346,7 @@ def _get_policy(runner: Any, device: str) -> tuple[Any | None, str | None]:
         if callable(eval_fn):
             eval_fn()
         return policy, None
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         return None, repr(exc)
 
 
@@ -427,7 +430,7 @@ def _shape(value: Any) -> list[int] | None:
 def _finite(torch: Any, value: Any) -> bool:
     try:
         return bool(torch.isfinite(value.detach().float()).all().item())
-    except Exception:
+    except RECOVERABLE_RUNTIME_ERRORS:
         return False
 
 
@@ -503,7 +506,7 @@ def main() -> None:
     args = parse_args()
     try:
         summary = run_probe(args)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         summary = build_failure_summary(args, exc)
     write_json_summary(args.output_json, summary)
     print(json.dumps(summary, indent=2, sort_keys=True))

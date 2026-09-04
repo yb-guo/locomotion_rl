@@ -8,7 +8,6 @@ import pytest
 
 from h200_locomotion_lab.tools import g1_ankle_roll_contact_patch as patcher
 
-
 TARGETS = ("left_ankle_roll_link", "right_ankle_roll_link")
 
 

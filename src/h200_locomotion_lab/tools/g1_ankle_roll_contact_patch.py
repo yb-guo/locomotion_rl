@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import struct
 import time
-from typing import Any, Sequence
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Any
 from xml.etree import ElementTree
 
 from h200_locomotion_lab.robots import load_g1_27dof_nohand_profile
-
 
 DEFAULT_OUTPUT_ROOT = Path("outputs/task022/ankle_roll_contact_patch")
 DEFAULT_TARGET_BODIES = ("left_ankle_roll_link", "right_ankle_roll_link")

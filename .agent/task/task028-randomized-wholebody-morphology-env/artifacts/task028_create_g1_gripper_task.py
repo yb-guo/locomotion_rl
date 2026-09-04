@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import argparse
 import shutil
 from pathlib import Path
 
-
-ROOT = Path("/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab")
+DEFAULT_ROOT = Path(
+  "/mnt/workspace/users/guoyubo/agent_workspace/external/unitree_rl_mjlab"
+)
 
 
 GRIPPER_CONSTANTS = '''"""G1-like whole-body robot with two simple gripper joints."""
@@ -474,9 +476,22 @@ def build_xml(source_xml: Path) -> str:
   return text
 
 
-def main() -> None:
-  source_asset = ROOT / "src" / "assets" / "robots" / "unitree_g1"
-  target_asset = ROOT / "src" / "assets" / "robots" / "unitree_g1_gripper"
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+  parser = argparse.ArgumentParser()
+  parser.add_argument(
+    "--root",
+    type=Path,
+    default=DEFAULT_ROOT,
+    help="Official Unitree MJLab checkout to extend.",
+  )
+  return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+  args = parse_args(argv)
+  root = args.root.expanduser().resolve()
+  source_asset = root / "src" / "assets" / "robots" / "unitree_g1"
+  target_asset = root / "src" / "assets" / "robots" / "unitree_g1_gripper"
   source_xml = source_asset / "xmls" / "g1.xml"
   source_meshes = source_asset / "xmls" / "assets"
   target_meshes = target_asset / "xmls" / "assets"
@@ -490,7 +505,7 @@ def main() -> None:
   write(target_asset / "g1_gripper_constants.py", GRIPPER_CONSTANTS)
   write(target_asset / "xmls" / "g1_gripper.xml", build_xml(source_xml))
 
-  task_dir = ROOT / "src" / "tasks" / "velocity" / "config" / "g1_gripper"
+  task_dir = root / "src" / "tasks" / "velocity" / "config" / "g1_gripper"
   write(task_dir / "__init__.py", TASK_INIT)
   write(task_dir / "env_cfgs.py", ENV_CFGS)
   write(task_dir / "rl_cfg.py", RL_CFG)

@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Sequence
 
 from h200_locomotion_lab.sonic.g1_policy_bridge import (
     SONIC_ACTION_DIM,
     SONIC_G1_DEFAULT_ANGLES,
     SONIC_G1_POLICY_INDEX_TO_MUJOCO_INDEX,
 )
-
 
 SONIC_TOKEN_DIM = 64
 SONIC_HISTORY_FRAMES = 10

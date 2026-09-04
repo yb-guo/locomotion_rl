@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import argparse
 import math
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from h200_locomotion_lab.envs.genesis_adapter import GenesisG1SceneBackend, GenesisSceneConfig
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.sonic.g1_observation import (
     SONIC_DECODER_OBS_DIM,
     SONIC_TOKEN_DIM,
@@ -20,8 +21,8 @@ from h200_locomotion_lab.tools.sonic_policy_decoder_forward import (
     vector_range,
 )
 from h200_locomotion_lab.tools.sonic_reference_replay_smoke import (
-    apply_sonic_g1_motor_config,
     _read_contact_metrics,
+    apply_sonic_g1_motor_config,
 )
 
 
@@ -191,7 +192,7 @@ def _read_max_abs_qvel(backend: GenesisG1SceneBackend) -> float:
             dofs_idx_local=tuple(range(int(backend.robot.n_dofs)))
         )
         flattened = tuple(abs(value) for value in _flatten_numeric(values))
-    except Exception:
+    except RECOVERABLE_RUNTIME_ERRORS:
         return 0.0
     return max(flattened, default=0.0)
 

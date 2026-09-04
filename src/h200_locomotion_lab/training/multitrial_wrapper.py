@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-
 TASK037_TRIAL_DONE_KEY = "task037_trial_done"
 TASK037_EPISODE_DONE_KEY = "task037_episode_done"
 TASK037_INNER_RESET_KEY = "task037_inner_reset"

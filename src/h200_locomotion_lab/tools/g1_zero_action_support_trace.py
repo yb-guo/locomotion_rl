@@ -7,18 +7,19 @@ import json
 import math
 import os
 import time
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any
 from xml.etree import ElementTree
 
 from h200_locomotion_lab.envs.vectorized_genesis_backend import (
     VectorizedGenesisBackend,
     VectorizedGenesisConfig,
 )
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.robots import load_g1_27dof_nohand_profile
 from h200_locomotion_lab.tools import g1_ppo_smoke
 from h200_locomotion_lab.tools import g1_zero_action_standing_causality as zero_action
-
 
 DEFAULT_OUTPUT_ROOT = Path("outputs/task023/zero_action_support_trace")
 DEFAULT_START_STEP = 80
@@ -39,7 +40,7 @@ def main() -> None:
         summary = run_trace(args)
         result.update(summary)
         result["status"] = "ok"
-    except Exception as exc:  # pragma: no cover - H200 failure path.
+    except RECOVERABLE_RUNTIME_ERRORS as exc:  # pragma: no cover - H200 failure path.
         result["blocker"] = f"{exc.__class__.__name__}:{exc}"
     print(json.dumps(result, sort_keys=True), flush=True)
     if result["status"] != "ok":
@@ -417,7 +418,7 @@ def resolve_link_index(robot: Any, name: str) -> int | None:
         return None
     try:
         link = robot.get_link(name)
-    except Exception:
+    except RECOVERABLE_RUNTIME_ERRORS:
         return None
     for attr in ("idx_local", "idx", "id"):
         if hasattr(link, attr):
@@ -510,9 +511,9 @@ def read_link_vector(robot: Any, method_name: str, link_idx: int) -> list[float]
     except TypeError:
         try:
             values = method()
-        except Exception:
+        except RECOVERABLE_RUNTIME_ERRORS:
             return None
-    except Exception:
+    except RECOVERABLE_RUNTIME_ERRORS:
         return None
     vectors = vectors_from_any(values, link_idx=link_idx)
     return vectors[0] if vectors else None

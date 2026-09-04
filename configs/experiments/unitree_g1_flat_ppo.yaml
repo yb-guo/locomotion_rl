@@ -1,0 +1,17 @@
+experiment:
+  name: unitree_g1_flat_ppo
+  components:
+    task: tasks/unitree_g1_flat_walk.yaml
+    policy: policies/mlp_gaussian_actor_critic.yaml
+    algorithm: algorithms/ppo.yaml
+  runtime:
+    backend: mjlab_mujoco_warp
+    device: cuda:0
+    num_envs: 4096
+    headless: true
+    parameters:
+      hardware_profile: rtx5060ti_16gb
+      seed: 42
+      iterations: 650
+      checkpoint_interval: 50
+      logger: tensorboard

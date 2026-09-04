@@ -8,6 +8,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.training.task044_action_influence_contract import (
     Task044ActionInfluenceThresholds,
     evaluate_task044_action_influence_triplet,
@@ -98,7 +99,7 @@ def write_json_summary(path: str | Path, summary: dict[str, Any]) -> None:
 def _read_json(path: Path) -> dict[str, Any]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
-        raise ValueError(f"JSON root must be an object: {path}")
+        raise TypeError(f"JSON root must be an object: {path}")
     return data
 
 
@@ -106,7 +107,7 @@ def main() -> None:
     args = parse_args()
     try:
         summary = build_action_influence_summary(args)
-    except Exception as exc:
+    except RECOVERABLE_RUNTIME_ERRORS as exc:
         summary = build_failure_summary(args, exc)
     write_json_summary(args.output_json, summary)
     print(json.dumps(summary, indent=2, sort_keys=True))

@@ -1,7 +1,6 @@
 import importlib.util
 from pathlib import Path
 
-
 TASK037_DIR = (
     Path(__file__).resolve().parents[1]
     / ".agent"

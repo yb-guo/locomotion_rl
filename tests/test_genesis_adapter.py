@@ -10,13 +10,13 @@ from h200_locomotion_lab.envs.genesis_adapter import (
     GenesisG1SceneBackend,
     GenesisSceneConfig,
 )
+from h200_locomotion_lab.sonic.g1_observation import field_by_name
 from h200_locomotion_lab.sonic.g1_policy_bridge import (
     SONIC_G1_ACTION_SCALES,
     SONIC_G1_DEFAULT_ANGLES,
     SONIC_G1_POLICY_INDEX_TO_MUJOCO_INDEX,
     get_default_sonic_g1_action_bridge,
 )
-from h200_locomotion_lab.sonic.g1_observation import field_by_name
 
 
 def test_genesis_contract_matches_g1_29dof_inventory() -> None:

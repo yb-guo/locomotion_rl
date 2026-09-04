@@ -24,10 +24,10 @@ from h200_locomotion_lab.tools.genesis_action_replay_smoke import (
     read_default_joint_positions,
 )
 from h200_locomotion_lab.tools.sonic_reference_replay_smoke import (
-    apply_sonic_g1_motor_config,
     _flatten_numeric,
     _read_floating_base_position,
     _set_floating_root_qpos,
+    apply_sonic_g1_motor_config,
 )
 
 
@@ -229,7 +229,7 @@ def _resolve_motor_dof_indices(robot: object) -> tuple[int, ...]:
     indices: list[int] = []
     for joint_name in G1_29DOF_JOINT_ORDER:
         joint = robot.get_joint(joint_name)
-        joint_indices = getattr(joint, "dofs_idx_local")
+        joint_indices = joint.dofs_idx_local
         if len(joint_indices) != 1:
             raise ValueError(f"Expected single-DoF joint {joint_name}, got {joint_indices}")
         indices.append(int(joint_indices[0]))

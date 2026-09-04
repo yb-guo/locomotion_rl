@@ -3,13 +3,13 @@ from types import SimpleNamespace
 
 import pytest
 
+from h200_locomotion_lab.tools.task033_history_buffer_smoke import run_smoke
 from h200_locomotion_lab.training.history_buffer import (
     HistoryBufferConfig,
     TorchHistoryBuffer,
     build_default_actor_history_spec,
     validate_no_actor_fault_leakage,
 )
-from h200_locomotion_lab.tools.task033_history_buffer_smoke import run_smoke
 from h200_locomotion_lab.training.history_checkpoint_migration import (
     AdaptationConditioningMigrationConfig,
     StackMlpHistoryMigrationConfig,

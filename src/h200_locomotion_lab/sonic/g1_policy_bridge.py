@@ -8,11 +8,10 @@ sending PD targets.
 from __future__ import annotations
 
 import math
-from typing import Sequence
+from collections.abc import Sequence
 
 from h200_locomotion_lab.robots import CompiledRobotProfile, load_robot_profile
 from h200_locomotion_lab.runtime import ScalarActionBridge
-
 
 ARMATURE_5020 = 0.003609725
 ARMATURE_7520_14 = 0.010177520

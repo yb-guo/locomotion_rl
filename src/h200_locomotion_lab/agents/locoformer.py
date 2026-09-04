@@ -10,7 +10,7 @@ from h200_locomotion_lab.agents.base import AgentSpec, SubmoduleSpec
 def build_locoformer_submodules() -> AgentSpec:
     return AgentSpec(
         name="locoformer_min",
-        goal="Small-scale long-context locomotion policy for H200 experiments.",
+        goal="Small-scale long-context locomotion policy for RTX 5060 Ti experiments.",
         submodules=(
             SubmoduleSpec(
                 name="morphology_encoder",
@@ -50,4 +50,3 @@ def build_locoformer_submodules() -> AgentSpec:
             ),
         ),
     )
-

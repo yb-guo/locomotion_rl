@@ -7,16 +7,18 @@ use the real packages.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, fields
+from itertools import chain
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.robots import (
     G1_27DOF_NOHAND_ACTUATOR_ORDER,
     G1NoHandGenesisTrainingProfile,
     load_g1_27dof_nohand_profile,
 )
-
 
 ACTION_JOINT_GROUPS = ("all", "legs", "legs_waist", "legs_no_ankle_roll")
 LEG_JOINT_SUFFIXES = (
@@ -470,9 +472,10 @@ class VectorizedGenesisBackend:
         if constraint_solver is None:
             return value
         for name in ("Newton", "CG"):
-            if value == name or value.lower() == name.lower():
-                if hasattr(constraint_solver, name):
-                    return getattr(constraint_solver, name)
+            if (value == name or value.lower() == name.lower()) and hasattr(
+                constraint_solver, name
+            ):
+                return getattr(constraint_solver, name)
         available_names = sorted(
             name for name in dir(constraint_solver) if not name.startswith("_")
         )
@@ -494,7 +497,7 @@ class VectorizedGenesisBackend:
         indices: list[int] = []
         for joint_name in self.profile.actuator_order:
             joint = self.robot.get_joint(joint_name)
-            joint_indices = getattr(joint, "dofs_idx_local")
+            joint_indices = joint.dofs_idx_local
             if len(joint_indices) != 1:
                 raise ValueError(f"Expected single-DoF joint {joint_name}, got {joint_indices}")
             indices.append(int(joint_indices[0]))
@@ -603,9 +606,7 @@ class VectorizedGenesisBackend:
             is_waist = joint_name == "waist_yaw_joint"
             if is_leg and not (
                 action_joint_group == "legs_no_ankle_roll" and is_ankle_roll
-            ):
-                values.append(1.0)
-            elif action_joint_group == "legs_waist" and is_waist:
+            ) or action_joint_group == "legs_waist" and is_waist:
                 values.append(1.0)
             else:
                 values.append(0.0)
@@ -729,7 +730,10 @@ class VectorizedGenesisBackend:
                 dim=1,
             )
         rows = [as_rows(value) for value in values]
-        return [sum((group[index] for group in rows), []) for index in range(self.n_envs)]
+        return [
+            list(chain.from_iterable(group[index] for group in rows))
+            for index in range(self.n_envs)
+        ]
 
     def _zeros(self, shape: tuple[int, ...]) -> Any:
         if self.torch is not None:
@@ -872,5 +876,5 @@ def as_rows(value: Any) -> list[list[float]]:
 def read_optional(reader: Any) -> Any | None:
     try:
         return reader()
-    except Exception:
+    except RECOVERABLE_RUNTIME_ERRORS:
         return None

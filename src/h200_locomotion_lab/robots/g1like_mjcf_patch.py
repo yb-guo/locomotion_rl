@@ -6,7 +6,7 @@ import copy
 import json
 from collections import Counter
 from collections.abc import Mapping
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 from xml.etree import ElementTree as ET
 
@@ -18,7 +18,6 @@ from h200_locomotion_lab.robots.g1like_morphology import (
     slot_schema_hash,
 )
 from h200_locomotion_lab.robots.g1like_slots import G1LIKE_ACTION_DIM
-
 
 POSITION_TAGS = ("body", "joint", "geom", "site")
 ACTUATOR_RANGE_ATTRS = ("ctrlrange", "forcerange")
@@ -349,7 +348,7 @@ def _rewrite_relative_meshdir_for_output(
     meshdir = info["meshdir_before"]
     if meshdir is None:
         return info
-    if Path(meshdir).is_absolute():
+    if Path(meshdir).is_absolute() or PureWindowsPath(meshdir).is_absolute():
         return info
     if source_path.parent.resolve() == output_path.parent.resolve():
         return info

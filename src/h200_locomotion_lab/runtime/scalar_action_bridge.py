@@ -19,7 +19,7 @@ class ScalarActionBridge:
     action_scale_command: tuple[float, ...]
 
     @classmethod
-    def from_profile(cls, profile: CompiledRobotProfile) -> "ScalarActionBridge":
+    def from_profile(cls, profile: CompiledRobotProfile) -> ScalarActionBridge:
         return cls(
             action_dim=profile.action_dim,
             command_to_policy=profile.mapping.command_mujoco_index_to_policy_isaaclab_index,

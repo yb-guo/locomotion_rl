@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import time
-from typing import Any, Sequence
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.tools import g1_zero_action_standing_causality as zero_action
-
+from h200_locomotion_lab.tools.path_access import path_exists
 
 DEFAULT_OUTPUT_ROOT = Path("outputs/task021/standing_semantics_matrix")
 DEFAULT_SCENARIOS = (
@@ -144,7 +146,7 @@ def main(argv: list[str] | None = None) -> None:
         summary = run_matrix(args)
         result.update(summary)
         result["status"] = summary["status"]
-    except Exception as exc:  # pragma: no cover - setup failure path.
+    except RECOVERABLE_RUNTIME_ERRORS as exc:  # pragma: no cover - setup failure path.
         result["status"] = "error"
         result["blocker"] = f"{exc.__class__.__name__}:{exc}"
         exit_code = 1
@@ -199,7 +201,7 @@ def run_matrix(args: argparse.Namespace) -> dict[str, Any]:
     for scenario in selected:
         try:
             scenario_results.append(run_scenario(args=args, run_dir=run_dir, scenario=scenario))
-        except Exception as exc:
+        except RECOVERABLE_RUNTIME_ERRORS as exc:
             result = scenario_error_result(args=args, run_dir=run_dir, scenario=scenario, exc=exc)
             write_json(run_dir / f"{scenario.name}.json", result)
             scenario_results.append(result)
@@ -280,7 +282,7 @@ def scenario_error_result(
     scenario_run_id = scenario_run_name(run_dir.name, scenario.name)
     try:
         command = build_zero_action_command(args=args, scenario=scenario, run_id=scenario_run_id)
-    except Exception:
+    except RECOVERABLE_RUNTIME_ERRORS:
         command = []
     return {
         "name": scenario.name,
@@ -426,7 +428,7 @@ def resolve_run_dir(output_root: Path, run_id: str) -> Path:
     run_name = run_id.strip() or time.strftime("%Y%m%d-%H%M%S")
     run_dir = (root / run_name).resolve()
     project_prefix = zero_action.PROJECT_PREFIX.resolve()
-    if project_prefix.exists() and project_prefix not in (run_dir, *run_dir.parents):
+    if path_exists(project_prefix) and project_prefix not in (run_dir, *run_dir.parents):
         raise RuntimeError(f"output path must stay under {project_prefix}: {run_dir}")
     return run_dir
 

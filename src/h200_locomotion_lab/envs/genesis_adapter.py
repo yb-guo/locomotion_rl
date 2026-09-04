@@ -7,13 +7,12 @@ the real H200 path can provide a Genesis-backed implementation later.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Protocol
 
-from h200_locomotion_lab.sonic.g1_policy_bridge import (
-    get_default_sonic_g1_action_bridge,
-)
+from h200_locomotion_lab.error_policy import RECOVERABLE_RUNTIME_ERRORS
 from h200_locomotion_lab.runtime import ScalarActionBridge
 from h200_locomotion_lab.sonic.g1_observation import (
     SonicG1HistoryBuffer,
@@ -21,7 +20,9 @@ from h200_locomotion_lab.sonic.g1_observation import (
     build_sonic_g1_decoder_observation,
     mujoco_motor_state_to_sonic_body_state,
 )
-
+from h200_locomotion_lab.sonic.g1_policy_bridge import (
+    get_default_sonic_g1_action_bridge,
+)
 
 G1_29DOF_JOINT_ORDER: tuple[str, ...] = (
     "left_hip_pitch_joint",
@@ -329,7 +330,7 @@ class GenesisG1SceneBackend:
         indices: list[int] = []
         for joint_name in self.contract.joint_order:
             joint = self.robot.get_joint(joint_name)
-            joint_indices = getattr(joint, "dofs_idx_local")
+            joint_indices = joint.dofs_idx_local
             if len(joint_indices) != 1:
                 raise ValueError(f"Expected single-DoF joint {joint_name}, got {joint_indices}")
             indices.append(int(joint_indices[0]))
@@ -378,7 +379,7 @@ class GenesisG1SceneBackend:
         if hasattr(self.robot, "get_qpos"):
             return _flatten_numeric(self.robot.get_qpos())
         if hasattr(self.robot, "qpos"):
-            return _flatten_numeric(getattr(self.robot, "qpos"))
+            return _flatten_numeric(self.robot.qpos)
         return self.config.base_pos + self.config.base_quat
 
     def _read_base_quat(self) -> tuple[float, float, float, float]:
@@ -392,7 +393,7 @@ class GenesisG1SceneBackend:
             root_velocity = _flatten_numeric(
                 self.robot.get_dofs_velocity(dofs_idx_local=tuple(range(6)))
             )
-        except Exception:
+        except RECOVERABLE_RUNTIME_ERRORS:
             return (0.0, 0.0, 0.0)
         if len(root_velocity) < 6:
             return (0.0, 0.0, 0.0)
@@ -469,7 +470,7 @@ class GenesisG1Env:
         self._last_observation: tuple[float, ...] | None = None
 
     @classmethod
-    def contract_only(cls) -> "GenesisG1Env":
+    def contract_only(cls) -> GenesisG1Env:
         contract = GenesisG1Contract()
         return cls(contract=contract, backend=ContractOnlyBackend(contract))
 
@@ -489,7 +490,7 @@ class GenesisG1Env:
         convexify: bool = False,
         decimate: bool = False,
         logging_level: str = "warning",
-    ) -> "GenesisG1Env":
+    ) -> GenesisG1Env:
         contract = GenesisG1Contract()
         scene_config = GenesisSceneConfig(
             asset_path=asset_path,
