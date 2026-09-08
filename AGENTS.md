@@ -3,6 +3,11 @@
 This repo is for RTX 5060 Ti-first humanoid locomotion RL research. The
 historical H200 path is paused and must not be selected by default.
 
+The Python package is still named `h200_locomotion_lab`. That name is
+historical and is not a hardware signal, so do not read it as a reason to
+select the H200 profile. See `.agent/doc/project.md` for the decision to keep
+the name.
+
 ## Entry Point
 
 Start from `.agent/index.md`.
